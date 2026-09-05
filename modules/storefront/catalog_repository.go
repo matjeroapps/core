@@ -2,6 +2,7 @@ package storefront
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -481,6 +482,70 @@ func (r CatalogRepository) ProductBySlug(ctx context.Context, scope CatalogScope
 	if detail.Variants, err = r.productVariants(ctx, scope, productID); err != nil {
 		return ProductDetail{}, err
 	}
+
+	var (
+		rawPb   sql.NullString
+		rawSecs []byte
+	)
+	_ = r.pool.QueryRow(ctx, `
+		SELECT p.purchase_behavior, p.sections
+		FROM seller_listings l
+		LEFT JOIN seller_listing_presentations p ON p.seller_listing_id = l.id
+		WHERE l.store_id = $1 AND l.product_id = $2
+	`, scope.storeID, productID).Scan(&rawPb, &rawSecs)
+
+	pb := "add_to_cart"
+	if rawPb.Valid && rawPb.String != "" && rawPb.String != "inherit" {
+		pb = rawPb.String
+	} else {
+		var storeSettingsJSON []byte
+		_ = r.pool.QueryRow(ctx, `SELECT settings FROM store_settings WHERE store_id = $1`, scope.storeID).Scan(&storeSettingsJSON)
+		if len(storeSettingsJSON) > 0 {
+			var st map[string]any
+			_ = json.Unmarshal(storeSettingsJSON, &st)
+			if b, ok := st["purchase_behavior"].(string); ok && b == "buy_now" {
+				pb = "buy_now"
+			}
+		}
+	}
+	detail.PurchaseBehavior = pb
+
+	sections := make([]any, 0)
+	if len(rawSecs) > 0 {
+		var secList []struct {
+			ID        string         `json:"id"`
+			Type      string         `json:"type"`
+			Enabled   bool           `json:"enabled"`
+			SortOrder int            `json:"sort_order"`
+			Content   map[string]any `json:"content"`
+		}
+		if err := json.Unmarshal(rawSecs, &secList); err == nil {
+			locStr := string(scope.locale)
+			fallbackLocStr := string(fallbackLocale(scope.locale))
+			for _, s := range secList {
+				if !s.Enabled {
+					continue
+				}
+				secData := map[string]any{
+					"id":         s.ID,
+					"type":       s.Type,
+					"sort_order": s.SortOrder,
+				}
+				if s.Content != nil {
+					if locContent, ok := s.Content[locStr]; ok {
+						secData["content"] = locContent
+					} else if fallbackContent, ok := s.Content[fallbackLocStr]; ok {
+						secData["content"] = fallbackContent
+					} else {
+						secData["content"] = s.Content
+					}
+				}
+				sections = append(sections, secData)
+			}
+		}
+	}
+	detail.Sections = sections
+
 	return detail, nil
 }
 

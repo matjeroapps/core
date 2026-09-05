@@ -23,6 +23,9 @@ type Service struct {
 
 	// TXTResolver abstracts DNS TXT lookups for custom domain ownership verification.
 	TXTResolver TXTResolver
+
+	// S3Storage handles S3-compatible media uploads and management.
+	S3Storage *S3Storage
 }
 
 func NewService(repo Repository) Service {
@@ -54,6 +57,10 @@ func (s Service) CreateSellerListing(ctx context.Context, storeID, productID str
 		}
 		if supplierProduct.ProductID != productID {
 			return SellerListing{}, fmt.Errorf("%w: supplier offer product %s does not match listing product %s", ErrInvalidInput, supplierProduct.ProductID, productID)
+		}
+	} else {
+		if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, store.SellerID, productID); err != nil {
+			return SellerListing{}, fmt.Errorf("%w: product does not belong to store seller", ErrNotFound)
 		}
 	}
 	return s.repo.CreateSellerListing(ctx, storeID, productID, supplierOfferID, marketCode, status)
@@ -266,8 +273,14 @@ func (s Service) CreateSellerListingForSubject(ctx context.Context, subject, sto
 	if err != nil {
 		return SellerListing{}, err
 	}
-	if _, err := s.RequireSellerAccess(ctx, subject, store.SellerID); err != nil {
+	seller, err := s.RequireSellerAccess(ctx, subject, store.SellerID)
+	if err != nil {
 		return SellerListing{}, err
+	}
+	if supplierOfferID == nil {
+		if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, seller.ID, productID); err != nil {
+			return SellerListing{}, ErrNotFound
+		}
 	}
 	return s.CreateSellerListing(ctx, storeID, productID, supplierOfferID, marketCode, status)
 }
