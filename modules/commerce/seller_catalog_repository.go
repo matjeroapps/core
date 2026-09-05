@@ -16,7 +16,7 @@ import (
 
 type SellerProductListItem struct {
 	Product       Product             `json:"product"`
-	SellerProduct *SellerProduct     `json:"seller_product,omitempty"`
+	SellerProduct *SellerProduct      `json:"seller_product,omitempty"`
 	Listing       SellerListing       `json:"listing"`
 	Price         *SellerListingPrice `json:"price,omitempty"`
 	Source        string              `json:"source"` // seller_owned, supplier_backed

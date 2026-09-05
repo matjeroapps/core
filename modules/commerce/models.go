@@ -450,4 +450,3 @@ type SellerProductDraft struct {
 	Translations []ProductTranslation `json:"translations"`
 	CategoryIDs  []string             `json:"category_ids"`
 }
-
