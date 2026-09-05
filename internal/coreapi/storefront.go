@@ -38,6 +38,10 @@ const HeaderStorefrontRevision = "X-Matjero-Storefront-Revision"
 // contract and never replaces service authentication.
 const HeaderStorefrontPreview = "X-Matjero-Storefront-Preview"
 
+// HeaderGuestOrderToken carries the raw guest order capability token from the
+// seller-owned storefront API to Core for guest order access.
+const HeaderGuestOrderToken = "X-Matjero-Guest-Order-Token"
+
 // scopeFor resolves the tenant from the trusted storefront host forwarded by the
 // actor and binds it to the negotiated locale.
 //
@@ -311,4 +315,37 @@ func intParam(raw, name string) (*int64, error) {
 		return nil, fmt.Errorf("%w: %s must be an integer", storefront.ErrInvalidQuery, name)
 	}
 	return &value, nil
+}
+
+func (s *server) handleGetGuestOrder(w http.ResponseWriter, r *http.Request) {
+	scope, ok := s.scopeFor(w, r)
+	if !ok {
+		return
+	}
+	rawCapability := strings.TrimSpace(r.Header.Get(HeaderGuestOrderToken))
+	orderID := chi.URLParam(r, "orderID")
+	order, err := s.deps.Repo.GetGuestOrder(r.Context(), nil, scope.StoreID(), orderID, rawCapability)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	httpx.WriteJSON(w, http.StatusOK, order.ToPublic())
+}
+
+func (s *server) handleCancelGuestOrder(w http.ResponseWriter, r *http.Request) {
+	scope, ok := s.scopeFor(w, r)
+	if !ok {
+		return
+	}
+	rawCapability := strings.TrimSpace(r.Header.Get(HeaderGuestOrderToken))
+	orderID := chi.URLParam(r, "orderID")
+	correlationID := httpx.CorrelationID(r.Context())
+	order, err := s.deps.Repo.CancelGuestOrder(r.Context(), nil, scope.StoreID(), orderID, rawCapability, correlationID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	httpx.WriteJSON(w, http.StatusOK, order.ToPublic())
 }

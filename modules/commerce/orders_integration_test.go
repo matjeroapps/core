@@ -2,9 +2,11 @@ package commerce
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
+
 	"path/filepath"
 	"sync"
 	"testing"
@@ -696,6 +698,122 @@ func TestP53OrderNotes(t *testing.T) {
 	if len(notes) != 1 || notes[0].Body != "Internal seller note for order" {
 		t.Fatalf("notes retrieval mismatch: %+v", notes)
 	}
+}
+
+func TestP57GuestOrderReadAndCancel(t *testing.T) {
+	db, repo, ctx := setupP53Database(t)
+	suffixA := uuid.NewString()
+	suffixB := uuid.NewString()
+	storeA, _, sessionA, rawCapabilityA := createTestStoreAndSession(t, db, repo, ctx, suffixA)
+	storeB, _, _, _ := createTestStoreAndSession(t, db, repo, ctx, suffixB)
+
+	// Finalize checkout transactionally
+	now := time.Now()
+	orderNumber, _ := repo.AllocateOrderNumber(ctx, nil, storeA.ID)
+	createdOrder, err := repo.CreateOrder(ctx, nil, Order{
+		ID:                          uuid.NewString(),
+		OrderNumber:                 orderNumber,
+		StoreID:                     storeA.ID,
+		MarketCode:                  "EG",
+		CheckoutSessionID:           sessionA.ID,
+		Status:                      OrderStatusPending,
+		CurrencyCode:                "EGP",
+		GuestOrderAccessTokenDigest: digestFromRawCap(rawCapabilityA),
+		SubtotalMinor:               1000,
+		TotalMinor:                  1000,
+		ConfirmationDeadlineAt:      now.Add(15 * time.Minute),
+		CreatedAt:                   now,
+		UpdatedAt:                   now,
+	})
+	if err != nil {
+		t.Fatalf("failed to create order for test: %v", err)
+	}
+
+	// 1. Matrix 32: Correct Store + token reads Order
+	fetchedOrder, err := repo.GetGuestOrder(ctx, nil, storeA.ID, createdOrder.ID, rawCapabilityA)
+	if err != nil {
+		t.Fatalf("expected successful guest order read, got: %v", err)
+	}
+	if fetchedOrder.ID != createdOrder.ID {
+		t.Fatalf("expected order ID %s, got %s", createdOrder.ID, fetchedOrder.ID)
+	}
+
+	// 2. Matrix 33: Wrong Store Host rejected (ErrNotFound)
+	_, err = repo.GetGuestOrder(ctx, nil, storeB.ID, createdOrder.ID, rawCapabilityA)
+	if err != ErrNotFound {
+		t.Fatalf("expected ErrNotFound for wrong store host, got: %v", err)
+	}
+
+	// 3. Matrix 34: Wrong guest token rejected (ErrUnauthorized)
+	_, err = repo.GetGuestOrder(ctx, nil, storeA.ID, createdOrder.ID, "wrong-token-value")
+	if err != ErrUnauthorized {
+		t.Fatalf("expected ErrUnauthorized for wrong guest token, got: %v", err)
+	}
+
+	// 4. Matrix 35/36: Empty capability (UUID-only or order-number-only) rejected
+	_, err = repo.GetGuestOrder(ctx, nil, storeA.ID, createdOrder.ID, "")
+	if err != ErrUnauthorized {
+		t.Fatalf("expected ErrUnauthorized for missing capability, got: %v", err)
+	}
+
+	// 5. Matrix 40: Public DTO sanitation (ToPublic contains no raw capability or digest)
+	publicOrder := fetchedOrder.ToPublic()
+	if len(publicOrder.ID) == 0 || publicOrder.Status != OrderStatusPending {
+		t.Fatalf("invalid public order struct: %+v", publicOrder)
+	}
+
+	// 6. Matrix 37: Guest pending cancellation
+	cancelledOrder, err := repo.CancelGuestOrder(ctx, nil, storeA.ID, createdOrder.ID, rawCapabilityA, "corr-guest-cancel-1")
+	if err != nil {
+		t.Fatalf("expected successful guest pending cancellation, got: %v", err)
+	}
+	if cancelledOrder.Status != OrderStatusCancelled {
+		t.Fatalf("expected status cancelled, got %s", cancelledOrder.Status)
+	}
+
+	// 7. Matrix 39: Guest cancellation retry is idempotent
+	cancelledOrderRetry, err := repo.CancelGuestOrder(ctx, nil, storeA.ID, createdOrder.ID, rawCapabilityA, "corr-guest-cancel-2")
+	if err != nil {
+		t.Fatalf("expected idempotent cancellation retry, got: %v", err)
+	}
+	if cancelledOrderRetry.Status != OrderStatusCancelled {
+		t.Fatalf("expected status cancelled on retry, got %s", cancelledOrderRetry.Status)
+	}
+
+	// 8. Matrix 38: Guest cancellation on confirmed order rejected
+	// Create another order for storeA and confirm it
+	cart2, cartToken2, _ := repo.CreateCart(ctx, storeA.ID, "EG", nil)
+	_ = cart2
+	session2, rawCapability2, _ := repo.CreateCheckoutSession(ctx, storeA.ID, cartToken2, nil, time.Hour)
+	orderNumber2, _ := repo.AllocateOrderNumber(ctx, nil, storeA.ID)
+	confirmedOrder, err := repo.CreateOrder(ctx, nil, Order{
+		ID:                          uuid.NewString(),
+		OrderNumber:                 orderNumber2,
+		StoreID:                     storeA.ID,
+		MarketCode:                  "EG",
+		CheckoutSessionID:           session2.ID,
+		Status:                      OrderStatusConfirmed,
+		CurrencyCode:                "EGP",
+		GuestOrderAccessTokenDigest: digestFromRawCap(rawCapability2),
+		SubtotalMinor:               1000,
+		TotalMinor:                  1000,
+		ConfirmationDeadlineAt:      now.Add(15 * time.Minute),
+		CreatedAt:                   now,
+		UpdatedAt:                   now,
+	})
+	if err != nil {
+		t.Fatalf("failed to create confirmed order: %v", err)
+	}
+
+	_, err = repo.CancelGuestOrder(ctx, nil, storeA.ID, confirmedOrder.ID, rawCapability2, "corr-guest-cancel-3")
+	if err != ErrInvalidTransition {
+		t.Fatalf("expected ErrInvalidTransition for confirmed order cancel, got: %v", err)
+	}
+}
+
+func digestFromRawCap(rawCap string) []byte {
+	d := sha256.Sum256([]byte(rawCap))
+	return d[:]
 }
 
 func TestMigration000012_UpAndDown(t *testing.T) {

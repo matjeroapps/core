@@ -3,6 +3,7 @@ package commerce
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"fmt"
 	"sort"
 	"strings"
@@ -243,7 +244,103 @@ func (r Repository) GetOrderByID(ctx context.Context, exec DBExecutor, storeID, 
 	return order, nil
 }
 
+// GetGuestOrder loads an order by ID for guest access after validating store scoping and guest capability.
+func (r Repository) GetGuestOrder(ctx context.Context, exec DBExecutor, storeID, orderID, rawCapability string) (Order, error) {
+	if strings.TrimSpace(storeID) == "" || strings.TrimSpace(orderID) == "" || strings.TrimSpace(rawCapability) == "" {
+		return Order{}, ErrUnauthorized
+	}
+	db := r.getExec(exec)
+
+	var order Order
+	err := db.QueryRow(ctx, `
+		SELECT id, order_number, store_id, market_code, customer_id, checkout_session_id,
+		       status, currency_code, guest_order_access_token_digest, subtotal_minor,
+		       total_minor, confirmation_deadline_at, cancellation_reason, aggregate_version,
+		       created_at, updated_at
+		FROM orders
+		WHERE id = $1
+	`, orderID).Scan(
+		&order.ID, &order.OrderNumber, &order.StoreID, &order.MarketCode, &order.CustomerID,
+		&order.CheckoutSessionID, &order.Status, &order.CurrencyCode, &order.GuestOrderAccessTokenDigest,
+		&order.SubtotalMinor, &order.TotalMinor, &order.ConfirmationDeadlineAt,
+		&order.CancellationReason, &order.AggregateVersion, &order.CreatedAt, &order.UpdatedAt,
+	)
+	if err != nil {
+		return Order{}, translatePGError(err, "get guest order")
+	}
+	if order.StoreID != storeID {
+		return Order{}, ErrNotFound
+	}
+
+	rawDigest := sha256.Sum256([]byte(rawCapability))
+	if len(order.GuestOrderAccessTokenDigest) != sha256.Size || subtle.ConstantTimeCompare(rawDigest[:], order.GuestOrderAccessTokenDigest) != 1 {
+		return Order{}, ErrUnauthorized
+	}
+
+	items, err := r.loadOrderItems(ctx, db, order.ID)
+	if err != nil {
+		return Order{}, err
+	}
+	order.Items = items
+
+	addr, err := r.loadOrderAddress(ctx, db, order.ID)
+	if err != nil && err != ErrNotFound {
+		return Order{}, err
+	}
+	if err == nil {
+		order.Address = &addr
+	}
+
+	return order, nil
+}
+
+// CancelGuestOrder cancels a pending guest order after validating store scoping and guest capability.
+func (r Repository) CancelGuestOrder(ctx context.Context, exec DBExecutor, storeID, orderID, rawCapability string, correlationID string) (Order, error) {
+	if strings.TrimSpace(storeID) == "" || strings.TrimSpace(orderID) == "" || strings.TrimSpace(rawCapability) == "" {
+		return Order{}, ErrUnauthorized
+	}
+
+	var res Order
+	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var orderStore string
+		var digest []byte
+		var status string
+		err := tx.QueryRow(ctx, `
+			SELECT store_id, guest_order_access_token_digest, status
+			FROM orders
+			WHERE id = $1
+			FOR UPDATE
+		`, orderID).Scan(&orderStore, &digest, &status)
+		if err != nil {
+			return translatePGError(err, "lock guest order for cancel")
+		}
+		if orderStore != storeID {
+			return ErrNotFound
+		}
+
+		rawDigest := sha256.Sum256([]byte(rawCapability))
+		if len(digest) != sha256.Size || subtle.ConstantTimeCompare(rawDigest[:], digest) != 1 {
+			return ErrUnauthorized
+		}
+
+		if status == OrderStatusCancelled {
+			var getErr error
+			res, getErr = r.GetOrderByID(ctx, tx, storeID, orderID)
+			return getErr
+		}
+		if status != OrderStatusPending {
+			return ErrInvalidTransition
+		}
+
+		var cancelErr error
+		res, cancelErr = r.cancelPendingOrderExec(ctx, tx, storeID, orderID, AuthorityCustomer, nil, nil, correlationID)
+		return cancelErr
+	})
+	return res, err
+}
+
 // GetOrderByNumber loads an order by order_number within a Store tenant boundary.
+
 func (r Repository) GetOrderByNumber(ctx context.Context, exec DBExecutor, storeID, orderNumber string) (Order, error) {
 	if strings.TrimSpace(storeID) == "" || strings.TrimSpace(orderNumber) == "" {
 		return Order{}, ErrInvalidInput

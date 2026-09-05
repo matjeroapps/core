@@ -107,6 +107,8 @@ func NewRouter(deps Dependencies) chi.Router {
 			r.Delete("/storefront/carts/items/{itemID}", server.handleRemoveCartItem)
 			r.Post("/storefront/checkout-sessions", server.handleCreateCheckoutSession)
 			r.Post("/storefront/checkout-sessions/{sessionID}/finalize", server.handleEvaluateCheckoutSession)
+			r.Get("/storefront/orders/{orderID}", server.handleGetGuestOrder)
+			r.Post("/storefront/orders/{orderID}/cancel", server.handleCancelGuestOrder)
 		})
 
 		// Store-owned fulfillment locations. Seller identity is resolved from the

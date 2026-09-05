@@ -15,5 +15,6 @@ var (
 	ErrInvalidTransition     = errors.New("invalid order transition")
 	ErrPriceChanged          = errors.New("price changed")
 	ErrListingUnavailable    = errors.New("listing unavailable")
+	ErrUnauthorized          = errors.New("unauthorized")
 	ErrInternalError         = errors.New("internal error")
 )

@@ -289,7 +289,27 @@ func internalRoutes() []openapi.RouteSpec {
 			Summary: "Finalize Checkout Session atomically", Tags: []string{"Storefront"},
 			Description: "Executes atomic single-transaction checkout finalization turning an eligible Checkout Session and Cart into an Order.",
 			Parameters:  []openapi.ParameterSpec{pathParam("sessionID", "Checkout Session identifier")},
-			RequestBody: CheckoutFinalizeRequest{}, Responses: writeResponses("Finalized Order", commerce.PublicOrder{}),
+			RequestBody: CheckoutFinalizeRequest{}, Responses: writeResponses("Order", commerce.PublicOrder{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/storefront/orders/{orderID}", OperationID: "internalGetGuestOrder",
+			Summary: "Read a Guest Order by capability", Tags: []string{"Storefront"},
+			Description: "Reads a Guest Order scoped to the host-resolved Store and authorized by X-Matjero-Guest-Order-Token.",
+			Parameters: []openapi.ParameterSpec{
+				{Name: HeaderGuestOrderToken, In: "header", Required: true, Description: "Raw guest order capability token", Schema: ""},
+				pathParam("orderID", "Order identifier"),
+			},
+			Responses: readResponses("Guest Order", commerce.PublicOrder{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/storefront/orders/{orderID}/cancel", OperationID: "internalCancelGuestOrder",
+			Summary: "Cancel a pending Guest Order by capability", Tags: []string{"Storefront"},
+			Description: "Cancels a pending Guest Order scoped to the host-resolved Store and authorized by X-Matjero-Guest-Order-Token.",
+			Parameters: []openapi.ParameterSpec{
+				{Name: HeaderGuestOrderToken, In: "header", Required: true, Description: "Raw guest order capability token", Schema: ""},
+				pathParam("orderID", "Order identifier"),
+			},
+			Responses: writeResponses("Guest Order", commerce.PublicOrder{}),
 		},
 
 		// --- Sellers ---

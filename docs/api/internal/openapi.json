@@ -8137,7 +8137,7 @@
                 }
               }
             },
-            "description": "Finalized Order"
+            "description": "Order"
           },
           "400": {
             "content": {
@@ -8326,6 +8326,802 @@
           }
         ],
         "summary": "Finalize Checkout Session atomically",
+        "tags": [
+          "Storefront"
+        ]
+      }
+    },
+    "/internal/v1/storefront/orders/{orderID}": {
+      "get": {
+        "description": "Reads a Guest Order scoped to the host-resolved Store and authorized by X-Matjero-Guest-Order-Token.",
+        "operationId": "internalGetGuestOrder",
+        "parameters": [
+          {
+            "description": "Override locale resolution",
+            "in": "query",
+            "name": "locale",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Raw guest order capability token",
+            "in": "header",
+            "name": "X-Matjero-Guest-Order-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Order identifier",
+            "in": "path",
+            "name": "orderID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "address": {
+                      "nullable": true,
+                      "properties": {
+                        "address_line_1": {
+                          "type": "string"
+                        },
+                        "address_line_2": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "address_type": {
+                          "type": "string"
+                        },
+                        "city": {
+                          "type": "string"
+                        },
+                        "country_code": {
+                          "type": "string"
+                        },
+                        "created_at": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "order_id": {
+                          "type": "string"
+                        },
+                        "phone": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "postal_code": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "recipient_name": {
+                          "type": "string"
+                        },
+                        "region": {
+                          "nullable": true,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "address_line_1",
+                        "address_type",
+                        "city",
+                        "country_code",
+                        "created_at",
+                        "id",
+                        "order_id",
+                        "recipient_name"
+                      ],
+                      "type": "object"
+                    },
+                    "aggregate_version": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "cancellation_reason": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "checkout_session_id": {
+                      "type": "string"
+                    },
+                    "confirmation_deadline_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "created_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "currency_code": {
+                      "type": "string"
+                    },
+                    "customer_id": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "items": {
+                      "items": {
+                        "properties": {
+                          "created_at": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "currency_code": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "line_total_minor": {
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          "order_id": {
+                            "type": "string"
+                          },
+                          "product_id": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "product_title_snapshot": {
+                            "type": "string"
+                          },
+                          "quantity": {
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          "seller_listing_id": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "sku_code_snapshot": {
+                            "type": "string"
+                          },
+                          "sku_id": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "unit_price_minor": {
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          "variant_id": {
+                            "nullable": true,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "created_at",
+                          "currency_code",
+                          "id",
+                          "line_total_minor",
+                          "order_id",
+                          "product_title_snapshot",
+                          "quantity",
+                          "sku_code_snapshot",
+                          "unit_price_minor"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "market_code": {
+                      "type": "string"
+                    },
+                    "order_number": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "store_id": {
+                      "type": "string"
+                    },
+                    "subtotal_minor": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "total_minor": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "updated_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "aggregate_version",
+                    "checkout_session_id",
+                    "confirmation_deadline_at",
+                    "created_at",
+                    "currency_code",
+                    "id",
+                    "market_code",
+                    "order_number",
+                    "status",
+                    "store_id",
+                    "subtotal_minor",
+                    "total_minor",
+                    "updated_at"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Guest Order"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Read a Guest Order by capability",
+        "tags": [
+          "Storefront"
+        ]
+      }
+    },
+    "/internal/v1/storefront/orders/{orderID}/cancel": {
+      "post": {
+        "description": "Cancels a pending Guest Order scoped to the host-resolved Store and authorized by X-Matjero-Guest-Order-Token.",
+        "operationId": "internalCancelGuestOrder",
+        "parameters": [
+          {
+            "description": "Override locale resolution",
+            "in": "query",
+            "name": "locale",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Raw guest order capability token",
+            "in": "header",
+            "name": "X-Matjero-Guest-Order-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Order identifier",
+            "in": "path",
+            "name": "orderID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "address": {
+                      "nullable": true,
+                      "properties": {
+                        "address_line_1": {
+                          "type": "string"
+                        },
+                        "address_line_2": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "address_type": {
+                          "type": "string"
+                        },
+                        "city": {
+                          "type": "string"
+                        },
+                        "country_code": {
+                          "type": "string"
+                        },
+                        "created_at": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "order_id": {
+                          "type": "string"
+                        },
+                        "phone": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "postal_code": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "recipient_name": {
+                          "type": "string"
+                        },
+                        "region": {
+                          "nullable": true,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "address_line_1",
+                        "address_type",
+                        "city",
+                        "country_code",
+                        "created_at",
+                        "id",
+                        "order_id",
+                        "recipient_name"
+                      ],
+                      "type": "object"
+                    },
+                    "aggregate_version": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "cancellation_reason": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "checkout_session_id": {
+                      "type": "string"
+                    },
+                    "confirmation_deadline_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "created_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "currency_code": {
+                      "type": "string"
+                    },
+                    "customer_id": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "items": {
+                      "items": {
+                        "properties": {
+                          "created_at": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "currency_code": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "line_total_minor": {
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          "order_id": {
+                            "type": "string"
+                          },
+                          "product_id": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "product_title_snapshot": {
+                            "type": "string"
+                          },
+                          "quantity": {
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          "seller_listing_id": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "sku_code_snapshot": {
+                            "type": "string"
+                          },
+                          "sku_id": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "unit_price_minor": {
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          "variant_id": {
+                            "nullable": true,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "created_at",
+                          "currency_code",
+                          "id",
+                          "line_total_minor",
+                          "order_id",
+                          "product_title_snapshot",
+                          "quantity",
+                          "sku_code_snapshot",
+                          "unit_price_minor"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "market_code": {
+                      "type": "string"
+                    },
+                    "order_number": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "store_id": {
+                      "type": "string"
+                    },
+                    "subtotal_minor": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "total_minor": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "updated_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "aggregate_version",
+                    "checkout_session_id",
+                    "confirmation_deadline_at",
+                    "created_at",
+                    "currency_code",
+                    "id",
+                    "market_code",
+                    "order_number",
+                    "status",
+                    "store_id",
+                    "subtotal_minor",
+                    "total_minor",
+                    "updated_at"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Guest Order"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Cancel a pending Guest Order by capability",
         "tags": [
           "Storefront"
         ]

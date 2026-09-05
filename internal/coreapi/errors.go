@@ -146,7 +146,10 @@ func codeFor(err error) string {
 	case errors.Is(err, commerce.ErrInvalidInput),
 		errors.Is(err, themes.ErrInvalidInput):
 		return CodeValidationError
+	case errors.Is(err, commerce.ErrUnauthorized):
+		return CodeUnauthorized
 	case errors.Is(err, commerce.ErrMarketMismatch):
+
 		return CodeMarketMismatch
 	case errors.Is(err, commerce.ErrInsufficientInventory):
 		return CodeInsufficientInventory
