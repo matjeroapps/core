@@ -450,3 +450,19 @@ type SellerProductDraft struct {
 	Translations []ProductTranslation `json:"translations"`
 	CategoryIDs  []string             `json:"category_ids"`
 }
+
+// MediaUploadIntent tracks a server-side scoped presign request.
+// TokenDigest and seller/store fields are never serialized.
+type MediaUploadIntent struct {
+	ID          string     `json:"id"`
+	SellerID    string     `json:"-"`
+	StoreID     string     `json:"-"`
+	ProductID   string     `json:"product_id"`
+	StorageKey  string     `json:"storage_key"`
+	ContentType string     `json:"content_type"`
+	MaxBytes    int64      `json:"max_bytes"`
+	TokenDigest string     `json:"-"`
+	ExpiresAt   time.Time  `json:"expires_at"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+}

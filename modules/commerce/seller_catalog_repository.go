@@ -1079,3 +1079,50 @@ func (r Repository) UnpublishSellerProduct(ctx context.Context, storeID, product
 		return bumpStorefrontRevisions(ctx, tx, revisionStoreItself, storeID)
 	})
 }
+
+func (r Repository) CreateMediaUploadIntent(ctx context.Context, intent MediaUploadIntent) (MediaUploadIntent, error) {
+	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		row := tx.QueryRow(ctx, `
+			INSERT INTO media_upload_intents (seller_id, store_id, product_id, storage_key, content_type, max_bytes, token_digest, expires_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			RETURNING id, created_at`,
+			intent.SellerID, intent.StoreID, intent.ProductID,
+			intent.StorageKey, intent.ContentType, intent.MaxBytes,
+			intent.TokenDigest, intent.ExpiresAt,
+		)
+		return row.Scan(&intent.ID, &intent.CreatedAt)
+	})
+	if err != nil {
+		return MediaUploadIntent{}, err
+	}
+	return intent, nil
+}
+
+func (r Repository) GetMediaUploadIntentByStorageKey(ctx context.Context, storageKey string) (MediaUploadIntent, error) {
+	var intent MediaUploadIntent
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, seller_id, store_id, product_id, storage_key, content_type, max_bytes, token_digest,
+		       expires_at, completed_at, created_at
+		FROM media_upload_intents WHERE storage_key = $1`,
+		storageKey,
+	).Scan(
+		&intent.ID, &intent.SellerID, &intent.StoreID, &intent.ProductID,
+		&intent.StorageKey, &intent.ContentType, &intent.MaxBytes, &intent.TokenDigest,
+		&intent.ExpiresAt, &intent.CompletedAt, &intent.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return MediaUploadIntent{}, ErrNotFound
+		}
+		return MediaUploadIntent{}, err
+	}
+	return intent, nil
+}
+
+func (r Repository) MarkMediaUploadIntentComplete(ctx context.Context, intentID string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE media_upload_intents SET completed_at = NOW() WHERE id = $1`,
+		intentID,
+	)
+	return err
+}

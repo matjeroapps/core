@@ -2,6 +2,9 @@ package commerce
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -422,15 +425,32 @@ func (s Service) GenerateMediaUploadPresignedURLForSubject(ctx context.Context, 
 	storageKey := fmt.Sprintf("products/%s/%s/%s%s", seller.ID, productID, randomID, ext)
 
 	if s.S3Storage == nil {
-		// Mock presign fallback for test environments without S3 config
-		mockURL := fmt.Sprintf("http://localhost:9000/media-bucket/%s", storageKey)
-		return MediaUploadResponse{
-			UploadURL:   mockURL,
-			StorageKey:  storageKey,
-			UploadToken: randomID,
-			ExpiresAt:   time.Now().Add(15 * time.Minute),
-		}, nil
+		return MediaUploadResponse{}, fmt.Errorf("%w: media storage is not configured", ErrInvalidInput)
 	}
+
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return MediaUploadResponse{}, fmt.Errorf("failed to generate upload token: %w", err)
+	}
+	rawToken := hex.EncodeToString(tokenBytes)
+	digestBytes := sha256.Sum256([]byte(rawToken))
+	tokenDigest := hex.EncodeToString(digestBytes[:])
+
+	ttl := s.S3Storage.Config().URLTTL
+	intent, err := s.repo.CreateMediaUploadIntent(ctx, MediaUploadIntent{
+		SellerID:    seller.ID,
+		StoreID:     storeID,
+		ProductID:   productID,
+		StorageKey:  storageKey,
+		ContentType: req.ContentType,
+		MaxBytes:    req.SizeBytes,
+		TokenDigest: tokenDigest,
+		ExpiresAt:   time.Now().Add(ttl),
+	})
+	if err != nil {
+		return MediaUploadResponse{}, err
+	}
+	_ = intent
 
 	uploadURL, err := s.S3Storage.PresignPutObject(ctx, storageKey, req.ContentType)
 	if err != nil {
@@ -440,7 +460,7 @@ func (s Service) GenerateMediaUploadPresignedURLForSubject(ctx context.Context, 
 	return MediaUploadResponse{
 		UploadURL:   uploadURL,
 		StorageKey:  storageKey,
-		UploadToken: randomID,
+		UploadToken: rawToken,
 		ExpiresAt:   time.Now().Add(s.S3Storage.Config().URLTTL),
 	}, nil
 }
@@ -470,7 +490,7 @@ func (s Service) CompleteMediaUploadForSubject(ctx context.Context, subject, sto
 		}
 		publicURI = s.S3Storage.ResolvePublicURI(req.StorageKey)
 	} else {
-		publicURI = fmt.Sprintf("http://localhost:9000/media-bucket/%s", req.StorageKey)
+		return MediaMetadata{}, fmt.Errorf("%w: media storage is not configured", ErrInvalidInput)
 	}
 
 	ext := strings.ToLower(filepath.Ext(req.StorageKey))

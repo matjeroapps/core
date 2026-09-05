@@ -24,9 +24,10 @@ type S3Config struct {
 }
 
 type S3Storage struct {
-	cfg           S3Config
-	client        *s3.Client
-	presignClient *s3.PresignClient
+	cfg            S3Config
+	client         *s3.Client
+	presignClient  *s3.PresignClient
+	MockHeadObject func(ctx context.Context, storageKey string) (*s3.HeadObjectOutput, error)
 }
 
 func NewS3Storage(cfg S3Config) *S3Storage {

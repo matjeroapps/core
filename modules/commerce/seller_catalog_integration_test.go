@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/stretchr/testify/require"
 	"os"
 	"path/filepath"
 	"testing"
@@ -51,6 +53,13 @@ func setupSellerCatalogTestDB(t *testing.T) (*database.Pool, Service, Repository
 
 	repo := NewRepository(db.Pool)
 	service := NewService(repo)
+	service.S3Storage = &S3Storage{
+		cfg: S3Config{URLTTL: 15 * time.Minute},
+		MockHeadObject: func(ctx context.Context, storageKey string) (*s3.HeadObjectOutput, error) {
+			return &s3.HeadObjectOutput{}, nil
+		},
+	}
+
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
 
 	return db, service, repo, suffix
@@ -107,11 +116,18 @@ func TestFirstLiveProductAndOrderCoreIntegration(t *testing.T) {
 	}
 
 	// 5. Media
+	presignRes, err := service.GenerateMediaUploadPresignedURLForSubject(ctx, subject, store.ID, productID, MediaUploadRequest{
+		ContentType: "image/webp",
+		SizeBytes:   1024,
+	})
+	require.NoError(t, err)
+
 	mediaUpload, err := service.CompleteMediaUploadForSubject(ctx, subject, store.ID, productID, CompleteMediaUploadRequest{
-		StorageKey: fmt.Sprintf("products/%s/%s/img1.webp", seller.ID, productID),
-		AltText:    "Coffee Bag Front",
-		SortOrder:  1,
-		IsPrimary:  true,
+		StorageKey:  presignRes.StorageKey,
+		UploadToken: presignRes.UploadToken,
+		AltText:     "Coffee Bag Front",
+		SortOrder:   1,
+		IsPrimary:   true,
 	})
 	if err != nil {
 		t.Fatalf("CompleteMediaUploadForSubject: %v", err)

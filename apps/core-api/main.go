@@ -76,6 +76,27 @@ func run(ctx context.Context) error {
 	service.PlatformDomain = cfg.PlatformDomain
 	service.ReservedSubdomains = cfg.ReservedSubdomains
 
+	var s3Storage *commerce.S3Storage
+	if cfg.MediaS3Bucket != "" {
+		s3Storage = commerce.NewS3Storage(commerce.S3Config{
+			Endpoint:        cfg.MediaS3Endpoint,
+			Region:          cfg.MediaS3Region,
+			Bucket:          cfg.MediaS3Bucket,
+			AccessKeyID:     cfg.MediaS3AccessKeyID,
+			SecretAccessKey: cfg.MediaS3SecretAccessKey,
+			ForcePathStyle:  cfg.MediaS3ForcePathStyle,
+			PublicBaseURL:   cfg.MediaPublicBaseURL,
+			MaxBytes:        cfg.MediaUploadMaxBytes,
+			URLTTL:          cfg.MediaPresignTTL,
+		})
+		logger.Info("media S3 storage configured", "bucket", cfg.MediaS3Bucket)
+	} else if cfg.Environment == "production" {
+		return fmt.Errorf("MEDIA_S3_BUCKET is required in production")
+	} else {
+		logger.Info("media S3 storage not configured: presigned uploads disabled")
+	}
+	service.S3Storage = s3Storage
+
 	resolver := storefront.NewStoreResolver(repo)
 	deps := coreapi.Dependencies{
 		Commerce:  service,

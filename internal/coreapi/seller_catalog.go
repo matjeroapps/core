@@ -3,6 +3,7 @@ package coreapi
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -10,6 +11,157 @@ import (
 	"github.com/matjeroapps/core/modules/commerce"
 	"github.com/matjeroapps/core/packages/httpx"
 )
+
+type sellerProductListResponse struct {
+	Products []commerce.SellerProductListItem `json:"products"`
+	Total    int                              `json:"total"`
+	Limit    int                              `json:"limit"`
+	Offset   int                              `json:"offset"`
+}
+
+type sellerOrderListItem struct {
+	ID                     string     `json:"id"`
+	OrderNumber            string     `json:"order_number"`
+	Status                 string     `json:"status"`
+	Currency               string     `json:"currency"`
+	Total                  int64      `json:"total"`
+	ItemCount              int        `json:"item_count"`
+	RecipientName          string     `json:"recipient_name"`
+	ConfirmationDeadlineAt *time.Time `json:"confirmation_deadline_at,omitempty"`
+	CreatedAt              time.Time  `json:"created_at"`
+}
+
+type sellerOrderLineItem struct {
+	ID          string `json:"id"`
+	ProductName string `json:"product_name"`
+	SKUCode     string `json:"sku_code"`
+	Quantity    int    `json:"quantity"`
+	UnitPrice   int64  `json:"unit_price"`
+	TotalPrice  int64  `json:"total_price"`
+	Source      string `json:"source"`
+}
+
+type sellerOrderTimelineEntry struct {
+	ID        string    `json:"id"`
+	Type      string    `json:"type"`
+	Detail    string    `json:"detail"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type sellerOrderDetail struct {
+	ID                     string                     `json:"id"`
+	OrderNumber            string                     `json:"order_number"`
+	Status                 string                     `json:"status"`
+	Currency               string                     `json:"currency"`
+	Subtotal               int64                      `json:"subtotal"`
+	Total                  int64                      `json:"total"`
+	ItemCount              int                        `json:"item_count"`
+	ConfirmationDeadlineAt *time.Time                 `json:"confirmation_deadline_at,omitempty"`
+	ShippingAddress        map[string]any             `json:"shipping_address"`
+	ContactEmail           string                     `json:"contact_email"`
+	Items                  []sellerOrderLineItem      `json:"items"`
+	Timeline               []sellerOrderTimelineEntry `json:"timeline"`
+	AllowedNextActions     []string                   `json:"allowed_next_actions"`
+	CreatedAt              time.Time                  `json:"created_at"`
+	UpdatedAt              time.Time                  `json:"updated_at"`
+}
+
+type sellerOrderListResponse struct {
+	Orders []sellerOrderListItem `json:"orders"`
+	Total  int                   `json:"total"`
+	Limit  int                   `json:"limit"`
+	Offset int                   `json:"offset"`
+}
+
+func toSellerOrderListItem(o commerce.Order) sellerOrderListItem {
+	var recipient string
+	if o.Address != nil {
+		recipient = o.Address.RecipientName
+	}
+	var confirmDeadline *time.Time
+	if !o.ConfirmationDeadlineAt.IsZero() {
+		confirmDeadline = &o.ConfirmationDeadlineAt
+	}
+	return sellerOrderListItem{
+		ID:                     o.ID,
+		OrderNumber:            o.OrderNumber,
+		Status:                 o.Status,
+		Currency:               o.CurrencyCode,
+		Total:                  o.TotalMinor,
+		ItemCount:              len(o.Items),
+		RecipientName:          recipient,
+		ConfirmationDeadlineAt: confirmDeadline,
+		CreatedAt:              o.CreatedAt,
+	}
+}
+
+func toSellerOrderDetail(o commerce.Order) sellerOrderDetail {
+	items := make([]sellerOrderLineItem, len(o.Items))
+	for i, item := range o.Items {
+		source := "supplier"
+		if item.SourceSupplierID == nil {
+			source = "seller_owned"
+		}
+		items[i] = sellerOrderLineItem{
+			ID:          item.ID,
+			ProductName: item.ProductTitleSnapshot,
+			SKUCode:     item.SKUCodeSnapshot,
+			Quantity:    int(item.Quantity),
+			UnitPrice:   item.UnitPriceMinor,
+			TotalPrice:  item.LineTotalMinor,
+			Source:      source,
+		}
+	}
+
+	var addrMap map[string]any
+	if o.Address != nil {
+		addrMap = map[string]any{
+			"recipient_name": o.Address.RecipientName,
+			"phone":          o.Address.Phone,
+			"address_line_1": o.Address.AddressLine1,
+			"address_line_2": o.Address.AddressLine2,
+			"city":           o.Address.City,
+			"region":         o.Address.Region,
+			"postal_code":    o.Address.PostalCode,
+			"country_code":   o.Address.CountryCode,
+		}
+	}
+
+	var confirmDeadline *time.Time
+	if !o.ConfirmationDeadlineAt.IsZero() {
+		confirmDeadline = &o.ConfirmationDeadlineAt
+	}
+
+	var allowedActions []string
+	switch o.Status {
+	case "pending":
+		allowedActions = []string{"confirmed", "cancelled"}
+	case "confirmed":
+		allowedActions = []string{"processing", "cancelled"}
+	case "processing":
+		allowedActions = []string{"ready_for_shipping", "cancelled"}
+	default:
+		allowedActions = []string{}
+	}
+
+	return sellerOrderDetail{
+		ID:                     o.ID,
+		OrderNumber:            o.OrderNumber,
+		Status:                 o.Status,
+		Currency:               o.CurrencyCode,
+		Subtotal:               o.SubtotalMinor,
+		Total:                  o.TotalMinor,
+		ItemCount:              len(o.Items),
+		ConfirmationDeadlineAt: confirmDeadline,
+		ShippingAddress:        addrMap,
+		ContactEmail:           "",
+		Items:                  items,
+		Timeline:               []sellerOrderTimelineEntry{},
+		AllowedNextActions:     allowedActions,
+		CreatedAt:              o.CreatedAt,
+		UpdatedAt:              o.UpdatedAt,
+	}
+}
 
 type StoreProductCreateRequest = commerce.SellerProductDraft
 
@@ -59,14 +211,17 @@ func (s *server) handleListStoreProducts(w http.ResponseWriter, r *http.Request)
 	queryFilter := r.URL.Query().Get("query")
 	page := parsePage(r)
 
-	items, _, err := s.deps.Commerce.ListSellerProductsForSubject(r.Context(), subject, storeID, statusFilter, sourceFilter, queryFilter, page.Limit, page.Offset)
+	items, total, err := s.deps.Commerce.ListSellerProductsForSubject(r.Context(), subject, storeID, statusFilter, sourceFilter, queryFilter, page.Limit, page.Offset)
 	if err != nil {
 		writeDomainError(w, err)
 		return
 	}
 
-	httpx.WriteJSON(w, http.StatusOK, CollectionResponse[commerce.SellerProductListItem]{
-		Items: items,
+	httpx.WriteJSON(w, http.StatusOK, sellerProductListResponse{
+		Products: items,
+		Total:    total,
+		Limit:    page.Limit,
+		Offset:   page.Offset,
 	})
 }
 
@@ -503,14 +658,21 @@ func (s *server) handleListStoreOrders(w http.ResponseWriter, r *http.Request) {
 	statusFilter := r.URL.Query().Get("status")
 	page := parsePage(r)
 
-	orders, _, err := s.deps.Commerce.ListStoreOrdersForSubject(r.Context(), subject, storeID, statusFilter, page.Limit, page.Offset)
+	orders, total, err := s.deps.Commerce.ListStoreOrdersForSubject(r.Context(), subject, storeID, statusFilter, page.Limit, page.Offset)
 	if err != nil {
 		writeDomainError(w, err)
 		return
 	}
 
-	httpx.WriteJSON(w, http.StatusOK, CollectionResponse[commerce.Order]{
-		Items: orders,
+	items := make([]sellerOrderListItem, len(orders))
+	for i, o := range orders {
+		items[i] = toSellerOrderListItem(o)
+	}
+	httpx.WriteJSON(w, http.StatusOK, sellerOrderListResponse{
+		Orders: items,
+		Total:  total,
+		Limit:  page.Limit,
+		Offset: page.Offset,
 	})
 }
 
@@ -529,7 +691,7 @@ func (s *server) handleGetStoreOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpx.WriteJSON(w, http.StatusOK, order)
+	httpx.WriteJSON(w, http.StatusOK, toSellerOrderDetail(order))
 }
 
 func (s *server) handleTransitionStoreOrder(w http.ResponseWriter, r *http.Request) {
@@ -554,5 +716,5 @@ func (s *server) handleTransitionStoreOrder(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	httpx.WriteJSON(w, http.StatusOK, order)
+	httpx.WriteJSON(w, http.StatusOK, toSellerOrderDetail(order))
 }

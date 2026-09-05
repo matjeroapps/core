@@ -38,6 +38,19 @@ type Config struct {
 	// and is never hardcoded in application code.
 	ThemePreviewSecret string
 
+	// Media S3-compatible storage for seller product images.
+	// Set MEDIA_S3_BUCKET (plus credentials) to enable presigned uploads.
+	// In production the bucket name is required; startup refuses without it.
+	MediaS3Endpoint        string
+	MediaS3Region          string
+	MediaS3Bucket          string
+	MediaS3AccessKeyID     string
+	MediaS3SecretAccessKey string
+	MediaS3ForcePathStyle  bool
+	MediaPublicBaseURL     string
+	MediaUploadMaxBytes    int64
+	MediaPresignTTL        time.Duration
+
 	// Internal service credentials for the Core internal API (ADR-017). Each
 	// actor service presents its own bearer token; a caller with no configured
 	// token cannot authenticate. These are secrets and must never be committed,
@@ -113,6 +126,15 @@ func Load(serviceName string) (Config, error) {
 		return Config{}, fmt.Errorf("OUTBOX_POLL_INTERVAL must be greater than zero")
 	}
 
+	mediaUploadMaxBytes, err := int64Env("MEDIA_UPLOAD_MAX_BYTES", 10*1024*1024)
+	if err != nil {
+		return Config{}, err
+	}
+	mediaPresignTTL, err := durationEnv("MEDIA_PRESIGN_TTL", 15*time.Minute)
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
 		ServiceName:               serviceName,
 		Environment:               stringEnv("APP_ENV", "development"),
@@ -130,6 +152,15 @@ func Load(serviceName string) (Config, error) {
 		TrustedForwardedHost:      boolEnv("TRUSTED_FORWARDED_HOST", false),
 		ReservedSubdomains:        stringSliceEnv("RESERVED_SUBDOMAINS", []string{"www", "api", "admin", "app", "cdn", "mail", "seller", "supplier", "static", "assets"}),
 		ThemePreviewSecret:        stringEnv("THEME_PREVIEW_SECRET", ""),
+		MediaS3Endpoint:           stringEnv("MEDIA_S3_ENDPOINT", ""),
+		MediaS3Region:             stringEnv("MEDIA_S3_REGION", "us-east-1"),
+		MediaS3Bucket:             stringEnv("MEDIA_S3_BUCKET", ""),
+		MediaS3AccessKeyID:        stringEnv("MEDIA_S3_ACCESS_KEY_ID", ""),
+		MediaS3SecretAccessKey:    stringEnv("MEDIA_S3_SECRET_ACCESS_KEY", ""),
+		MediaS3ForcePathStyle:     boolEnv("MEDIA_S3_FORCE_PATH_STYLE", false),
+		MediaPublicBaseURL:        stringEnv("MEDIA_PUBLIC_BASE_URL", ""),
+		MediaUploadMaxBytes:       mediaUploadMaxBytes,
+		MediaPresignTTL:           mediaPresignTTL,
 
 		InternalSellerToken:   stringEnv("CORE_INTERNAL_SELLER_TOKEN", ""),
 		InternalAdminToken:    stringEnv("CORE_INTERNAL_ADMIN_TOKEN", ""),
@@ -202,6 +233,21 @@ func intEnv(key string, fallback int) (int, error) {
 		return 0, fmt.Errorf("%s must be greater than zero", key)
 	}
 
+	return parsed, nil
+}
+
+func int64Env(key string, fallback int64) (int64, error) {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be an integer: %w", key, err)
+	}
+	if parsed <= 0 {
+		return 0, fmt.Errorf("%s must be greater than zero", key)
+	}
 	return parsed, nil
 }
 
