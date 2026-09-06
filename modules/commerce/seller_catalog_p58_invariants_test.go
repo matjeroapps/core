@@ -556,3 +556,143 @@ func TestUploadIntentAuthorizationEnforcement(t *testing.T) {
 		}
 	})
 }
+
+// TestPresentationSaveRejectsInvalidSectionsBeforePersistence proves the
+// typed validator is authoritative at save time: an invalid section must
+// return a validation error and leave the persisted presentation untouched.
+func TestPresentationSaveRejectsInvalidSectionsBeforePersistence(t *testing.T) {
+	e, _ := setupP58TestDB(t)
+	ctx := context.Background()
+	ids := e.buildCatalog(t)
+
+	valid := SellerListingPresentation{
+		SellerListingID:  ids.listingID,
+		PurchaseBehavior: "add_to_cart",
+		Sections: []ProductPageSection{{
+			ID: "sec-ok", Type: "description", Enabled: true, SortOrder: 1,
+			Content: map[string]any{
+				"en": map[string]any{"heading": "About", "body": "Body"},
+			},
+		}},
+	}
+	if _, err := e.service.UpdateListingPresentationForSubject(ctx, ids.subject, ids.storeID, ids.listingID, valid); err != nil {
+		t.Fatalf("valid presentation save failed: %v", err)
+	}
+
+	cases := []struct {
+		name    string
+		section ProductPageSection
+	}{
+		{
+			name: "invalid image_text: cross-product media",
+			section: ProductPageSection{ID: "sec-bad", Type: "image_text", Enabled: true, SortOrder: 2,
+				Content: map[string]any{
+					"media_id": "media-of-another-product", "layout": "left",
+					"en": map[string]any{"heading": "H"},
+				}},
+		},
+		{
+			name: "invalid image_text: bad layout",
+			section: ProductPageSection{ID: "sec-bad", Type: "image_text", Enabled: true, SortOrder: 2,
+				Content: map[string]any{
+					"media_id": "whatever", "layout": "diagonal",
+					"en": map[string]any{"heading": "H"},
+				}},
+		},
+		{
+			name: "invalid final_cta: unknown action",
+			section: ProductPageSection{ID: "sec-bad", Type: "final_cta", Enabled: true, SortOrder: 3,
+				Content: map[string]any{
+					"action": "open_external", "en": map[string]any{"title": "T"},
+				}},
+		},
+		{
+			name: "invalid final_cta: url destination",
+			section: ProductPageSection{ID: "sec-bad", Type: "final_cta", Enabled: true, SortOrder: 3,
+				Content: map[string]any{
+					"action": "add_to_cart", "url": "https://external.example",
+					"en": map[string]any{"title": "T"},
+				}},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bad := SellerListingPresentation{
+				SellerListingID:  ids.listingID,
+				PurchaseBehavior: "add_to_cart",
+				Sections:         []ProductPageSection{tc.section},
+			}
+			if _, err := e.service.UpdateListingPresentationForSubject(ctx, ids.subject, ids.storeID, ids.listingID, bad); err == nil {
+				t.Fatalf("expected validation error for %s", tc.name)
+			}
+
+			// The persisted presentation must be unchanged.
+			persisted, err := e.repo.GetSellerListingPresentation(ctx, ids.listingID)
+			if err != nil {
+				t.Fatalf("GetSellerListingPresentation: %v", err)
+			}
+			if len(persisted.Sections) != 1 || persisted.Sections[0].ID != "sec-ok" {
+				t.Fatalf("invalid section was persisted: %+v", persisted.Sections)
+			}
+		})
+	}
+}
+
+// TestPublishRaceInvalidPresentation proves the final publish transaction
+// revalidates the persisted presentation: presentation invalidated between the
+// pre-check and the publish commit must prevent publication.
+func TestPublishRaceInvalidPresentation(t *testing.T) {
+	e, _ := setupP58TestDB(t)
+	ctx := context.Background()
+	ids := e.buildCatalog(t)
+
+	loc, err := e.service.CreateStoreFulfillmentLocationForSubject(ctx, ids.subject, ids.storeID, "loc-"+e.suffix, "Main", "warehouse", "active")
+	if err != nil {
+		t.Fatalf("CreateStoreFulfillmentLocationForSubject: %v", err)
+	}
+	if _, err := e.repo.CreateInventorySnapshot(ctx, loc.ID, ids.skuID, 10); err != nil {
+		t.Fatalf("CreateInventorySnapshot: %v", err)
+	}
+	if !e.readiness(t, ids).IsReady {
+		t.Fatalf("catalog should be ready before the race")
+	}
+
+	publishRaceHook = func() {
+		// Concurrent authoring lands an invalid final_cta directly in the
+		// database between the pre-check and the publish commit.
+		invalid := SellerListingPresentation{
+			SellerListingID:  ids.listingID,
+			PurchaseBehavior: "add_to_cart",
+			Sections: []ProductPageSection{{
+				ID: "sec-race", Type: "final_cta", Enabled: true, SortOrder: 9,
+				Content: map[string]any{
+					"action": "open_external", "en": map[string]any{"title": "T"},
+				},
+			}},
+		}
+		if _, err := e.repo.UpsertSellerListingPresentation(ctx, invalid); err != nil {
+			t.Errorf("race hook UpsertSellerListingPresentation: %v", err)
+		}
+	}
+	defer func() { publishRaceHook = nil }()
+
+	if err := e.service.PublishSellerProductForSubject(ctx, ids.subject, ids.storeID, ids.productID); err == nil {
+		t.Fatalf("expected publish to fail when presentation was invalidated before commit")
+	}
+
+	prod, err := e.repo.GetProductByID(ctx, ids.productID)
+	if err != nil {
+		t.Fatalf("GetProductByID: %v", err)
+	}
+	if prod.Status != "inactive" {
+		t.Fatalf("product must remain inactive, got %s", prod.Status)
+	}
+	listing, err := e.repo.GetSellerListingByStoreAndProduct(ctx, ids.storeID, ids.productID)
+	if err != nil {
+		t.Fatalf("GetSellerListingByStoreAndProduct: %v", err)
+	}
+	if listing.Status != "inactive" {
+		t.Fatalf("listing must remain inactive, got %s", listing.Status)
+	}
+}

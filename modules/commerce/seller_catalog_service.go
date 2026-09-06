@@ -715,29 +715,28 @@ func (s Service) UpdateListingPresentationForSubject(ctx context.Context, subjec
 		return SellerListingPresentation{}, ErrNotFound
 	}
 
-	// Validate sections
-	if len(pres.Sections) > 20 {
-		return SellerListingPresentation{}, fmt.Errorf("%w: maximum 20 sections allowed", ErrInvalidInput)
+	// The typed validator is authoritative at save time: nothing invalid is
+	// ever persisted through this API. Defense-in-depth (the script-tag
+	// regex sweep) still runs after the structural validation.
+	var reasons []string
+	reasons = append(reasons, validatePurchaseBehavior(pres.PurchaseBehavior)...)
+
+	media, err := s.repo.ListMediaByProductID(ctx, listing.ProductID)
+	if err != nil {
+		return SellerListingPresentation{}, err
+	}
+	mediaIDs := make(map[string]bool, len(media))
+	for _, m := range media {
+		mediaIDs[m.ID] = true
+	}
+	reasons = append(reasons, ValidateProductPageSections(pres.Sections, mediaIDs)...)
+	if len(reasons) > 0 {
+		return SellerListingPresentation{}, fmt.Errorf("%w: invalid presentation: %s", ErrInvalidInput, strings.Join(reasons, "; "))
 	}
 
-	allowedSectionTypes := map[string]bool{
-		"description":    true,
-		"highlights":     true,
-		"image_text":     true,
-		"specifications": true,
-		"faq":            true,
-		"final_cta":      true,
-	}
-
-	for _, sec := range pres.Sections {
-		if !allowedSectionTypes[sec.Type] {
-			return SellerListingPresentation{}, fmt.Errorf("%w: invalid section type %s", ErrInvalidInput, sec.Type)
-		}
-		// Security check: reject script tags or raw injected HTML
-		if jsonBytes, err := json.Marshal(sec.Content); err == nil {
-			if scriptTagRegex.Match(jsonBytes) {
-				return SellerListingPresentation{}, fmt.Errorf("%w: section content contains disallowed html/script tags", ErrInvalidInput)
-			}
+	if jsonBytes, err := json.Marshal(pres.Sections); err == nil {
+		if scriptTagRegex.Match(jsonBytes) {
+			return SellerListingPresentation{}, fmt.Errorf("%w: section content contains disallowed html/script tags", ErrInvalidInput)
 		}
 	}
 

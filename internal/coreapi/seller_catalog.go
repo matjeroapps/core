@@ -99,7 +99,9 @@ func toSellerOrderDetail(view commerce.SellerOrderView) sellerOrderDetail {
 	o := view.Order
 	items := make([]sellerOrderLineItem, len(o.Items))
 	for i, item := range o.Items {
-		source := "supplier"
+		// Source values match the rest of the Seller contract:
+		// seller_owned | supplier_backed.
+		source := "supplier_backed"
 		if item.SourceSupplierID == nil {
 			source = "seller_owned"
 		}

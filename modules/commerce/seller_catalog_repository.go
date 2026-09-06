@@ -1419,6 +1419,15 @@ func (r Repository) PublishSellerProductAtomically(ctx context.Context, storeID,
 			reasons = append(reasons, "Sellable inventory at an active store location is required")
 		}
 
+		// Presentation must still be valid at publish time: revalidate the
+		// persisted structured sections and purchase behavior inside this
+		// same transaction, before any activation.
+		presReasons, err := validatePresentationTx(ctx, tx, listingID, productID)
+		if err != nil {
+			return translatePGError(err, "revalidate presentation for publish")
+		}
+		reasons = append(reasons, presReasons...)
+
 		if len(reasons) > 0 {
 			return fmt.Errorf("%w: publish readiness failed: %s", ErrInvalidInput, strings.Join(reasons, "; "))
 		}
@@ -1437,6 +1446,57 @@ func (r Repository) PublishSellerProductAtomically(ctx context.Context, storeID,
 
 		return bumpStorefrontRevisions(ctx, tx, revisionStoreItself, storeID)
 	})
+}
+
+// validatePresentationTx revalidates the canonical listing's persisted
+// presentation inside the caller's transaction: purchase behavior and the
+// structured sections (against the product's current media set) must both be
+// valid before the listing may go active.
+func validatePresentationTx(ctx context.Context, tx pgx.Tx, listingID, productID string) ([]string, error) {
+	var rawPb sql.NullString
+	var rawSections []byte
+	err := tx.QueryRow(ctx, `
+		SELECT purchase_behavior, sections
+		FROM seller_listing_presentations
+		WHERE seller_listing_id = $1
+	`, listingID).Scan(&rawPb, &rawSections)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+
+	var reasons []string
+	pb := "inherit"
+	if rawPb.Valid && rawPb.String != "" {
+		pb = rawPb.String
+	}
+	reasons = append(reasons, validatePurchaseBehavior(pb)...)
+
+	mediaIDs := map[string]bool{}
+	rows, err := tx.Query(ctx, `SELECT id FROM media_metadata WHERE product_id = $1`, productID)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		mediaIDs[id] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if len(rawSections) > 0 {
+		var sections []ProductPageSection
+		if err := json.Unmarshal(rawSections, &sections); err != nil {
+			return append(reasons, "Persisted presentation sections are not valid JSON"), nil
+		}
+		reasons = append(reasons, ValidateProductPageSections(sections, mediaIDs)...)
+	}
+	return reasons, nil
 }
 
 func (r Repository) GetOrderContactEmail(ctx context.Context, checkoutSessionID string) (string, error) {

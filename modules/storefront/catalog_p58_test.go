@@ -6,9 +6,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"encoding/json"
 	"github.com/matjeroapps/core/internal/testdb"
+	"strings"
+
 	"github.com/matjeroapps/core/modules/commerce"
 	"github.com/matjeroapps/core/packages/database"
+	"github.com/matjeroapps/core/packages/i18n"
 	"github.com/matjeroapps/core/packages/money"
 )
 
@@ -154,12 +158,16 @@ func (e p58StorefrontEnv) media(t *testing.T, uri string, sortOrder int, isPrima
 }
 
 func (e p58StorefrontEnv) scope(t *testing.T) CatalogScope {
+	return e.scopeForLocale(t, "en")
+}
+
+func (e p58StorefrontEnv) scopeForLocale(t *testing.T, locale string) CatalogScope {
 	t.Helper()
 	resolved, err := e.resolver.Resolve(e.ctx, "p58-store.matjero.test")
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	scope, err := NewCatalogScope(resolved, "en")
+	scope, err := NewCatalogScope(resolved, i18n.Locale(locale))
 	if err != nil {
 		t.Fatalf("scope: %v", err)
 	}
@@ -261,4 +269,129 @@ func TestCanonicalListingContinuity(t *testing.T) {
 		t.Fatalf("sections must come from canonical listing B, got %q", heading)
 	}
 	_ = listingB
+}
+
+// TestPublicSectionProjectionAllSixTypes seeds all six structured section
+// types and asserts the exact locale-projected public contract for EN and AR,
+// including image_text resolution to public image data and the absence of any
+// internal handles.
+func TestPublicSectionProjectionAllSixTypes(t *testing.T) {
+	e := setupP58Storefront(t)
+	listing := e.listing(t, 15000, "add_to_cart", nil)
+
+	// Deterministic media row the image_text section can reference.
+	const mediaID = "11111111-1111-1111-1111-111111111111"
+	if _, err := e.db.Exec(e.ctx, "INSERT INTO media_metadata (id, product_id, media_type, uri, alt_text, sort_order, is_primary) VALUES ($1, $2, 'image/png', 'https://cdn.test/quality.png', 'Quality shot', 1, true)", mediaID, e.product.ID); err != nil {
+		t.Fatalf("insert media: %v", err)
+	}
+
+	presentation := commerce.SellerListingPresentation{
+		SellerListingID:  listing.ID,
+		SchemaVersion:    1,
+		PurchaseBehavior: "buy_now",
+		Sections: []commerce.ProductPageSection{
+			{
+				ID: "s1", Type: "description", Enabled: true, SortOrder: 10,
+				Content: map[string]any{
+					"en": map[string]any{"heading": "About", "body": "English body"},
+					"ar": map[string]any{"heading": "\u0646\u0628\u0630\u0629", "body": "\u0646\u0635 \u0639\u0631\u0628\u064a"},
+				},
+			},
+			{
+				ID: "s2", Type: "highlights", Enabled: true, SortOrder: 20,
+				Content: map[string]any{
+					"en": map[string]any{"title": "Highlights", "items": []any{"One", "Two"}},
+					"ar": map[string]any{"title": "\u0627\u0644\u0645\u0645\u064a\u0632\u0627\u062a", "items": []any{"\u0648\u0627\u062d\u062f"}},
+				},
+			},
+			{
+				ID: "s3", Type: "image_text", Enabled: true, SortOrder: 30,
+				Content: map[string]any{
+					"media_id": mediaID,
+					"layout":   "right",
+					"en":       map[string]any{"heading": "Quality", "body": "Crafted"},
+					"ar":       map[string]any{"heading": "\u0627\u0644\u062c\u0648\u062f\u0629", "body": "\u0628\u062c\u0648\u062f\u0629 \u0639\u0627\u0644\u064a\u0629"},
+				},
+			},
+			{
+				ID: "s4", Type: "specifications", Enabled: true, SortOrder: 40,
+				Content: map[string]any{
+					"en": map[string]any{"items": []any{map[string]any{"key": "Material", "value": "Cotton"}}},
+					"ar": map[string]any{"items": []any{map[string]any{"key": "\u0627\u0644\u062e\u0627\u0645\u0629", "value": "\u0642\u0637\u0646"}}},
+				},
+			},
+			{
+				ID: "s5", Type: "faq", Enabled: true, SortOrder: 50,
+				Content: map[string]any{
+					"en": map[string]any{"items": []any{map[string]any{"question": "Ships fast?", "answer": "Yes."}}},
+					"ar": map[string]any{"items": []any{map[string]any{"question": "\u0634\u062d\u0646 \u0633\u0631\u064a\u0639\u061f", "answer": "\u0646\u0639\u0645."}}},
+				},
+			},
+			{
+				ID: "s6", Type: "final_cta", Enabled: true, SortOrder: 60,
+				Content: map[string]any{
+					"action": "buy_now",
+					"en":     map[string]any{"title": "Ready to order?", "body": "Order now"},
+					"ar":     map[string]any{"title": "\u062c\u0627\u0647\u0632 \u0644\u0644\u0637\u0644\u0628\u061f", "body": "\u0627\u0637\u0644\u0628 \u0627\u0644\u0622\u0646"},
+				},
+			},
+			{
+				// Disabled sections must not reach the public payload.
+				ID: "s7", Type: "description", Enabled: false, SortOrder: 70,
+				Content: map[string]any{"en": map[string]any{"heading": "Hidden"}},
+			},
+		},
+	}
+	if _, err := e.commerce.UpsertSellerListingPresentation(e.ctx, presentation); err != nil {
+		t.Fatalf("upsert presentation: %v", err)
+	}
+
+	assertProjection := func(t *testing.T, locale string, heading, highlightsTitle, imageHeading, materialKey, question, ctaTitle string) {
+		t.Helper()
+		scope := e.scopeForLocale(t, locale)
+		detail, err := e.catalog.ProductBySlug(e.ctx, scope, "p58-product")
+		if err != nil {
+			t.Fatalf("ProductBySlug (%s): %v", locale, err)
+		}
+		raw, err := json.Marshal(detail.Sections)
+		if err != nil {
+			t.Fatalf("marshal sections: %v", err)
+		}
+		public := string(raw)
+
+		if len(detail.Sections) != 6 {
+			t.Fatalf("(%s) expected 6 public sections (disabled excluded), got %d: %s", locale, len(detail.Sections), public)
+		}
+		// Deterministic ordering by sort_order.
+		for i, want := range []string{"s1", "s2", "s3", "s4", "s5", "s6"} {
+			sec, _ := detail.Sections[i].(map[string]any)
+			if sec["id"] != want {
+				t.Fatalf("(%s) section %d = %v, want %s", locale, i, sec["id"], want)
+			}
+		}
+		for _, needle := range []string{heading, highlightsTitle, imageHeading, materialKey, question, ctaTitle} {
+			if !strings.Contains(public, needle) {
+				t.Fatalf("(%s) public sections missing %q: %s", locale, needle, public)
+			}
+		}
+		// image_text resolved to public image data.
+		for _, needle := range []string{"https://cdn.test/quality.png", "Quality shot", "\"layout\":\"right\""} {
+			if !strings.Contains(public, needle) {
+				t.Fatalf("(%s) image_text projection missing %q: %s", locale, needle, public)
+			}
+		}
+		// Internal handles and raw locale maps must never leak.
+		for _, leak := range []string{mediaID, "storage_key", "\"en\":{", "\"ar\":{"} {
+			if strings.Contains(public, leak) {
+				t.Fatalf("(%s) public sections leak internal data %q: %s", locale, leak, public)
+			}
+		}
+		// final_cta projects the approved global action.
+		if !strings.Contains(public, "\"action\":\"buy_now\"") {
+			t.Fatalf("(%s) final_cta action not projected: %s", locale, public)
+		}
+	}
+
+	assertProjection(t, "en", "About", "Highlights", "Quality", "Material", "Ships fast?", "Ready to order?")
+	assertProjection(t, "ar", "\u0646\u0628\u0630\u0629", "\u0627\u0644\u0645\u0645\u064a\u0632\u0627\u062a", "\u0627\u0644\u062c\u0648\u062f\u0629", "\u0627\u0644\u062e\u0627\u0645\u0629", "\u0634\u062d\u0646 \u0633\u0631\u064a\u0639\u061f", "\u062c\u0627\u0647\u0632 \u0644\u0644\u0637\u0644\u0628\u061f")
 }
