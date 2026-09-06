@@ -162,3 +162,82 @@ func TestConfigValidatesPollIntervalPositive(t *testing.T) {
 		t.Fatal("expected error for non-positive poll interval, got nil")
 	}
 }
+
+func TestProductionConfigValidation(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+
+	// Missing production database URL triggers fail-fast error
+	_, err := config.Load("test-service")
+	if err == nil {
+		t.Fatal("expected error for production config with default localhost database, got nil")
+	}
+
+	setValidBaseProdEnv := func() {
+		t.Setenv("DATABASE_URL", "postgres://user:pass@prod-db.internal:5432/commerce?sslmode=require")
+		t.Setenv("RABBITMQ_URL", "amqp://user:pass@prod-mq.internal:5672/")
+		t.Setenv("ZITADEL_ISSUER", "https://auth.matjero.com")
+		t.Setenv("CORE_INTERNAL_SELLER_TOKEN", "secret-seller")
+		t.Setenv("CORE_INTERNAL_ADMIN_TOKEN", "secret-admin")
+		t.Setenv("CORE_INTERNAL_SUPPLIER_TOKEN", "secret-supplier")
+		t.Setenv("THEME_PREVIEW_SECRET", "secret-theme-preview")
+	}
+
+	setValidS3Env := func() {
+		t.Setenv("MEDIA_S3_BUCKET", "prod-media")
+		t.Setenv("MEDIA_S3_ACCESS_KEY_ID", "key")
+		t.Setenv("MEDIA_S3_SECRET_ACCESS_KEY", "secret")
+		t.Setenv("MEDIA_PUBLIC_BASE_URL", "https://cdn.matjero.com")
+	}
+
+	// 1. Missing bucket -> FAIL
+	setValidBaseProdEnv()
+	if _, err := config.Load("test-service"); err == nil {
+		t.Fatal("expected error for missing MEDIA_S3_BUCKET in production, got nil")
+	}
+
+	// 2. Missing access key -> FAIL
+	setValidBaseProdEnv()
+	t.Setenv("MEDIA_S3_BUCKET", "prod-media")
+	if _, err := config.Load("test-service"); err == nil {
+		t.Fatal("expected error for missing MEDIA_S3_ACCESS_KEY_ID in production, got nil")
+	}
+
+	// 3. Missing secret -> FAIL
+	setValidBaseProdEnv()
+	t.Setenv("MEDIA_S3_BUCKET", "prod-media")
+	t.Setenv("MEDIA_S3_ACCESS_KEY_ID", "key")
+	if _, err := config.Load("test-service"); err == nil {
+		t.Fatal("expected error for missing MEDIA_S3_SECRET_ACCESS_KEY in production, got nil")
+	}
+
+	// 4. Missing public base URL -> FAIL
+	setValidBaseProdEnv()
+	t.Setenv("MEDIA_S3_BUCKET", "prod-media")
+	t.Setenv("MEDIA_S3_ACCESS_KEY_ID", "key")
+	t.Setenv("MEDIA_S3_SECRET_ACCESS_KEY", "secret")
+	if _, err := config.Load("test-service"); err == nil {
+		t.Fatal("expected error for missing MEDIA_PUBLIC_BASE_URL in production, got nil")
+	}
+
+	// 5. Valid production S3 config -> PASS
+	setValidBaseProdEnv()
+	setValidS3Env()
+	cfg, err := config.Load("test-service")
+	if err != nil {
+		t.Fatalf("expected valid production config load, got: %v", err)
+	}
+	if cfg.Environment != "production" {
+		t.Errorf("expected Environment 'production', got %s", cfg.Environment)
+	}
+}
+
+func TestDevelopmentConfigWithoutS3(t *testing.T) {
+	t.Setenv("APP_ENV", "development")
+	cfg, err := config.Load("test-service")
+	if err != nil {
+		t.Fatalf("expected clean development config load without S3, got: %v", err)
+	}
+	if cfg.MediaS3Bucket != "" {
+		t.Errorf("expected empty default MediaS3Bucket in dev, got %q", cfg.MediaS3Bucket)
+	}
+}
