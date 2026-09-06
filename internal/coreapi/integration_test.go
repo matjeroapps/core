@@ -77,6 +77,10 @@ func setupIntegration(t *testing.T) integrationEnv {
 		"000009_supplier_retail_capability",
 		"000010_customer_cart_domain",
 		"000011_checkout_sessions",
+		"000013_outbox_publish_claims",
+		"000014_seller_catalog_authoring",
+		"000015_media_upload_intent",
+		"000016_catalog_invariants",
 		"000012_order_aggregate_schema",
 	} {
 		applyMigrationFile(t, db, filepath.Join("..", "..", "migrations", name+".up.sql"))

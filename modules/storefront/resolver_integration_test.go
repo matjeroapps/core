@@ -34,6 +34,7 @@ func TestStoreResolverIntegration(t *testing.T) {
 	ctx := context.Background()
 	db := testdb.Open(t, dsn)
 	for _, m := range []string{
+		"000001_event_delivery_foundation",
 		"000002_market_reference_data",
 		"000003_commerce_domain_schema",
 		"000004_admin_supplier_seller_platforms",
@@ -43,6 +44,11 @@ func TestStoreResolverIntegration(t *testing.T) {
 		"000009_supplier_retail_capability",
 		"000010_customer_cart_domain",
 		"000011_checkout_sessions",
+		"000012_order_aggregate_schema",
+		"000013_outbox_publish_claims",
+		"000014_seller_catalog_authoring",
+		"000015_media_upload_intent",
+		"000016_catalog_invariants",
 	} {
 		applySQLFileStorefront(t, db, filepath.Join("..", "..", "migrations", m+".up.sql"))
 	}

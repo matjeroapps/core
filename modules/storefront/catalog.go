@@ -220,14 +220,16 @@ type PublicVariant struct {
 
 // ProductDetail is the product page payload.
 type ProductDetail struct {
-	Slug         string          `json:"slug"`
-	Name         string          `json:"name"`
-	Description  string          `json:"description,omitempty"`
-	Price        money.Money     `json:"price"`
-	Availability string          `json:"availability"`
-	Images       []ProductImage  `json:"images"`
-	Categories   []CategoryRef   `json:"categories"`
-	Variants     []PublicVariant `json:"variants"`
+	Slug             string          `json:"slug"`
+	Name             string          `json:"name"`
+	Description      string          `json:"description,omitempty"`
+	Price            money.Money     `json:"price"`
+	Availability     string          `json:"availability"`
+	Images           []ProductImage  `json:"images"`
+	Categories       []CategoryRef   `json:"categories"`
+	Variants         []PublicVariant `json:"variants"`
+	PurchaseBehavior string          `json:"purchase_behavior"`
+	Sections         []any           `json:"sections"`
 }
 
 // ProductQuery is the domain-neutral browse/search request. It intentionally

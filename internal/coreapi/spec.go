@@ -607,6 +607,224 @@ func internalRoutes() []openapi.RouteSpec {
 			Responses:   createResponses("Created Store-owned location", commerce.FulfillmentLocation{}),
 		},
 
+		// --- P5.8 Seller catalog operations ---
+		{
+			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/products", OperationID: "internalListStoreProducts",
+			Summary: "List a store's products (seller)", Tags: []string{"Seller Catalog"},
+			Parameters: append([]openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				openapi.StringParam("status", "Listing status filter", false),
+				openapi.StringParam("source", "Source filter (seller_owned, supplier_backed)", false),
+				openapi.StringParam("query", "Slug or seller code search", false),
+			}, pageParams...),
+			Responses: readResponses("Product collection", sellerProductListResponse{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/products", OperationID: "internalCreateStoreProduct",
+			Summary: "Create a seller-owned product with translations, categories and listing", Tags: []string{"Seller Catalog"},
+			Parameters:  []openapi.ParameterSpec{pathParam("storeID", "Store identifier")},
+			RequestBody: StoreProductCreateRequest{},
+			Responses:   createResponses("Created product detail", sellerProductDetailResponse{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/products/{productID}", OperationID: "internalGetStoreProduct",
+			Summary: "Get seller product detail", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("productID", "Product identifier"),
+			},
+			Responses: readResponses("Product detail", sellerProductDetailResponse{}),
+		},
+		{
+			Method: http.MethodPut, Path: "/internal/v1/stores/{storeID}/products/{productID}", OperationID: "internalUpdateStoreProduct",
+			Summary: "Update product slug, translations and categories", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("productID", "Product identifier"),
+			},
+			RequestBody: StoreProductUpdateRequest{},
+			Responses:   writeResponses("Updated product detail", sellerProductDetailResponse{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/products/{productID}/variants", OperationID: "internalCreateProductVariant",
+			Summary: "Create a product variant", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("productID", "Product identifier"),
+			},
+			RequestBody: VariantCreateRequest{},
+			Responses:   createResponses("Created variant", commerce.Variant{}),
+		},
+		{
+			Method: http.MethodPut, Path: "/internal/v1/stores/{storeID}/products/{productID}/variants/{variantID}", OperationID: "internalUpdateProductVariant",
+			Summary: "Update a product variant", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("productID", "Product identifier"),
+				pathParam("variantID", "Variant identifier"),
+			},
+			RequestBody: VariantCreateRequest{},
+			Responses:   writeResponses("Updated variant", commerce.Variant{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/products/{productID}/variants/{variantID}/skus", OperationID: "internalCreateVariantSKU",
+			Summary: "Create a SKU for a variant", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("productID", "Product identifier"),
+				pathParam("variantID", "Variant identifier"),
+			},
+			RequestBody: SKUCreateRequest{},
+			Responses:   createResponses("Created SKU", commerce.SKU{}),
+		},
+		{
+			Method: http.MethodPut, Path: "/internal/v1/stores/{storeID}/products/{productID}/variants/{variantID}/skus/{skuID}", OperationID: "internalUpdateVariantSKU",
+			Summary: "Update a SKU", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("productID", "Product identifier"),
+				pathParam("variantID", "Variant identifier"),
+				pathParam("skuID", "SKU identifier"),
+			},
+			RequestBody: SKUCreateRequest{},
+			Responses:   writeResponses("Updated SKU", commerce.SKU{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/products/{productID}/media/uploads", OperationID: "internalPresignMediaUpload",
+			Summary: "Create a scoped media upload intent and presigned upload URL", Tags: []string{"Seller Media"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("productID", "Product identifier"),
+			},
+			RequestBody: commerce.MediaUploadRequest{},
+			Responses:   writeResponses("Presigned upload", commerce.MediaUploadResponse{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/products/{productID}/media", OperationID: "internalCompleteMediaUpload",
+			Summary: "Complete a media upload: verifies the upload intent token, expiry, scope and the stored object", Tags: []string{"Seller Media"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("productID", "Product identifier"),
+			},
+			RequestBody: commerce.CompleteMediaUploadRequest{},
+			Responses:   createResponses("Created media metadata", commerce.MediaMetadata{}),
+		},
+		{
+			Method: http.MethodPut, Path: "/internal/v1/stores/{storeID}/products/{productID}/media/{mediaID}", OperationID: "internalUpdateProductMedia",
+			Summary: "Update media alt text, sort order or primary flag", Tags: []string{"Seller Media"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("productID", "Product identifier"),
+				pathParam("mediaID", "Media identifier"),
+			},
+			RequestBody: MediaMetadataUpdateRequest{},
+			Responses:   writeResponses("Updated media metadata", commerce.MediaMetadata{}),
+		},
+		{
+			Method: http.MethodDelete, Path: "/internal/v1/stores/{storeID}/products/{productID}/media/{mediaID}", OperationID: "internalDeleteProductMedia",
+			Summary: "Delete product media", Tags: []string{"Seller Media"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("productID", "Product identifier"),
+				pathParam("mediaID", "Media identifier"),
+			},
+			Responses: writeResponses("Deleted media", StatusResponse{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/locations", OperationID: "internalListStoreLocations",
+			Summary: "List a store's own fulfillment locations", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{pathParam("storeID", "Store identifier")},
+			Responses:  readResponses("Location collection", sellerLocationListResponse{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/inventory", OperationID: "internalListStoreInventory",
+			Summary: "List a store's inventory snapshots", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{pathParam("storeID", "Store identifier")},
+			Responses:  readResponses("Inventory collection", sellerInventoryListResponse{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/inventory/snapshots", OperationID: "internalCreateStoreInventorySnapshot",
+			Summary: "Create an inventory snapshot", Tags: []string{"Seller Catalog"},
+			Parameters:  []openapi.ParameterSpec{pathParam("storeID", "Store identifier")},
+			RequestBody: StoreInventorySnapshotCreateRequest{},
+			Responses:   createResponses("Created inventory snapshot", commerce.InventorySnapshot{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/inventory/{snapshotID}/adjustments", OperationID: "internalAdjustStoreInventory",
+			Summary: "Adjust an inventory snapshot quantity", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("snapshotID", "Inventory snapshot identifier"),
+			},
+			RequestBody: StoreInventoryAdjustmentRequest{},
+			Responses:   writeResponses("Adjusted inventory", commerce.InventorySnapshot{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/listings/{listingID}/presentation", OperationID: "internalGetListingPresentation",
+			Summary: "Get the structured product page presentation of a listing", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("listingID", "Listing identifier"),
+			},
+			Responses: readResponses("Listing presentation", commerce.SellerListingPresentation{}),
+		},
+		{
+			Method: http.MethodPut, Path: "/internal/v1/stores/{storeID}/listings/{listingID}/presentation", OperationID: "internalUpdateListingPresentation",
+			Summary: "Update the structured product page presentation of a listing", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("listingID", "Listing identifier"),
+			},
+			RequestBody: commerce.SellerListingPresentation{},
+			Responses:   writeResponses("Updated listing presentation", commerce.SellerListingPresentation{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/products/{productID}/publish", OperationID: "internalPublishStoreProduct",
+			Summary: "Publish a product: final readiness is revalidated inside the publish transaction", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("productID", "Product identifier"),
+			},
+			Responses: writeResponses("Published", StatusResponse{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/products/{productID}/unpublish", OperationID: "internalUnpublishStoreProduct",
+			Summary: "Unpublish a product", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("productID", "Product identifier"),
+			},
+			Responses: writeResponses("Unpublished", StatusResponse{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/orders", OperationID: "internalListStoreOrders",
+			Summary: "List a store's orders (seller)", Tags: []string{"Seller Orders"},
+			Parameters: append([]openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				openapi.StringParam("status", "Order status filter", false),
+			}, pageParams...),
+			Responses: readResponses("Order collection", sellerOrderListResponse{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/orders/{orderID}", OperationID: "internalGetStoreOrder",
+			Summary: "Get a seller-safe order detail with contact email and timeline", Tags: []string{"Seller Orders"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("orderID", "Order identifier"),
+			},
+			Responses: readResponses("Order detail", sellerOrderDetail{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/orders/{orderID}/transition", OperationID: "internalTransitionStoreOrder",
+			Summary: "Transition an order (confirmed, processing, ready_for_shipping, cancelled)", Tags: []string{"Seller Orders"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("orderID", "Order identifier"),
+			},
+			RequestBody: OrderTransitionRequest{},
+			Responses:   writeResponses("Transitioned order", sellerOrderDetail{}),
+		},
+
 		// --- Seller listings ---
 		{
 			Method: http.MethodGet, Path: "/internal/v1/listings", OperationID: "internalListSellerListings",

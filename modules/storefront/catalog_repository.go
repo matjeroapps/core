@@ -2,9 +2,11 @@ package storefront
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -53,6 +55,7 @@ func readError(err error, action string) error {
 // $1 store id, $2 market code, $3 locale, $4 fallback locale.
 const eligibleListings = `
 	SELECT
+		l.listing_id,
 		l.product_id,
 		l.product_slug,
 		l.product_created_at,
@@ -357,7 +360,7 @@ func (r CatalogRepository) Products(ctx context.Context, scope CatalogScope, que
 			SELECT uri, alt_text
 			FROM media_metadata
 			WHERE product_id = l.product_id
-			ORDER BY sort_order ASC, id ASC
+			ORDER BY is_primary DESC, sort_order ASC, created_at ASC, id ASC
 			LIMIT 1
 		) img ON true
 		LEFT JOIN LATERAL (
@@ -456,15 +459,16 @@ func (r CatalogRepository) ProductBySlug(ctx context.Context, scope CatalogScope
 	var (
 		detail    ProductDetail
 		productID string
+		listingID string
 		inStock   bool
 	)
 	err := r.pool.QueryRow(ctx, `WITH listing AS (`+eligibleListings+`
 		)
-		SELECT l.product_id, l.product_slug, l.name, l.description, l.price_minor, l.price_currency, l.in_stock
+		SELECT l.listing_id, l.product_id, l.product_slug, l.name, l.description, l.price_minor, l.price_currency, l.in_stock
 		FROM listing l
 		WHERE l.product_slug = $5
 	`, args...).Scan(
-		&productID, &detail.Slug, &detail.Name, &detail.Description,
+		&listingID, &productID, &detail.Slug, &detail.Name, &detail.Description,
 		&detail.Price.AmountMinor, &detail.Price.Currency, &inStock,
 	)
 	if err != nil {
@@ -481,7 +485,172 @@ func (r CatalogRepository) ProductBySlug(ctx context.Context, scope CatalogScope
 	if detail.Variants, err = r.productVariants(ctx, scope, productID); err != nil {
 		return ProductDetail{}, err
 	}
+
+	// Presentation and purchase behavior are fetched by the canonical listing
+	// id selected above, never by an independent (store_id, product_id) query
+	// that could resolve to a different, superseded listing.
+	var (
+		rawPb   sql.NullString
+		rawSecs []byte
+	)
+	if err := r.pool.QueryRow(ctx, `
+		SELECT p.purchase_behavior, p.sections
+		FROM seller_listing_presentations p
+		WHERE p.seller_listing_id = $1
+	`, listingID).Scan(&rawPb, &rawSecs); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return ProductDetail{}, readError(err, "get public product presentation")
+	}
+
+	pb := "add_to_cart"
+	if rawPb.Valid && rawPb.String != "" && rawPb.String != "inherit" {
+		pb = rawPb.String
+	} else {
+		var storeSettingsJSON []byte
+		_ = r.pool.QueryRow(ctx, `SELECT settings FROM store_settings WHERE store_id = $1`, scope.storeID).Scan(&storeSettingsJSON)
+		if len(storeSettingsJSON) > 0 {
+			var st map[string]any
+			_ = json.Unmarshal(storeSettingsJSON, &st)
+			if b, ok := st["purchase_behavior"].(string); ok && b == "buy_now" {
+				pb = "buy_now"
+			}
+		}
+	}
+	detail.PurchaseBehavior = pb
+
+	detail.Sections = projectPublicSections(ctx, r.pool, scope, productID, rawSecs)
+
 	return detail, nil
+}
+
+// projectPublicSections projects the canonical listing's structured sections
+// into the public, locale-resolved contract: disabled sections are excluded,
+// the requested locale wins (falling back to the storefront's fallback locale,
+// then any available), image_text references are resolved to public image
+// data, and ordering is deterministic (sort_order ASC, then section id).
+// Internal handles — media IDs, storage keys, section-internal bookkeeping —
+// never cross this boundary.
+func projectPublicSections(ctx context.Context, pool *pgxpool.Pool, scope CatalogScope, productID string, rawSecs []byte) []any {
+	sections := make([]any, 0)
+	if len(rawSecs) == 0 {
+		return sections
+	}
+
+	var secList []struct {
+		ID        string         `json:"id"`
+		Type      string         `json:"type"`
+		Enabled   bool           `json:"enabled"`
+		SortOrder int            `json:"sort_order"`
+		Content   map[string]any `json:"content"`
+	}
+	if err := json.Unmarshal(rawSecs, &secList); err != nil {
+		return sections
+	}
+
+	// Public media for image_text resolution: id -> (uri, alt text).
+	type publicMedia struct{ uri, alt string }
+	mediaByID := map[string]publicMedia{}
+	mediaRows, err := pool.Query(ctx, `
+		SELECT id, uri, COALESCE(alt_text, '')
+		FROM media_metadata
+		WHERE product_id = $1
+	`, productID)
+	if err == nil {
+		for mediaRows.Next() {
+			var id, uri, alt string
+			if err := mediaRows.Scan(&id, &uri, &alt); err == nil {
+				mediaByID[id] = publicMedia{uri: uri, alt: alt}
+			}
+		}
+		mediaRows.Close()
+	}
+
+	locStr := string(scope.locale)
+	fallbackLocStr := string(fallbackLocale(scope.locale))
+	localized := func(content map[string]any) map[string]any {
+		if content == nil {
+			return map[string]any{}
+		}
+		if loc, ok := content[locStr].(map[string]any); ok {
+			return loc
+		}
+		if fb, ok := content[fallbackLocStr].(map[string]any); ok {
+			return fb
+		}
+		for _, key := range []string{"en", "ar"} {
+			if anyLoc, ok := content[key].(map[string]any); ok {
+				return anyLoc
+			}
+		}
+		return map[string]any{}
+	}
+
+	for _, s := range secList {
+		if !s.Enabled {
+			continue
+		}
+		secData := map[string]any{
+			"id":         s.ID,
+			"type":       s.Type,
+			"sort_order": s.SortOrder,
+		}
+		switch s.Type {
+		case "image_text":
+			content := map[string]any{}
+			if layout, ok := s.Content["layout"].(string); ok && (layout == "left" || layout == "right") {
+				content["layout"] = layout
+			} else {
+				content["layout"] = "left"
+			}
+			loc := localized(s.Content)
+			if heading, ok := loc["heading"]; ok {
+				content["heading"] = heading
+			}
+			if body, ok := loc["body"]; ok {
+				content["body"] = body
+			}
+			if m, ok := s.Content["media_id"].(string); ok {
+				if pm, found := mediaByID[m]; found {
+					image := map[string]any{"uri": pm.uri}
+					if pm.alt != "" {
+						image["alt_text"] = pm.alt
+					}
+					content["image"] = image
+				}
+			}
+			secData["content"] = content
+		case "final_cta":
+			content := localized(s.Content)
+			out := map[string]any{}
+			if title, ok := content["title"]; ok {
+				out["title"] = title
+			}
+			if body, ok := content["body"]; ok {
+				out["body"] = body
+			}
+			// The purchase action is a global, approved-values-only field.
+			if action, ok := s.Content["action"].(string); ok && (action == "add_to_cart" || action == "buy_now") {
+				out["action"] = action
+			}
+			secData["content"] = out
+		default:
+			// description, highlights, specifications, faq are fully localized.
+			secData["content"] = localized(s.Content)
+		}
+		sections = append(sections, secData)
+	}
+
+	sort.SliceStable(sections, func(i, j int) bool {
+		si := sections[i].(map[string]any)
+		sj := sections[j].(map[string]any)
+		soi, _ := si["sort_order"].(int)
+		soj, _ := sj["sort_order"].(int)
+		if soi != soj {
+			return soi < soj
+		}
+		return si["id"].(string) < sj["id"].(string)
+	})
+
+	return sections
 }
 
 func (r CatalogRepository) productImages(ctx context.Context, productID string) ([]ProductImage, error) {
@@ -489,7 +658,7 @@ func (r CatalogRepository) productImages(ctx context.Context, productID string) 
 		SELECT uri, alt_text
 		FROM media_metadata
 		WHERE product_id = $1
-		ORDER BY sort_order ASC, id ASC
+		ORDER BY is_primary DESC, sort_order ASC, created_at ASC, id ASC
 	`, productID)
 	if err != nil {
 		return nil, readError(err, "list public product media")

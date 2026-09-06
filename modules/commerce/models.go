@@ -259,15 +259,17 @@ type AttributeValueTranslation struct {
 }
 
 type MediaMetadata struct {
-	ID        string         `json:"id"`
-	ProductID string         `json:"product_id"`
-	MediaType string         `json:"media_type"`
-	URI       string         `json:"uri"`
-	AltText   string         `json:"alt_text"`
-	SortOrder int            `json:"sort_order"`
-	Metadata  map[string]any `json:"metadata"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	ID         string         `json:"id"`
+	ProductID  string         `json:"product_id"`
+	MediaType  string         `json:"media_type"`
+	URI        string         `json:"uri"`
+	AltText    string         `json:"alt_text"`
+	SortOrder  int            `json:"sort_order"`
+	Metadata   map[string]any `json:"metadata"`
+	StorageKey *string        `json:"storage_key,omitempty"`
+	IsPrimary  bool           `json:"is_primary"`
+	CreatedAt  time.Time      `json:"created_at"`
+	UpdatedAt  time.Time      `json:"updated_at"`
 }
 
 type SupplierProduct struct {
@@ -363,4 +365,138 @@ type InventoryReservation struct {
 	ExpiresAt           *time.Time `json:"expires_at,omitempty"`
 	CreatedAt           time.Time  `json:"created_at"`
 	UpdatedAt           time.Time  `json:"updated_at"`
+}
+
+type SellerProduct struct {
+	ID         string    `json:"id"`
+	SellerID   string    `json:"seller_id"`
+	ProductID  string    `json:"product_id"`
+	SellerCode *string   `json:"seller_code,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+type SellerListingPresentation struct {
+	SellerListingID  string               `json:"seller_listing_id"`
+	SchemaVersion    int                  `json:"schema_version"`
+	PurchaseBehavior string               `json:"purchase_behavior"` // inherit, add_to_cart, buy_now
+	Sections         []ProductPageSection `json:"sections"`
+	CreatedAt        time.Time            `json:"created_at"`
+	UpdatedAt        time.Time            `json:"updated_at"`
+}
+
+type ProductPageSection struct {
+	ID        string         `json:"id"`
+	Type      string         `json:"type"` // description, highlights, image_text, specifications, faq, final_cta
+	Enabled   bool           `json:"enabled"`
+	SortOrder int            `json:"sort_order"`
+	Content   map[string]any `json:"content"`
+}
+
+type SellerProductDetail struct {
+	Product          Product                    `json:"product"`
+	Source           string                     `json:"source"` // seller_owned, supplier_backed
+	Translations     []ProductTranslation       `json:"translations"`
+	Categories       []Category                 `json:"categories"`
+	Variants         []Variant                  `json:"variants"`
+	SKUs             []SKU                      `json:"skus"`
+	Media            []MediaMetadata            `json:"media"`
+	Listing          SellerListing              `json:"listing"`
+	Price            *SellerListingPrice        `json:"price,omitempty"`
+	InventorySummary []SellerInventorySummary   `json:"inventory_summary"`
+	Presentation     *SellerListingPresentation `json:"presentation,omitempty"`
+	PurchaseBehavior string                     `json:"purchase_behavior"` // effective purchase behavior: add_to_cart, buy_now
+	PublishReadiness PublishReadiness           `json:"publish_readiness"`
+}
+
+type SellerInventorySummary struct {
+	ID                    string `json:"id"`
+	FulfillmentLocationID string `json:"fulfillment_location_id"`
+	LocationName          string `json:"location_name"`
+	SKUID                 string `json:"sku_id"`
+	OnHandQty             int64  `json:"on_hand_qty"`
+	ReservedQty           int64  `json:"reserved_qty"`
+	AvailableQty          int64  `json:"available_qty"`
+	Version               int64  `json:"version"`
+}
+
+// SellerInventoryAggregate is the product-level inventory projection exposed
+// at the internal Seller API boundary: totals plus one entry per location.
+type SellerInventoryAggregate struct {
+	TotalOnHand    int64                     `json:"total_on_hand"`
+	TotalReserved  int64                     `json:"total_reserved"`
+	TotalAvailable int64                     `json:"total_available"`
+	Locations      []SellerInventoryLocation `json:"locations"`
+}
+
+type SellerInventoryLocation struct {
+	LocationID   string `json:"location_id"`
+	LocationName string `json:"location_name"`
+	SKUID        string `json:"sku_id"`
+	OnHandQty    int64  `json:"on_hand_qty"`
+	ReservedQty  int64  `json:"reserved_qty"`
+	AvailableQty int64  `json:"available_qty"`
+}
+
+// SellerProductListView is the product list projection exposed at the
+// internal Seller API boundary, carrying everything a Seller dashboard row
+// needs without re-fetching the full product detail.
+type SellerProductListView struct {
+	Product          Product                  `json:"product"`
+	Source           string                   `json:"source"`
+	Name             string                   `json:"name"`
+	ListingID        string                   `json:"listing_id"`
+	ListingStatus    string                   `json:"listing_status"`
+	CurrentPrice     *SellerListingPrice      `json:"current_price,omitempty"`
+	InventorySummary SellerInventoryAggregate `json:"inventory_summary"`
+	PublishReadiness PublishReadiness         `json:"publish_readiness"`
+}
+
+type PublishReadiness struct {
+	IsReady bool     `json:"is_ready"`
+	Reasons []string `json:"reasons,omitempty"`
+}
+
+type MediaUploadRequest struct {
+	Filename    string `json:"filename"`
+	ContentType string `json:"content_type"`
+	SizeBytes   int64  `json:"size_bytes"`
+}
+
+type MediaUploadResponse struct {
+	UploadURL   string            `json:"upload_url"`
+	StorageKey  string            `json:"storage_key"`
+	UploadToken string            `json:"upload_token"`
+	ExpiresAt   time.Time         `json:"expires_at"`
+	Headers     map[string]string `json:"headers,omitempty"`
+}
+
+type CompleteMediaUploadRequest struct {
+	StorageKey  string `json:"storage_key"`
+	UploadToken string `json:"upload_token"`
+	AltText     string `json:"alt_text"`
+	SortOrder   int    `json:"sort_order"`
+	IsPrimary   bool   `json:"is_primary"`
+}
+
+type SellerProductDraft struct {
+	Slug         string               `json:"slug"`
+	Translations []ProductTranslation `json:"translations"`
+	CategoryIDs  []string             `json:"category_ids"`
+}
+
+// MediaUploadIntent tracks a server-side scoped presign request.
+// TokenDigest and seller/store fields are never serialized.
+type MediaUploadIntent struct {
+	ID          string     `json:"id"`
+	SellerID    string     `json:"-"`
+	StoreID     string     `json:"-"`
+	ProductID   string     `json:"product_id"`
+	StorageKey  string     `json:"storage_key"`
+	ContentType string     `json:"content_type"`
+	MaxBytes    int64      `json:"max_bytes"`
+	TokenDigest string     `json:"-"`
+	ExpiresAt   time.Time  `json:"expires_at"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
 }
