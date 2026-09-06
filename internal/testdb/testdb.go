@@ -34,17 +34,27 @@ func Open(t testing.TB, dsn string) *database.Pool {
 	schema := schemaName(t.Name())
 	quotedSchema := pgx.Identifier{schema}.Sanitize()
 
-	// Acquire a session-level advisory lock during DDL execution (CREATE SCHEMA,
-	// CREATE EXTENSION, DROP SCHEMA) to serialize system catalog modifications
-	// across parallel test packages sharing a single PostgreSQL server.
 	const testDBAdvisoryLockID int64 = 746328746
-	if _, err := adminPool.Exec(ctx, `SELECT pg_advisory_lock($1)`, testDBAdvisoryLockID); err != nil {
+
+	// Execute DDL schema creation and extension setup inside a transaction with
+	// a transaction-level advisory lock (pg_advisory_xact_lock) to serialize
+	// system catalog modifications across parallel test packages sharing a
+	// single PostgreSQL server. The lock releases automatically on COMMIT/ROLLBACK.
+	setupTx, err := adminPool.Begin(ctx)
+	if err != nil {
 		adminPool.Close()
-		t.Fatalf("acquire DDL advisory lock: %v", err)
+		t.Fatalf("begin DDL setup transaction: %v", err)
+	}
+	defer func() {
+		_ = setupTx.Rollback(ctx)
+	}()
+
+	if _, err := setupTx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, testDBAdvisoryLockID); err != nil {
+		adminPool.Close()
+		t.Fatalf("acquire DDL setup transaction advisory lock: %v", err)
 	}
 
-	if _, err := adminPool.Exec(ctx, `CREATE SCHEMA IF NOT EXISTS `+quotedSchema); err != nil {
-		_, _ = adminPool.Exec(ctx, `SELECT pg_advisory_unlock($1)`, testDBAdvisoryLockID)
+	if _, err := setupTx.Exec(ctx, `CREATE SCHEMA IF NOT EXISTS `+quotedSchema); err != nil {
 		adminPool.Close()
 		t.Fatalf("create isolated schema %s: %v", schema, err)
 	}
@@ -54,26 +64,36 @@ func Open(t testing.TB, dsn string) *database.Pool {
 	// both observe the extension as absent and race to insert it, and one fails
 	// with a duplicate-key violation on pg_extension_name_index. Tolerate that
 	// race by proceeding when the extension is present after the attempt.
-	if _, err := adminPool.Exec(ctx, `CREATE EXTENSION IF NOT EXISTS pgcrypto`); err != nil {
+	if _, err := setupTx.Exec(ctx, `CREATE EXTENSION IF NOT EXISTS pgcrypto`); err != nil {
 		var exists bool
-		if qErr := adminPool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'pgcrypto')`).Scan(&exists); qErr != nil || !exists {
-			_, _ = adminPool.Exec(ctx, `SELECT pg_advisory_unlock($1)`, testDBAdvisoryLockID)
+		if qErr := setupTx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'pgcrypto')`).Scan(&exists); qErr != nil || !exists {
 			adminPool.Close()
 			t.Fatalf("ensure pgcrypto extension: %v", err)
 		}
 	}
-	_, _ = adminPool.Exec(ctx, `SELECT pg_advisory_unlock($1)`, testDBAdvisoryLockID)
+
+	if err := setupTx.Commit(ctx); err != nil {
+		adminPool.Close()
+		t.Fatalf("commit DDL setup transaction: %v", err)
+	}
 
 	var pool *pgxpool.Pool
 	t.Cleanup(func() {
 		if pool != nil {
 			pool.Close()
 		}
-		if _, err := adminPool.Exec(ctx, `SELECT pg_advisory_lock($1)`, testDBAdvisoryLockID); err == nil {
-			if _, err := adminPool.Exec(ctx, `DROP SCHEMA IF EXISTS `+quotedSchema+` CASCADE`); err != nil {
-				t.Logf("drop isolated schema %s: %v", schema, err)
+		cleanupTx, err := adminPool.Begin(ctx)
+		if err == nil {
+			defer func() {
+				_ = cleanupTx.Rollback(ctx)
+			}()
+			if _, err := cleanupTx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, testDBAdvisoryLockID); err == nil {
+				if _, err := cleanupTx.Exec(ctx, `DROP SCHEMA IF EXISTS `+quotedSchema+` CASCADE`); err != nil {
+					t.Logf("drop isolated schema %s: %v", schema, err)
+				} else {
+					_ = cleanupTx.Commit(ctx)
+				}
 			}
-			_, _ = adminPool.Exec(ctx, `SELECT pg_advisory_unlock($1)`, testDBAdvisoryLockID)
 		}
 		adminPool.Close()
 	})

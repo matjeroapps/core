@@ -205,13 +205,17 @@ func (c Config) Validate() error {
 	if c.ThemePreviewSecret == "" {
 		return fmt.Errorf("production THEME_PREVIEW_SECRET is required")
 	}
-	if c.MediaS3Bucket != "" {
-		if c.MediaS3AccessKeyID == "" || c.MediaS3SecretAccessKey == "" {
-			return fmt.Errorf("production S3 credentials (MEDIA_S3_ACCESS_KEY_ID, MEDIA_S3_SECRET_ACCESS_KEY) are required when MEDIA_S3_BUCKET is set")
-		}
-		if c.MediaPublicBaseURL == "" {
-			return fmt.Errorf("production MEDIA_PUBLIC_BASE_URL is required when MEDIA_S3_BUCKET is set")
-		}
+	if c.MediaS3Bucket == "" {
+		return fmt.Errorf("production MEDIA_S3_BUCKET is required")
+	}
+	if c.MediaS3AccessKeyID == "" {
+		return fmt.Errorf("production MEDIA_S3_ACCESS_KEY_ID is required")
+	}
+	if c.MediaS3SecretAccessKey == "" {
+		return fmt.Errorf("production MEDIA_S3_SECRET_ACCESS_KEY is required")
+	}
+	if c.MediaPublicBaseURL == "" {
+		return fmt.Errorf("production MEDIA_PUBLIC_BASE_URL is required")
 	}
 	return nil
 }
