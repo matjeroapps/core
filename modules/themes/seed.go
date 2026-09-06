@@ -16,6 +16,11 @@ const (
 	DefaultThemeDescription         = "Platform-controlled default storefront theme."
 	DefaultThemeVersion             = "1.0.0"
 	DefaultComponentRegistryVersion = "1.0.0"
+
+	BoutiqueThemeKey         = "matjero-boutique"
+	BoutiqueThemeName        = "Matjero Boutique"
+	BoutiqueThemeDescription = "Compact editorial luxury storefront theme."
+	BoutiqueThemeVersion     = "1.0.0"
 )
 
 // DefaultConfigurationSchema is the JSON Schema that governs seller-customizable
@@ -165,17 +170,29 @@ var DefaultConfiguration = map[string]any{
 // initial published version. It is safe to run on every startup/deploy: if the
 // theme already exists it returns immediately without creating duplicates.
 func (s Service) SeedBuiltInThemes(ctx context.Context) error {
-	if _, err := s.repo.GetThemeByKey(ctx, DefaultThemeKey); err == nil {
-		return nil
-	} else if !errors.Is(err, ErrNotFound) {
-		return err
+	builtIn := []struct {
+		key         string
+		name        string
+		description string
+		version     string
+	}{
+		{DefaultThemeKey, DefaultThemeName, DefaultThemeDescription, DefaultThemeVersion},
+		{BoutiqueThemeKey, BoutiqueThemeName, BoutiqueThemeDescription, BoutiqueThemeVersion},
 	}
-	theme, err := s.repo.CreateTheme(ctx, DefaultThemeKey, DefaultThemeName, DefaultThemeDescription, ThemeTypeFree, ThemeStatusActive)
-	if err != nil {
-		return err
-	}
-	if _, err := s.repo.CreateThemeVersion(ctx, theme.ID, DefaultThemeVersion, ThemeVersionStatusPublished, DefaultConfigurationSchema, DefaultConfiguration, DefaultComponentRegistryVersion); err != nil {
-		return err
+
+	for _, item := range builtIn {
+		if _, err := s.repo.GetThemeByKey(ctx, item.key); err == nil {
+			continue
+		} else if !errors.Is(err, ErrNotFound) {
+			return err
+		}
+		theme, err := s.repo.CreateTheme(ctx, item.key, item.name, item.description, ThemeTypeFree, ThemeStatusActive)
+		if err != nil {
+			return err
+		}
+		if _, err := s.repo.CreateThemeVersion(ctx, theme.ID, item.version, ThemeVersionStatusPublished, DefaultConfigurationSchema, DefaultConfiguration, DefaultComponentRegistryVersion); err != nil {
+			return err
+		}
 	}
 	return nil
 }
