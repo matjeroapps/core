@@ -162,3 +162,34 @@ func TestConfigValidatesPollIntervalPositive(t *testing.T) {
 		t.Fatal("expected error for non-positive poll interval, got nil")
 	}
 }
+
+func TestProductionConfigValidation(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+
+	// Missing production database URL triggers fail-fast error
+	_, err := config.Load("test-service")
+	if err == nil {
+		t.Fatal("expected error for production config with default localhost database, got nil")
+	}
+
+	// Valid production env configuration succeeds
+	t.Setenv("DATABASE_URL", "postgres://user:pass@prod-db.internal:5432/commerce?sslmode=require")
+	t.Setenv("RABBITMQ_URL", "amqp://user:pass@prod-mq.internal:5672/")
+	t.Setenv("ZITADEL_ISSUER", "https://auth.matjero.com")
+	t.Setenv("CORE_INTERNAL_SELLER_TOKEN", "secret-seller")
+	t.Setenv("CORE_INTERNAL_ADMIN_TOKEN", "secret-admin")
+	t.Setenv("CORE_INTERNAL_SUPPLIER_TOKEN", "secret-supplier")
+	t.Setenv("THEME_PREVIEW_SECRET", "secret-theme-preview")
+	t.Setenv("MEDIA_S3_BUCKET", "prod-media")
+	t.Setenv("MEDIA_S3_ACCESS_KEY_ID", "key")
+	t.Setenv("MEDIA_S3_SECRET_ACCESS_KEY", "secret")
+	t.Setenv("MEDIA_PUBLIC_BASE_URL", "https://cdn.matjero.com")
+
+	cfg, err := config.Load("test-service")
+	if err != nil {
+		t.Fatalf("expected valid production config load, got: %v", err)
+	}
+	if cfg.Environment != "production" {
+		t.Errorf("expected Environment 'production', got %s", cfg.Environment)
+	}
+}

@@ -135,7 +135,7 @@ func Load(serviceName string) (Config, error) {
 		return Config{}, err
 	}
 
-	return Config{
+	cfg := Config{
 		ServiceName:               serviceName,
 		Environment:               stringEnv("APP_ENV", "development"),
 		HTTPAddr:                  stringEnv("HTTP_ADDR", ":8080"),
@@ -171,7 +171,49 @@ func Load(serviceName string) (Config, error) {
 		RabbitMQPublishConfirmTimeout: rabbitMQPublishConfirmTimeout,
 		OutboxBatchSize:               outboxBatchSize,
 		OutboxPollInterval:            outboxPollInterval,
-	}, nil
+	}
+
+	if err := cfg.Validate(); err != nil {
+		return Config{}, fmt.Errorf("invalid configuration: %w", err)
+	}
+
+	return cfg, nil
+}
+
+func (c Config) Validate() error {
+	if strings.ToLower(c.Environment) != "production" {
+		return nil
+	}
+	if c.DatabaseURL == "" || strings.Contains(c.DatabaseURL, "commerce:commerce@localhost") {
+		return fmt.Errorf("production DATABASE_URL must be explicitly configured")
+	}
+	if c.RabbitMQURL == "" || strings.Contains(c.RabbitMQURL, "guest:guest@localhost") || strings.Contains(c.RabbitMQURL, "commerce:commerce@localhost") {
+		return fmt.Errorf("production RABBITMQ_URL must be explicitly configured")
+	}
+	if c.ZitadelIssuer == "" || strings.Contains(c.ZitadelIssuer, "localhost") {
+		return fmt.Errorf("production ZITADEL_ISSUER must be explicitly configured with a non-localhost URL")
+	}
+	if c.InternalSellerToken == "" {
+		return fmt.Errorf("production CORE_INTERNAL_SELLER_TOKEN is required")
+	}
+	if c.InternalAdminToken == "" {
+		return fmt.Errorf("production CORE_INTERNAL_ADMIN_TOKEN is required")
+	}
+	if c.InternalSupplierToken == "" {
+		return fmt.Errorf("production CORE_INTERNAL_SUPPLIER_TOKEN is required")
+	}
+	if c.ThemePreviewSecret == "" {
+		return fmt.Errorf("production THEME_PREVIEW_SECRET is required")
+	}
+	if c.MediaS3Bucket != "" {
+		if c.MediaS3AccessKeyID == "" || c.MediaS3SecretAccessKey == "" {
+			return fmt.Errorf("production S3 credentials (MEDIA_S3_ACCESS_KEY_ID, MEDIA_S3_SECRET_ACCESS_KEY) are required when MEDIA_S3_BUCKET is set")
+		}
+		if c.MediaPublicBaseURL == "" {
+			return fmt.Errorf("production MEDIA_PUBLIC_BASE_URL is required when MEDIA_S3_BUCKET is set")
+		}
+	}
+	return nil
 }
 
 func durationEnv(key string, fallback time.Duration) (time.Duration, error) {

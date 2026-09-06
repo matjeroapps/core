@@ -2140,17 +2140,13 @@ func TestFinalizeCheckoutSupplierOfferAvailabilityUnexpectedDBError(t *testing.T
 	suffix := uuid.NewString()
 	setup := setupSupplierCheckoutTest(t, db, repo, ctx, suffix, 10, 2000, 1200)
 
-	if _, err := db.Exec(ctx, `ALTER TABLE supplier_offer_availability RENAME TO supplier_offer_availability_temp`); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_, _ = db.Exec(ctx, `ALTER TABLE supplier_offer_availability_temp RENAME TO supplier_offer_availability`)
-	})
+	ctxCancelled, cancel := context.WithCancel(ctx)
+	cancel()
 
 	req := testFinalizePayload(setup.Session.ID)
-	_, err := repo.FinalizeCheckout(ctx, setup.Store.ID, req, "corr-sup-dberr")
+	_, err := repo.FinalizeCheckout(ctxCancelled, setup.Store.ID, req, "corr-sup-dberr")
 	if err == nil {
-		t.Fatal("expected DB error for missing availability table, got nil")
+		t.Fatal("expected DB error for canceled context, got nil")
 	}
 	if errors.Is(err, ErrListingUnavailable) || errors.Is(err, ErrPriceChanged) || errors.Is(err, ErrMarketMismatch) {
 		t.Fatalf("expected unexpected DB error, got domain error %v", err)

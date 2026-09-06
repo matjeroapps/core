@@ -1369,6 +1369,7 @@ func TestMigration000013ExistingRowCompatibility(t *testing.T) {
 	err = db.Pool.QueryRow(ctx, `
 		SELECT indexdef FROM pg_indexes
 		WHERE tablename = 'outbox_events' AND indexname = 'outbox_events_unpublished_claim_idx'
+		AND schemaname = current_schema()
 	`).Scan(&indexDef)
 	if err != nil {
 		t.Fatalf("query indexdef: %v", err)
