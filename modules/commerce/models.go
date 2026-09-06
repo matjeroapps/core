@@ -410,12 +410,46 @@ type SellerProductDetail struct {
 }
 
 type SellerInventorySummary struct {
+	ID                    string `json:"id"`
 	FulfillmentLocationID string `json:"fulfillment_location_id"`
 	LocationName          string `json:"location_name"`
 	SKUID                 string `json:"sku_id"`
 	OnHandQty             int64  `json:"on_hand_qty"`
 	ReservedQty           int64  `json:"reserved_qty"`
 	AvailableQty          int64  `json:"available_qty"`
+	Version               int64  `json:"version"`
+}
+
+// SellerInventoryAggregate is the product-level inventory projection exposed
+// at the internal Seller API boundary: totals plus one entry per location.
+type SellerInventoryAggregate struct {
+	TotalOnHand    int64                     `json:"total_on_hand"`
+	TotalReserved  int64                     `json:"total_reserved"`
+	TotalAvailable int64                     `json:"total_available"`
+	Locations      []SellerInventoryLocation `json:"locations"`
+}
+
+type SellerInventoryLocation struct {
+	LocationID   string `json:"location_id"`
+	LocationName string `json:"location_name"`
+	SKUID        string `json:"sku_id"`
+	OnHandQty    int64  `json:"on_hand_qty"`
+	ReservedQty  int64  `json:"reserved_qty"`
+	AvailableQty int64  `json:"available_qty"`
+}
+
+// SellerProductListView is the product list projection exposed at the
+// internal Seller API boundary, carrying everything a Seller dashboard row
+// needs without re-fetching the full product detail.
+type SellerProductListView struct {
+	Product          Product                  `json:"product"`
+	Source           string                   `json:"source"`
+	Name             string                   `json:"name"`
+	ListingID        string                   `json:"listing_id"`
+	ListingStatus    string                   `json:"listing_status"`
+	CurrentPrice     *SellerListingPrice      `json:"current_price,omitempty"`
+	InventorySummary SellerInventoryAggregate `json:"inventory_summary"`
+	PublishReadiness PublishReadiness         `json:"publish_readiness"`
 }
 
 type PublishReadiness struct {

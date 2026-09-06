@@ -24,10 +24,11 @@ type S3Config struct {
 }
 
 type S3Storage struct {
-	cfg            S3Config
-	client         *s3.Client
-	presignClient  *s3.PresignClient
-	MockHeadObject func(ctx context.Context, storageKey string) (*s3.HeadObjectOutput, error)
+	cfg                  S3Config
+	client               *s3.Client
+	presignClient        *s3.PresignClient
+	MockHeadObject       func(ctx context.Context, storageKey string) (*s3.HeadObjectOutput, error)
+	MockPresignPutObject func(ctx context.Context, storageKey, contentType string) (string, error)
 }
 
 func NewS3Storage(cfg S3Config) *S3Storage {
@@ -77,6 +78,9 @@ func (s *S3Storage) Config() S3Config {
 }
 
 func (s *S3Storage) PresignPutObject(ctx context.Context, storageKey, contentType string) (string, error) {
+	if s.MockPresignPutObject != nil {
+		return s.MockPresignPutObject(ctx, storageKey, contentType)
+	}
 	req, err := s.presignClient.PresignPutObject(ctx, &s3.PutObjectInput{
 		Bucket:      aws.String(s.cfg.Bucket),
 		Key:         aws.String(storageKey),
@@ -89,6 +93,9 @@ func (s *S3Storage) PresignPutObject(ctx context.Context, storageKey, contentTyp
 }
 
 func (s *S3Storage) HeadObject(ctx context.Context, storageKey string) (*s3.HeadObjectOutput, error) {
+	if s.MockHeadObject != nil {
+		return s.MockHeadObject(ctx, storageKey)
+	}
 	out, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(s.cfg.Bucket),
 		Key:    aws.String(storageKey),

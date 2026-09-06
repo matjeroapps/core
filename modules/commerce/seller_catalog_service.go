@@ -4,10 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -124,7 +125,6 @@ func (s Service) GetSellerProductDetailForSubject(ctx context.Context, subject, 
 	for _, l := range locations {
 		locNameMap[l.ID] = l.Name
 	}
-
 	var inventorySummary []SellerInventorySummary
 	for _, snap := range inventorySnapshots {
 		// Only include snapshots for SKUs of this product
@@ -135,18 +135,20 @@ func (s Service) GetSellerProductDetailForSubject(ctx context.Context, subject, 
 					avail = 0
 				}
 				inventorySummary = append(inventorySummary, SellerInventorySummary{
+					ID:                    snap.ID,
 					FulfillmentLocationID: snap.FulfillmentLocationID,
 					LocationName:          locNameMap[snap.FulfillmentLocationID],
 					SKUID:                 snap.SKUID,
 					OnHandQty:             snap.OnHandQty,
 					ReservedQty:           snap.ReservedQty,
 					AvailableQty:          avail,
+					Version:               snap.Version,
 				})
 			}
 		}
 	}
 
-	readiness := s.evaluateReadinessInternal(store, prod, translations, variants, skus, media, listing, price, presentation, inventorySummary)
+	readiness := s.evaluateReadinessInternal(store, prod, translations, variants, skus, media, listing, price, presentation, locations, inventorySnapshots)
 
 	return SellerProductDetail{
 		Product:          prod,
@@ -175,11 +177,17 @@ func (s Service) evaluateReadinessInternal(
 	listing SellerListing,
 	price *SellerListingPrice,
 	presentation SellerListingPresentation,
-	inventorySummary []SellerInventorySummary,
+	locations []FulfillmentLocation,
+	snapshots []InventorySnapshot,
 ) PublishReadiness {
 	var reasons []string
 
-	// 1. Translations / English or Arabic name exists
+	// 1. Store must be active
+	if store.Status != "active" {
+		reasons = append(reasons, "Store must be active")
+	}
+
+	// 2. Translations / English or Arabic name exists
 	hasName := false
 	for _, tr := range translations {
 		if strings.TrimSpace(tr.Name) != "" {
@@ -191,55 +199,116 @@ func (s Service) evaluateReadinessInternal(
 		reasons = append(reasons, "Product title/translation is missing")
 	}
 
-	// 2. Active Variant
-	hasActiveVariant := false
+	// 3. Active Variant
+	activeVariants := make([]Variant, 0, len(variants))
 	for _, v := range variants {
 		if v.Status == "active" {
-			hasActiveVariant = true
-			break
+			activeVariants = append(activeVariants, v)
 		}
 	}
-	if !hasActiveVariant {
+	if len(activeVariants) == 0 {
 		reasons = append(reasons, "At least one active Variant is required")
 	}
 
-	// 3. Active SKU
-	hasActiveSKU := false
+	// 4. Each active Variant must have exactly one active selectable SKU
+	activeSKUByVariant := map[string]int{}
 	for _, sku := range skus {
 		if sku.Status == "active" {
-			hasActiveSKU = true
-			break
+			activeSKUByVariant[sku.VariantID]++
 		}
 	}
-	if !hasActiveSKU {
-		reasons = append(reasons, "At least one active selectable SKU is required")
+	activeSKUs := make([]SKU, 0, len(skus))
+	for _, v := range activeVariants {
+		count := activeSKUByVariant[v.ID]
+		if count != 1 {
+			reasons = append(reasons, fmt.Sprintf("Variant %s must have exactly one active selectable SKU", v.Code))
+		}
+	}
+	for _, sku := range skus {
+		if sku.Status == "active" && activeSKUByVariant[sku.VariantID] > 0 {
+			activeSKUs = append(activeSKUs, sku)
+		}
 	}
 
-	// 4. Current Listing price exists & matches Store market currency
+	// 5. Canonical Listing: belongs to store, market matches store market
+	if listing.ID == "" {
+		reasons = append(reasons, "Canonical listing is missing")
+	} else {
+		if listing.StoreID != store.ID {
+			reasons = append(reasons, "Listing does not belong to store")
+		}
+		if listing.MarketCode != store.MarketCode {
+			reasons = append(reasons, fmt.Sprintf("Listing market %s does not match store market %s", listing.MarketCode, store.MarketCode))
+		}
+	}
+
+	// 6. Current Listing price exists & matches Store market currency
 	if price == nil || !price.IsCurrent {
 		reasons = append(reasons, "Current retail price is missing")
 	} else if price.Price.Currency != store.MarketCode && !isMarketCurrencyMatch(price.Price.Currency, store.MarketCode) {
 		reasons = append(reasons, fmt.Sprintf("Price currency %s does not match store market currency %s", price.Price.Currency, store.MarketCode))
 	}
 
-	// 5. At least one image exists
+	// 7. At least one image exists
 	if len(media) == 0 {
 		reasons = append(reasons, "At least one product image is required")
 	}
 
-	// 6. Listing belongs to store
-	if listing.StoreID != store.ID {
-		reasons = append(reasons, "Listing does not belong to store")
+	// 8. Presentation must pass typed section validation
+	mediaIDs := make(map[string]bool, len(media))
+	for _, m := range media {
+		mediaIDs[m.ID] = true
 	}
+	if pbReasons := validatePurchaseBehavior(presentation.PurchaseBehavior); len(pbReasons) > 0 {
+		reasons = append(reasons, pbReasons...)
+	}
+	reasons = append(reasons, ValidateProductPageSections(presentation.Sections, mediaIDs)...)
 
-	// 7. Inventory topology exists
-	if len(inventorySummary) == 0 {
-		reasons = append(reasons, "Inventory location and snapshot topology required")
+	// 9. Sellable inventory topology: an inventory snapshot only satisfies
+	// readiness when it belongs to an active SKU of this product and sits at
+	// an active, store-owned (non-supplier), market-matching location with
+	// available quantity satisfying storefront sellability.
+	locByID := make(map[string]FulfillmentLocation, len(locations))
+	for _, l := range locations {
+		locByID[l.ID] = l
+	}
+	activeSKUIDs := make(map[string]bool, len(activeSKUs))
+	for _, sku := range activeSKUs {
+		activeSKUIDs[sku.ID] = true
+	}
+	hasSellableInventory := false
+	for _, snap := range snapshots {
+		if !activeSKUIDs[snap.SKUID] {
+			continue
+		}
+		loc, ok := locByID[snap.FulfillmentLocationID]
+		if !ok || loc.StoreID != store.ID || loc.SupplierID != "" {
+			continue
+		}
+		if loc.Status != "active" || loc.MarketCode != store.MarketCode {
+			continue
+		}
+		if snap.OnHandQty-snap.ReservedQty > 0 {
+			hasSellableInventory = true
+			break
+		}
+	}
+	if !hasSellableInventory {
+		reasons = append(reasons, "Sellable inventory at an active store location is required")
 	}
 
 	return PublishReadiness{
 		IsReady: len(reasons) == 0,
 		Reasons: reasons,
+	}
+}
+
+func validatePurchaseBehavior(behavior string) []string {
+	switch behavior {
+	case "", "inherit", "add_to_cart", "buy_now":
+		return nil
+	default:
+		return []string{fmt.Sprintf("Invalid purchase behavior %s", behavior)}
 	}
 }
 
@@ -347,18 +416,10 @@ func (s Service) CreateSKUForSubject(ctx context.Context, subject, storeID, prod
 		return SKU{}, ErrNotFound
 	}
 
-	// MVP Invariant: keep 1 active selectable SKU per variant
-	if status == "active" {
-		existingSKUs, _ := s.repo.ListSKUsByVariantID(ctx, variantID)
-		for _, sk := range existingSKUs {
-			if sk.Status == "active" {
-				// Deactivate previous active SKU to maintain 1 active SKU invariant
-				_, _ = s.repo.UpdateSKU(ctx, sk.ID, sk.Code, sk.Barcode, "inactive")
-			}
-		}
-	}
-
-	return s.repo.CreateSKU(ctx, variantID, code, barcode, status)
+	// The 1-active-SKU-per-variant invariant is enforced in one transaction
+	// (plus a partial unique index at the DB level), never by a separate
+	// deactivate-then-create sequence whose errors can be swallowed.
+	return s.repo.CreateSKUReplacingActive(ctx, variantID, code, barcode, status)
 }
 
 func (s Service) UpdateSKUForSubject(ctx context.Context, subject, storeID, productID, variantID, skuID, code, barcode, status string) (SKU, error) {
@@ -382,16 +443,7 @@ func (s Service) UpdateSKUForSubject(ctx context.Context, subject, storeID, prod
 		return SKU{}, ErrNotFound
 	}
 
-	if status == "active" {
-		existingSKUs, _ := s.repo.ListSKUsByVariantID(ctx, variantID)
-		for _, sk := range existingSKUs {
-			if sk.ID != skuID && sk.Status == "active" {
-				_, _ = s.repo.UpdateSKU(ctx, sk.ID, sk.Code, sk.Barcode, "inactive")
-			}
-		}
-	}
-
-	return s.repo.UpdateSKU(ctx, skuID, code, barcode, status)
+	return s.repo.UpdateSKUReplacingActive(ctx, skuID, variantID, code, barcode, status)
 }
 
 func (s Service) GenerateMediaUploadPresignedURLForSubject(ctx context.Context, subject, storeID, productID string, req MediaUploadRequest) (MediaUploadResponse, error) {
@@ -417,6 +469,9 @@ func (s Service) GenerateMediaUploadPresignedURLForSubject(ctx context.Context, 
 		return MediaUploadResponse{}, fmt.Errorf("%w: invalid image mime type %s", ErrInvalidInput, req.ContentType)
 	}
 
+	if req.SizeBytes <= 0 {
+		return MediaUploadResponse{}, fmt.Errorf("%w: file size is required", ErrInvalidInput)
+	}
 	if req.SizeBytes > 10*1024*1024 {
 		return MediaUploadResponse{}, fmt.Errorf("%w: file size exceeds 10MB limit", ErrInvalidInput)
 	}
@@ -477,41 +532,91 @@ func (s Service) CompleteMediaUploadForSubject(ctx context.Context, subject, sto
 	if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, seller.ID, productID); err != nil {
 		return MediaMetadata{}, ErrNotFound
 	}
-
-	expectedPrefix := fmt.Sprintf("products/%s/%s/", seller.ID, productID)
-	if !strings.HasPrefix(req.StorageKey, expectedPrefix) {
-		return MediaMetadata{}, fmt.Errorf("%w: invalid storage key prefix", ErrInvalidInput)
-	}
-
-	var publicURI string
-	if s.S3Storage != nil {
-		if _, err := s.S3Storage.HeadObject(ctx, req.StorageKey); err != nil {
-			return MediaMetadata{}, fmt.Errorf("%w: uploaded object does not exist in storage: %v", ErrInvalidInput, err)
-		}
-		publicURI = s.S3Storage.ResolvePublicURI(req.StorageKey)
-	} else {
+	if s.S3Storage == nil {
 		return MediaMetadata{}, fmt.Errorf("%w: media storage is not configured", ErrInvalidInput)
 	}
 
-	ext := strings.ToLower(filepath.Ext(req.StorageKey))
-	mediaType := "image/jpeg"
-	if ext == ".png" {
-		mediaType = "image/png"
-	} else if ext == ".webp" {
-		mediaType = "image/webp"
+	// The upload intent is the authorization record: it binds the presigned
+	// upload to one seller, store, product, content type, size limit and
+	// token. A storage-key prefix check alone is not authorization.
+	intent, err := s.repo.GetMediaUploadIntentByStorageKey(ctx, req.StorageKey)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return MediaMetadata{}, fmt.Errorf("%w: upload intent not found for storage key", ErrInvalidInput)
+		}
+		return MediaMetadata{}, err
 	}
+	if intent.SellerID != seller.ID {
+		return MediaMetadata{}, fmt.Errorf("%w: upload intent belongs to a different seller", ErrInvalidInput)
+	}
+	if intent.StoreID != storeID {
+		return MediaMetadata{}, fmt.Errorf("%w: upload intent belongs to a different store", ErrInvalidInput)
+	}
+	if intent.ProductID != productID {
+		return MediaMetadata{}, fmt.Errorf("%w: upload intent belongs to a different product", ErrInvalidInput)
+	}
+	if time.Now().After(intent.ExpiresAt) {
+		return MediaMetadata{}, fmt.Errorf("%w: upload intent expired", ErrInvalidInput)
+	}
+
+	// Idempotent completion: a completed intent for the same storage key and
+	// product resolves to the media record created by the successful attempt.
+	if intent.CompletedAt != nil {
+		existing, err := s.repo.GetMediaMetadataByStorageKey(ctx, productID, req.StorageKey)
+		if err != nil {
+			return MediaMetadata{}, fmt.Errorf("%w: upload already completed", ErrInvalidInput)
+		}
+		return existing, nil
+	}
+
+	// Verify the upload token: SHA-256 of the raw token, compared in constant
+	// time against the digest persisted at presign time. The raw token is
+	// never logged.
+	digest := sha256.Sum256([]byte(req.UploadToken))
+	if subtle.ConstantTimeCompare([]byte(hex.EncodeToString(digest[:])), []byte(intent.TokenDigest)) != 1 {
+		return MediaMetadata{}, fmt.Errorf("%w: upload token verification failed", ErrInvalidInput)
+	}
+
+	// Verify the actually uploaded object against the intent.
+	head, err := s.S3Storage.HeadObject(ctx, req.StorageKey)
+	if err != nil {
+		return MediaMetadata{}, fmt.Errorf("%w: uploaded object does not exist in storage: %v", ErrInvalidInput, err)
+	}
+	if head.ContentLength == nil || *head.ContentLength <= 0 {
+		return MediaMetadata{}, fmt.Errorf("%w: uploaded object is empty", ErrInvalidInput)
+	}
+	if intent.MaxBytes > 0 && *head.ContentLength > intent.MaxBytes {
+		return MediaMetadata{}, fmt.Errorf("%w: uploaded object size %d exceeds limit %d", ErrInvalidInput, *head.ContentLength, intent.MaxBytes)
+	}
+	if head.ContentType != nil && intent.ContentType != "" && !strings.EqualFold(*head.ContentType, intent.ContentType) {
+		return MediaMetadata{}, fmt.Errorf("%w: uploaded object content type %s does not match %s", ErrInvalidInput, *head.ContentType, intent.ContentType)
+	}
+
+	// The media type comes from the verified S3 metadata, never inferred from
+	// the storage key extension.
+	mediaType := strings.ToLower(intent.ContentType)
 
 	m := MediaMetadata{
 		ProductID:  productID,
 		MediaType:  mediaType,
-		URI:        publicURI,
+		URI:        s.S3Storage.ResolvePublicURI(req.StorageKey),
 		AltText:    req.AltText,
 		SortOrder:  req.SortOrder,
 		StorageKey: &req.StorageKey,
 		IsPrimary:  req.IsPrimary,
 	}
 
-	return s.repo.CreateMediaMetadata(ctx, m)
+	// Media insert + intent completion are one DB transaction; the storage
+	// upload itself is inherently non-transactional and is verified above.
+	created, err := s.repo.CompleteMediaUpload(ctx, m, intent.ID)
+	if err != nil {
+		if errors.Is(err, ErrConflict) {
+			// A concurrent completion won; return the record it created.
+			return s.repo.GetMediaMetadataByStorageKey(ctx, productID, req.StorageKey)
+		}
+		return MediaMetadata{}, err
+	}
+	return created, nil
 }
 
 func (s Service) UpdateMediaMetadataForSubject(ctx context.Context, subject, storeID, productID, mediaID string, altText string, sortOrder int, isPrimary bool) (MediaMetadata, error) {
@@ -555,11 +660,30 @@ func (s Service) DeleteMediaMetadataForSubject(ctx context.Context, subject, sto
 		return ErrNotFound
 	}
 
-	if m.StorageKey != nil && *m.StorageKey != "" && s.S3Storage != nil {
-		_ = s.S3Storage.DeleteObject(ctx, *m.StorageKey)
+	storageKey := m.StorageKey
+
+	if err := s.repo.DeleteMediaMetadata(ctx, productID, mediaID); err != nil {
+		return err
 	}
 
-	return s.repo.DeleteMediaMetadata(ctx, productID, mediaID)
+	// Deterministic state after deleting the primary image: the earliest
+	// remaining image becomes primary; if none remain there is no primary.
+	if m.IsPrimary {
+		remaining, err := s.repo.ListMediaByProductID(ctx, productID)
+		if err == nil && len(remaining) > 0 {
+			earliest := remaining[0]
+			earliest.IsPrimary = true
+			if _, err := s.repo.UpdateMediaMetadata(ctx, earliest); err != nil {
+				return err
+			}
+		}
+	}
+
+	if storageKey != nil && *storageKey != "" && s.S3Storage != nil {
+		_ = s.S3Storage.DeleteObject(ctx, *storageKey)
+	}
+
+	return nil
 }
 
 func (s Service) GetListingPresentationForSubject(ctx context.Context, subject, storeID, listingID string) (SellerListingPresentation, error) {
@@ -663,12 +787,14 @@ func (s Service) ListStoreInventoryForSubject(ctx context.Context, subject, stor
 			avail = 0
 		}
 		result = append(result, SellerInventorySummary{
+			ID:                    snap.ID,
 			FulfillmentLocationID: snap.FulfillmentLocationID,
 			LocationName:          locNameMap[snap.FulfillmentLocationID],
 			SKUID:                 snap.SKUID,
 			OnHandQty:             snap.OnHandQty,
 			ReservedQty:           snap.ReservedQty,
 			AvailableQty:          avail,
+			Version:               snap.Version,
 		})
 	}
 	return result, nil
@@ -746,6 +872,12 @@ func (s Service) AdjustStoreInventoryForSubject(ctx context.Context, subject, st
 	return s.repo.AdjustInventory(ctx, snapshotID, quantityDelta, "adjustment", reason, subject, correlationID, "")
 }
 
+// publishRaceHook, when set, runs between the pre-transaction readiness
+// evaluation and the atomic publish transaction. Tests use it to
+// deterministically invalidate catalog state inside that window, proving that
+// the final readiness revalidation inside the publish transaction catches it.
+var publishRaceHook func()
+
 func (s Service) PublishSellerProductForSubject(ctx context.Context, subject, storeID, productID string) error {
 	store, err := s.repo.GetStore(ctx, storeID)
 	if err != nil {
@@ -768,7 +900,13 @@ func (s Service) PublishSellerProductForSubject(ctx context.Context, subject, st
 		return fmt.Errorf("%w: publish readiness failed: %s", ErrInvalidInput, strings.Join(detail.PublishReadiness.Reasons, "; "))
 	}
 
-	return s.repo.PublishSellerProduct(ctx, storeID, productID)
+	if publishRaceHook != nil {
+		publishRaceHook()
+	}
+
+	// Final authoritative readiness validation happens inside the publish
+	// transaction while product, listing and SKU rows are locked.
+	return s.repo.PublishSellerProductAtomically(ctx, storeID, productID, store.MarketCode, marketCurrency(store.MarketCode))
 }
 
 func (s Service) UnpublishSellerProductForSubject(ctx context.Context, subject, storeID, productID string) error {
@@ -799,77 +937,62 @@ func (s Service) ListStoreOrdersForSubject(ctx context.Context, subject, storeID
 	return s.repo.ListStoreOrders(ctx, storeID, statusFilter, limit, offset)
 }
 
-func (s Service) GetStoreOrderForSubject(ctx context.Context, subject, storeID, orderID string) (Order, error) {
+func (s Service) TransitionStoreOrderForSubject(ctx context.Context, subject, storeID, orderID, targetStatus string, reason *string, correlationID string) (SellerOrderView, error) {
 	store, err := s.repo.GetStore(ctx, storeID)
 	if err != nil {
-		return Order{}, err
+		return SellerOrderView{}, err
 	}
 	if _, err := s.RequireSellerAccess(ctx, subject, store.SellerID); err != nil {
-		return Order{}, err
-	}
-
-	order, err := s.repo.GetOrderByID(ctx, nil, storeID, orderID)
-	if err != nil {
-		return Order{}, err
-	}
-	return order, nil
-}
-
-func (s Service) TransitionStoreOrderForSubject(ctx context.Context, subject, storeID, orderID, targetStatus string, reason *string, correlationID string) (Order, error) {
-	store, err := s.repo.GetStore(ctx, storeID)
-	if err != nil {
-		return Order{}, err
-	}
-	if _, err := s.RequireSellerAccess(ctx, subject, store.SellerID); err != nil {
-		return Order{}, err
+		return SellerOrderView{}, err
 	}
 
 	order, err := s.repo.GetOrderByID(ctx, nil, storeID, orderID)
 	if err != nil || order.StoreID != storeID {
-		return Order{}, ErrNotFound
+		return SellerOrderView{}, ErrNotFound
 	}
 
 	// Dispatch to existing lifecycle primitives
 	switch targetStatus {
 	case "confirmed":
 		if order.Status != "pending" {
-			return Order{}, fmt.Errorf("%w: cannot confirm order in status %s", ErrInvalidTransition, order.Status)
+			return SellerOrderView{}, fmt.Errorf("%w: cannot confirm order in status %s", ErrInvalidTransition, order.Status)
 		}
-		return s.ConfirmOrder(ctx, storeID, orderID, &subject, correlationID)
+		order, err = s.ConfirmOrder(ctx, storeID, orderID, &subject, correlationID)
 
 	case "cancelled":
 		if order.Status == "pending" {
-			return s.CancelPendingOrder(ctx, storeID, orderID, AuthoritySeller, &subject, reason, correlationID)
+			order, err = s.CancelPendingOrder(ctx, storeID, orderID, AuthoritySeller, &subject, reason, correlationID)
 		} else if order.Status == "confirmed" || order.Status == "processing" {
-			return s.CancelConfirmedOrder(ctx, storeID, orderID, AuthoritySeller, &subject, reason, correlationID)
+			order, err = s.CancelConfirmedOrder(ctx, storeID, orderID, AuthoritySeller, &subject, reason, correlationID)
 		} else {
-			return Order{}, fmt.Errorf("%w: cannot cancel order in status %s", ErrInvalidTransition, order.Status)
+			return SellerOrderView{}, fmt.Errorf("%w: cannot cancel order in status %s", ErrInvalidTransition, order.Status)
 		}
 
 	case "processing":
 		if order.Status != "confirmed" {
-			return Order{}, fmt.Errorf("%w: cannot transition to processing from status %s", ErrInvalidTransition, order.Status)
+			return SellerOrderView{}, fmt.Errorf("%w: cannot transition to processing from status %s", ErrInvalidTransition, order.Status)
 		}
-		return s.AdvanceOrderStatus(ctx, storeID, orderID, "processing", AuthoritySeller, &subject, reason, correlationID)
+		order, err = s.AdvanceOrderStatus(ctx, storeID, orderID, "processing", AuthoritySeller, &subject, reason, correlationID)
 
 	case "ready_for_shipping":
 		if order.Status != "processing" {
-			return Order{}, fmt.Errorf("%w: cannot transition to ready_for_shipping from status %s", ErrInvalidTransition, order.Status)
+			return SellerOrderView{}, fmt.Errorf("%w: cannot transition to ready_for_shipping from status %s", ErrInvalidTransition, order.Status)
 		}
-		return s.AdvanceOrderStatus(ctx, storeID, orderID, "ready_for_shipping", AuthoritySeller, &subject, reason, correlationID)
+		order, err = s.AdvanceOrderStatus(ctx, storeID, orderID, "ready_for_shipping", AuthoritySeller, &subject, reason, correlationID)
 
 	case "shipped", "delivered":
-		return Order{}, fmt.Errorf("%w: shipping transitions are deferred beyond P5.8", ErrInvalidTransition)
+		return SellerOrderView{}, fmt.Errorf("%w: shipping transitions are deferred beyond P5.8", ErrInvalidTransition)
 
 	default:
-		return Order{}, fmt.Errorf("%w: unknown target status %s", ErrInvalidTransition, targetStatus)
+		return SellerOrderView{}, fmt.Errorf("%w: unknown target status %s", ErrInvalidTransition, targetStatus)
 	}
+	if err != nil {
+		return SellerOrderView{}, err
+	}
+	return s.sellerOrderView(ctx, order)
 }
 
-func isMarketCurrencyMatch(currency, marketCode string) bool {
-	if currency == marketCode {
-		return true
-	}
+func marketCurrency(marketCode string) string {
 	marketCurrencies := map[string]string{
 		"EG": "EGP",
 		"SA": "SAR",
@@ -877,5 +1000,231 @@ func isMarketCurrencyMatch(currency, marketCode string) bool {
 		"AE": "AED",
 		"KW": "KWD",
 	}
-	return marketCurrencies[marketCode] == currency
+	if c, ok := marketCurrencies[marketCode]; ok {
+		return c
+	}
+	return marketCode
+}
+
+func isMarketCurrencyMatch(currency, marketCode string) bool {
+	return marketCurrency(marketCode) == currency
+}
+
+// SellerOrderView is the buyer-safe projection a Seller app receives for one
+// of its store's orders. ContactEmail comes from the checkout session that
+// produced the order and Timeline from the immutable order_timeline log; no
+// supplier cost, reservation, fulfillment location or internal event metadata
+// crosses this boundary.
+type SellerOrderView struct {
+	Order        Order           `json:"order"`
+	ContactEmail string          `json:"contact_email"`
+	Timeline     []OrderTimeline `json:"timeline"`
+}
+
+func (s Service) sellerOrderView(ctx context.Context, order Order) (SellerOrderView, error) {
+	view := SellerOrderView{Order: order, Timeline: []OrderTimeline{}}
+
+	email, err := s.repo.GetOrderContactEmail(ctx, order.CheckoutSessionID)
+	if err == nil {
+		view.ContactEmail = email
+	}
+
+	timeline, err := s.repo.ListOrderTimeline(ctx, order.ID)
+	if err != nil {
+		return SellerOrderView{}, err
+	}
+	view.Timeline = timeline
+	return view, nil
+}
+
+func (s Service) GetStoreOrderForSubject(ctx context.Context, subject, storeID, orderID string) (SellerOrderView, error) {
+	store, err := s.repo.GetStore(ctx, storeID)
+	if err != nil {
+		return SellerOrderView{}, err
+	}
+	if _, err := s.RequireSellerAccess(ctx, subject, store.SellerID); err != nil {
+		return SellerOrderView{}, err
+	}
+
+	order, err := s.repo.GetOrderByID(ctx, nil, storeID, orderID)
+	if err != nil {
+		return SellerOrderView{}, err
+	}
+	return s.sellerOrderView(ctx, order)
+}
+
+// aggregateInventorySummary rolls per-SKU inventory summaries up into the
+// product-level aggregate exposed at the internal Seller API boundary.
+func aggregateInventorySummary(items []SellerInventorySummary) SellerInventoryAggregate {
+	agg := SellerInventoryAggregate{Locations: []SellerInventoryLocation{}}
+	for _, item := range items {
+		agg.TotalOnHand += item.OnHandQty
+		agg.TotalReserved += item.ReservedQty
+		agg.TotalAvailable += item.AvailableQty
+		agg.Locations = append(agg.Locations, SellerInventoryLocation{
+			LocationID:   item.FulfillmentLocationID,
+			LocationName: item.LocationName,
+			SKUID:        item.SKUID,
+			OnHandQty:    item.OnHandQty,
+			ReservedQty:  item.ReservedQty,
+			AvailableQty: item.AvailableQty,
+		})
+	}
+	return agg
+}
+
+// ListSellerProductViewsForSubject builds the product list projection for the
+// internal Seller API: one row per listing carrying the display name, current
+// price, inventory aggregate and publish readiness. Readiness here mirrors the
+// detail-page topology rules using batched reads.
+func (s Service) ListSellerProductViewsForSubject(ctx context.Context, subject, storeID, statusFilter, sourceFilter, queryFilter string, limit, offset int) ([]SellerProductListView, int, error) {
+	store, err := s.repo.GetStore(ctx, storeID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if _, err := s.RequireSellerAccess(ctx, subject, store.SellerID); err != nil {
+		return nil, 0, err
+	}
+
+	items, total, err := s.repo.ListStoreProducts(ctx, storeID, statusFilter, sourceFilter, queryFilter, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	productIDs := make([]string, 0, len(items))
+	for _, item := range items {
+		productIDs = append(productIDs, item.Product.ID)
+	}
+
+	skusByProduct, err := s.repo.ListSKUsByProductIDs(ctx, productIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+	variantCounts, err := s.repo.ListActiveVariantSKUCountsByProductIDs(ctx, productIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+	names, err := s.repo.ListProductNamesByProductIDs(ctx, productIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+	mediaCounts, err := s.repo.CountMediaByProductIDs(ctx, productIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+	snapshots, _ := s.repo.ListStoreInventorySnapshots(ctx, storeID)
+	locations, _ := s.repo.ListStoreFulfillmentLocations(ctx, storeID)
+
+	validLocationByID := make(map[string]bool, len(locations))
+	for _, l := range locations {
+		validLocationByID[l.ID] = l.StoreID == store.ID && l.SupplierID == "" &&
+			l.Status == "active" && l.MarketCode == store.MarketCode
+	}
+	activeVariantsByProduct := map[string]int{}
+	okVariantsByProduct := map[string]int{}
+	for _, c := range variantCounts {
+		activeVariantsByProduct[c.ProductID]++
+		if c.ActiveSKUQty == 1 {
+			okVariantsByProduct[c.ProductID]++
+		}
+	}
+	activeSKUIDsByProduct := map[string]map[string]bool{}
+	skuToProduct := map[string]string{}
+	for productID, skus := range skusByProduct {
+		activeSKUIDsByProduct[productID] = map[string]bool{}
+		for _, sku := range skus {
+			skuToProduct[sku.ID] = productID
+			if sku.Status == "active" {
+				activeSKUIDsByProduct[productID][sku.ID] = true
+			}
+		}
+	}
+	sellableSKUsByProduct := map[string]bool{}
+	for _, snap := range snapshots {
+		productID, ok := skuToProduct[snap.SKUID]
+		if !ok || !activeSKUIDsByProduct[productID][snap.SKUID] {
+			continue
+		}
+		if !validLocationByID[snap.FulfillmentLocationID] {
+			continue
+		}
+		if snap.OnHandQty-snap.ReservedQty > 0 {
+			sellableSKUsByProduct[productID] = true
+		}
+	}
+
+	views := make([]SellerProductListView, 0, len(items))
+	for _, item := range items {
+		view := SellerProductListView{
+			Product:       item.Product,
+			Source:        item.Source,
+			Name:          names[item.Product.ID],
+			ListingID:     item.Listing.ID,
+			ListingStatus: item.Listing.Status,
+			CurrentPrice:  item.Price,
+		}
+
+		// Inventory aggregate for this product's SKUs.
+		locName := map[string]string{}
+		for _, l := range locations {
+			locName[l.ID] = l.Name
+		}
+		agg := SellerInventoryAggregate{Locations: []SellerInventoryLocation{}}
+		for _, snap := range snapshots {
+			if skuToProduct[snap.SKUID] != item.Product.ID {
+				continue
+			}
+			avail := snap.OnHandQty - snap.ReservedQty
+			if avail < 0 {
+				avail = 0
+			}
+			agg.TotalOnHand += snap.OnHandQty
+			agg.TotalReserved += snap.ReservedQty
+			agg.TotalAvailable += avail
+			agg.Locations = append(agg.Locations, SellerInventoryLocation{
+				LocationID:   snap.FulfillmentLocationID,
+				LocationName: locName[snap.FulfillmentLocationID],
+				SKUID:        snap.SKUID,
+				OnHandQty:    snap.OnHandQty,
+				ReservedQty:  snap.ReservedQty,
+				AvailableQty: avail,
+			})
+		}
+		view.InventorySummary = agg
+
+		var reasons []string
+		if store.Status != "active" {
+			reasons = append(reasons, "Store must be active")
+		}
+		if names[item.Product.ID] == "" {
+			reasons = append(reasons, "Product title/translation is missing")
+		}
+		if activeVariantsByProduct[item.Product.ID] == 0 {
+			reasons = append(reasons, "At least one active Variant is required")
+		} else if okVariantsByProduct[item.Product.ID] != activeVariantsByProduct[item.Product.ID] {
+			reasons = append(reasons, "Each active Variant must have exactly one active selectable SKU")
+		}
+		if item.Listing.StoreID != store.ID {
+			reasons = append(reasons, "Listing does not belong to store")
+		}
+		if item.Listing.MarketCode != store.MarketCode {
+			reasons = append(reasons, "Listing market does not match store market")
+		}
+		if item.Price == nil || !item.Price.IsCurrent {
+			reasons = append(reasons, "Current retail price is missing")
+		} else if item.Price.Price.Currency != store.MarketCode && !isMarketCurrencyMatch(item.Price.Price.Currency, store.MarketCode) {
+			reasons = append(reasons, "Price currency does not match store market currency")
+		}
+		if mediaCounts[item.Product.ID] == 0 {
+			reasons = append(reasons, "At least one product image is required")
+		}
+		if !sellableSKUsByProduct[item.Product.ID] {
+			reasons = append(reasons, "Sellable inventory at an active store location is required")
+		}
+		view.PublishReadiness = PublishReadiness{IsReady: len(reasons) == 0, Reasons: reasons}
+
+		views = append(views, view)
+	}
+
+	return views, total, nil
 }

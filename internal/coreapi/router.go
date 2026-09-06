@@ -219,12 +219,18 @@ func NewRouter(deps Dependencies) chi.Router {
 			r.Post("/domains/{domainID}/enable", server.handleAdminEnableDomain)
 			r.Get("/products", server.handleListProducts)
 			r.Post("/products/{productID}/status", server.handleUpdateProductStatus)
-			r.Get("/categories", server.handleListCategories)
 			r.Post("/categories/{categoryID}/status", server.handleUpdateCategoryStatus)
 			r.Get("/offers", server.handleListOffers)
 			r.Post("/offers/{offerID}/status", server.handleUpdateSupplierOfferStatus)
 			r.Get("/locations", server.handleListLocations)
 			r.Post("/locations/{locationID}/status", server.handleUpdateLocationStatus)
+		})
+
+		// Category read access for catalog authoring (sellers assign existing
+		// categories to their products).
+		r.Group(func(r chi.Router) {
+			r.Use(requireCallers(serviceauth.CallerSeller, serviceauth.CallerAdmin))
+			r.Get("/categories", server.handleListCategories)
 		})
 
 		// Theme Engine capabilities.

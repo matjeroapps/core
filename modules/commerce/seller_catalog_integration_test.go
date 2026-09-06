@@ -38,6 +38,7 @@ func setupSellerCatalogTestDB(t *testing.T) (*database.Pool, Service, Repository
 		"000012_order_aggregate_schema.up.sql",
 		"000013_outbox_publish_claims.up.sql",
 		"000014_seller_catalog_authoring.up.sql",
+		"000015_media_upload_intent.up.sql",
 	}
 
 	for _, m := range migrations {
@@ -56,7 +57,12 @@ func setupSellerCatalogTestDB(t *testing.T) (*database.Pool, Service, Repository
 	service.S3Storage = &S3Storage{
 		cfg: S3Config{URLTTL: 15 * time.Minute},
 		MockHeadObject: func(ctx context.Context, storageKey string) (*s3.HeadObjectOutput, error) {
-			return &s3.HeadObjectOutput{}, nil
+			contentType := "image/webp"
+			contentLength := int64(1024)
+			return &s3.HeadObjectOutput{ContentType: &contentType, ContentLength: &contentLength}, nil
+		},
+		MockPresignPutObject: func(ctx context.Context, storageKey, contentType string) (string, error) {
+			return "https://s3.test/bucket/" + storageKey, nil
 		},
 	}
 
@@ -242,8 +248,8 @@ func TestFirstLiveProductAndOrderCoreIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Transition to confirmed: %v", err)
 	}
-	if confirmedOrder.Status != "confirmed" {
-		t.Fatalf("Expected confirmed status, got %s", confirmedOrder.Status)
+	if confirmedOrder.Order.Status != "confirmed" {
+		t.Fatalf("Expected confirmed status, got %s", confirmedOrder.Order.Status)
 	}
 
 	// Start Processing: confirmed -> processing
@@ -251,8 +257,8 @@ func TestFirstLiveProductAndOrderCoreIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Transition to processing: %v", err)
 	}
-	if processingOrder.Status != "processing" {
-		t.Fatalf("Expected processing status, got %s", processingOrder.Status)
+	if processingOrder.Order.Status != "processing" {
+		t.Fatalf("Expected processing status, got %s", processingOrder.Order.Status)
 	}
 
 	// Ready for Shipping: processing -> ready_for_shipping
@@ -260,8 +266,20 @@ func TestFirstLiveProductAndOrderCoreIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Transition to ready_for_shipping: %v", err)
 	}
-	if readyOrder.Status != "ready_for_shipping" {
-		t.Fatalf("Expected ready_for_shipping status, got %s", readyOrder.Status)
+	if readyOrder.Order.Status != "ready_for_shipping" {
+		t.Fatalf("Expected ready_for_shipping status, got %s", readyOrder.Order.Status)
+	}
+
+	// Seller order detail exposes real buyer contact email and timeline
+	orderView, err := service.GetStoreOrderForSubject(ctx, subject, store.ID, orderID)
+	if err != nil {
+		t.Fatalf("GetStoreOrderForSubject: %v", err)
+	}
+	if orderView.ContactEmail != "customer@example.test" {
+		t.Fatalf("Expected contact email customer@example.test, got %q", orderView.ContactEmail)
+	}
+	if len(orderView.Timeline) < 4 {
+		t.Fatalf("Expected at least 4 timeline events (pending, confirmed, processing, ready_for_shipping), got %d", len(orderView.Timeline))
 	}
 
 	// Shipping transition beyond ready_for_shipping must fail

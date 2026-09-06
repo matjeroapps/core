@@ -1098,6 +1098,400 @@ func (r Repository) CreateMediaUploadIntent(ctx context.Context, intent MediaUpl
 	return intent, nil
 }
 
+// CompleteMediaUpload inserts the media metadata row and marks the upload
+// intent completed as one transaction. A concurrent or retried completion of
+// the same intent is rejected by the storage-key unique index on
+// media_metadata and by the completed_at IS NULL guard on the intent update,
+// so exactly one media record can ever be created per upload intent.
+func (r Repository) CompleteMediaUpload(ctx context.Context, m MediaMetadata, intentID string) (MediaMetadata, error) {
+	if m.ProductID == "" || m.MediaType == "" || m.URI == "" || intentID == "" {
+		return MediaMetadata{}, ErrInvalidInput
+	}
+
+	var created MediaMetadata
+	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		id := uuid.NewString()
+		metadataJSON, _ := json.Marshal(m.Metadata)
+		if m.IsPrimary {
+			if _, err := tx.Exec(ctx, `UPDATE media_metadata SET is_primary = false WHERE product_id = $1`, m.ProductID); err != nil {
+				return translatePGError(err, "clear previous primary media")
+			}
+		}
+
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO media_metadata (id, product_id, media_type, uri, alt_text, sort_order, metadata, storage_key, is_primary)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			RETURNING created_at, updated_at
+		`, id, m.ProductID, m.MediaType, m.URI, m.AltText, m.SortOrder, metadataJSON, m.StorageKey, m.IsPrimary).Scan(&created.CreatedAt, &created.UpdatedAt); err != nil {
+			return translatePGError(err, "create media metadata on upload completion")
+		}
+
+		res, err := tx.Exec(ctx, `
+			UPDATE media_upload_intents SET completed_at = now()
+			WHERE id = $1 AND completed_at IS NULL
+		`, intentID)
+		if err != nil {
+			return translatePGError(err, "mark upload intent complete")
+		}
+		if res.RowsAffected() == 0 {
+			return ErrConflict
+		}
+
+		created = MediaMetadata{
+			ID:         id,
+			ProductID:  m.ProductID,
+			MediaType:  m.MediaType,
+			URI:        m.URI,
+			AltText:    m.AltText,
+			SortOrder:  m.SortOrder,
+			Metadata:   m.Metadata,
+			StorageKey: m.StorageKey,
+			IsPrimary:  m.IsPrimary,
+			CreatedAt:  created.CreatedAt,
+			UpdatedAt:  created.UpdatedAt,
+		}
+		return bumpStorefrontRevisions(ctx, tx, revisionStoresByProduct, m.ProductID)
+	})
+
+	return created, err
+}
+
+func (r Repository) GetMediaMetadataByStorageKey(ctx context.Context, productID, storageKey string) (MediaMetadata, error) {
+	if productID == "" || storageKey == "" {
+		return MediaMetadata{}, ErrInvalidInput
+	}
+
+	var m MediaMetadata
+	var metadataJSON []byte
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, product_id, media_type, uri, alt_text, sort_order, metadata, storage_key, is_primary, created_at, updated_at
+		FROM media_metadata
+		WHERE product_id = $1 AND storage_key = $2
+	`, productID, storageKey).Scan(&m.ID, &m.ProductID, &m.MediaType, &m.URI, &m.AltText, &m.SortOrder, &metadataJSON, &m.StorageKey, &m.IsPrimary, &m.CreatedAt, &m.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return MediaMetadata{}, ErrNotFound
+		}
+		return MediaMetadata{}, fmt.Errorf("get media metadata by storage key: %w", err)
+	}
+	if len(metadataJSON) > 0 {
+		_ = json.Unmarshal(metadataJSON, &m.Metadata)
+	}
+	return m, nil
+}
+
+// CreateSKUReplacingActive enforces the 1-active-SKU-per-variant invariant
+// inside one transaction: creating an active SKU first deactivates the
+// currently active SKU of the same variant. The partial unique index
+// skus_variant_active_uidx is the concurrency backstop: two concurrent
+// requests can never both end up active.
+func (r Repository) CreateSKUReplacingActive(ctx context.Context, variantID, code, barcode, status string) (SKU, error) {
+	if variantID == "" || code == "" || status == "" {
+		return SKU{}, ErrInvalidInput
+	}
+
+	var created SKU
+	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		if status == "active" {
+			if _, err := tx.Exec(ctx, `
+				UPDATE skus SET status = 'inactive', updated_at = now()
+				WHERE variant_id = $1 AND status = 'active'
+			`, variantID); err != nil {
+				return translatePGError(err, "deactivate previous active sku")
+			}
+		}
+
+		var barcodeParam *string
+		if barcode != "" {
+			barcodeParam = &barcode
+		}
+		id := uuid.NewString()
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO skus (id, variant_id, code, barcode, status)
+			VALUES ($1, $2, $3, $4, $5)
+			RETURNING created_at, updated_at
+		`, id, variantID, code, barcodeParam, status).Scan(&created.CreatedAt, &created.UpdatedAt); err != nil {
+			return translatePGError(err, "create sku")
+		}
+
+		created = SKU{
+			ID:        id,
+			VariantID: variantID,
+			Code:      code,
+			Status:    status,
+			CreatedAt: created.CreatedAt,
+			UpdatedAt: created.UpdatedAt,
+		}
+		if barcodeParam != nil {
+			created.Barcode = barcode
+		}
+		return bumpStorefrontRevisions(ctx, tx, revisionStoresByVariant, variantID)
+	})
+
+	return created, err
+}
+
+// UpdateSKUReplacingActive updates a SKU and, when the target status is
+// active, deactivates the other active SKUs of the same variant in the same
+// transaction.
+func (r Repository) UpdateSKUReplacingActive(ctx context.Context, skuID, variantID, code, barcode, status string) (SKU, error) {
+	if skuID == "" || variantID == "" || code == "" || status == "" {
+		return SKU{}, ErrInvalidInput
+	}
+
+	var updated SKU
+	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		if status == "active" {
+			if _, err := tx.Exec(ctx, `
+				UPDATE skus SET status = 'inactive', updated_at = now()
+				WHERE variant_id = $1 AND status = 'active' AND id != $2
+			`, variantID, skuID); err != nil {
+				return translatePGError(err, "deactivate other active skus")
+			}
+		}
+
+		var barcodeParam *string
+		if barcode != "" {
+			barcodeParam = &barcode
+		}
+		if err := tx.QueryRow(ctx, `
+			UPDATE skus
+			SET code = $3, barcode = $4, status = $5, updated_at = now()
+			WHERE id = $1 AND variant_id = $2
+			RETURNING created_at, updated_at
+		`, skuID, variantID, code, barcodeParam, status).Scan(&updated.CreatedAt, &updated.UpdatedAt); err != nil {
+			return translatePGError(err, "update sku")
+		}
+
+		updated = SKU{
+			ID:        skuID,
+			VariantID: variantID,
+			Code:      code,
+			Status:    status,
+			CreatedAt: updated.CreatedAt,
+			UpdatedAt: updated.UpdatedAt,
+		}
+		if barcodeParam != nil {
+			updated.Barcode = barcode
+		}
+		return bumpStorefrontRevisions(ctx, tx, revisionStoresByVariant, variantID)
+	})
+
+	return updated, err
+}
+
+// PublishSellerProductAtomically activates the Product and its canonical
+// Listing only if the full sellable topology still holds, revalidated inside
+// the publish transaction while the relevant rows are locked. Lock order is
+// deterministic: product -> listing -> skus.
+func (r Repository) PublishSellerProductAtomically(ctx context.Context, storeID, productID, marketCode, expectedCurrency string) error {
+	if storeID == "" || productID == "" || marketCode == "" || expectedCurrency == "" {
+		return ErrInvalidInput
+	}
+
+	return r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var storeStatus string
+		if err := tx.QueryRow(ctx, `SELECT status FROM stores WHERE id = $1 FOR UPDATE`, storeID).Scan(&storeStatus); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrNotFound
+			}
+			return translatePGError(err, "lock store for publish")
+		}
+		if storeStatus != "active" {
+			return fmt.Errorf("%w: store is not active", ErrInvalidInput)
+		}
+
+		if _, err := tx.Exec(ctx, `SELECT id FROM products WHERE id = $1 FOR UPDATE`, productID); err != nil {
+			return translatePGError(err, "lock product for publish")
+		}
+
+		var listingID, listingMarket string
+		err := tx.QueryRow(ctx, `
+			SELECT id, market_code FROM seller_listings
+			WHERE store_id = $1 AND product_id = $2
+			FOR UPDATE
+		`, storeID, productID).Scan(&listingID, &listingMarket)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrNotFound
+			}
+			return translatePGError(err, "lock listing for publish")
+		}
+		if listingMarket != marketCode {
+			return fmt.Errorf("%w: listing market %s does not match store market %s", ErrInvalidInput, listingMarket, marketCode)
+		}
+
+		var reasons []string
+
+		var hasName bool
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM product_translations
+				WHERE product_id = $1 AND COALESCE(TRIM(name), '') <> ''
+			)
+		`, productID).Scan(&hasName); err != nil {
+			return translatePGError(err, "check product translations for publish")
+		}
+		if !hasName {
+			reasons = append(reasons, "Product title/translation is missing")
+		}
+
+		// Lock SKU rows of the product before evaluating the topology.
+		if _, err := tx.Exec(ctx, `
+			SELECT sk.id FROM skus sk
+			JOIN variants v ON v.id = sk.variant_id
+			WHERE v.product_id = $1
+			FOR UPDATE OF sk
+		`, productID); err != nil {
+			return translatePGError(err, "lock skus for publish")
+		}
+
+		rows, err := tx.Query(ctx, `
+			SELECT v.id, COUNT(sk.id)
+			FROM variants v
+			LEFT JOIN skus sk ON sk.variant_id = v.id AND sk.status = 'active'
+			WHERE v.product_id = $1 AND v.status = 'active'
+			GROUP BY v.id
+		`, productID)
+		if err != nil {
+			return translatePGError(err, "check active variants for publish")
+		}
+		activeVariants := 0
+		for rows.Next() {
+			var variantID string
+			var activeSKUCount int
+			if err := rows.Scan(&variantID, &activeSKUCount); err != nil {
+				rows.Close()
+				return translatePGError(err, "scan active variant for publish")
+			}
+			activeVariants++
+			if activeSKUCount != 1 {
+				reasons = append(reasons, fmt.Sprintf("Variant %s must have exactly one active selectable SKU", variantID))
+			}
+		}
+		rows.Close()
+		if activeVariants == 0 {
+			reasons = append(reasons, "At least one active Variant is required")
+		}
+
+		var hasPrice bool
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM seller_listing_prices
+				WHERE seller_listing_id = $1 AND is_current = true AND currency_code = $2
+			)
+		`, listingID, expectedCurrency).Scan(&hasPrice); err != nil {
+			return translatePGError(err, "check listing price for publish")
+		}
+		if !hasPrice {
+			reasons = append(reasons, "Current retail price is missing or currency does not match store market")
+		}
+
+		var hasMedia bool
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS (SELECT 1 FROM media_metadata WHERE product_id = $1)
+		`, productID).Scan(&hasMedia); err != nil {
+			return translatePGError(err, "check product media for publish")
+		}
+		if !hasMedia {
+			reasons = append(reasons, "At least one product image is required")
+		}
+
+		var hasSellableInventory bool
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM variants v
+				JOIN skus sk ON sk.variant_id = v.id AND sk.status = 'active'
+				JOIN inventory_snapshots inv ON inv.sku_id = sk.id
+				JOIN fulfillment_locations fl ON fl.id = inv.fulfillment_location_id
+				WHERE v.product_id = $1
+				  AND fl.store_id = $2
+				  AND fl.supplier_id IS NULL
+				  AND fl.status = 'active'
+				  AND fl.market_code = $3
+				  AND (inv.on_hand_qty - inv.reserved_qty) > 0
+			)
+		`, productID, storeID, marketCode).Scan(&hasSellableInventory); err != nil {
+			return translatePGError(err, "check inventory topology for publish")
+		}
+		if !hasSellableInventory {
+			reasons = append(reasons, "Sellable inventory at an active store location is required")
+		}
+
+		if len(reasons) > 0 {
+			return fmt.Errorf("%w: publish readiness failed: %s", ErrInvalidInput, strings.Join(reasons, "; "))
+		}
+
+		if _, err := tx.Exec(ctx, `
+			UPDATE products SET status = 'active', updated_at = now() WHERE id = $1
+		`, productID); err != nil {
+			return translatePGError(err, "activate product")
+		}
+
+		if _, err := tx.Exec(ctx, `
+			UPDATE seller_listings SET status = 'active', updated_at = now() WHERE id = $1
+		`, listingID); err != nil {
+			return translatePGError(err, "activate listing")
+		}
+
+		return bumpStorefrontRevisions(ctx, tx, revisionStoreItself, storeID)
+	})
+}
+
+func (r Repository) GetOrderContactEmail(ctx context.Context, checkoutSessionID string) (string, error) {
+	if checkoutSessionID == "" {
+		return "", ErrInvalidInput
+	}
+	var email sql.NullString
+	err := r.pool.QueryRow(ctx, `
+		SELECT contact_email FROM checkout_sessions WHERE id = $1
+	`, checkoutSessionID).Scan(&email)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrNotFound
+		}
+		return "", fmt.Errorf("get order contact email: %w", err)
+	}
+	if !email.Valid {
+		return "", nil
+	}
+	return email.String, nil
+}
+
+func (r Repository) ListOrderTimeline(ctx context.Context, orderID string) ([]OrderTimeline, error) {
+	if orderID == "" {
+		return nil, ErrInvalidInput
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, order_id, from_status, to_status, actor_type, reason, created_at
+		FROM order_timeline
+		WHERE order_id = $1
+		ORDER BY created_at ASC, id ASC
+	`, orderID)
+	if err != nil {
+		return nil, fmt.Errorf("query order timeline: %w", err)
+	}
+	defer rows.Close()
+
+	var result []OrderTimeline
+	for rows.Next() {
+		var t OrderTimeline
+		var fromStatus, reason sql.NullString
+		if err := rows.Scan(&t.ID, &t.OrderID, &fromStatus, &t.ToStatus, &t.ActorType, &reason, &t.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan order timeline: %w", err)
+		}
+		if fromStatus.Valid {
+			t.FromStatus = &fromStatus.String
+		}
+		if reason.Valid {
+			t.Reason = &reason.String
+		}
+		result = append(result, t)
+	}
+	return result, nil
+}
+
 func (r Repository) GetMediaUploadIntentByStorageKey(ctx context.Context, storageKey string) (MediaUploadIntent, error) {
 	var intent MediaUploadIntent
 	err := r.pool.QueryRow(ctx, `
@@ -1125,4 +1519,129 @@ func (r Repository) MarkMediaUploadIntentComplete(ctx context.Context, intentID 
 		intentID,
 	)
 	return err
+}
+
+// ListSKUsByProductIDs returns the SKUs of the given products in one query.
+func (r Repository) ListSKUsByProductIDs(ctx context.Context, productIDs []string) (map[string][]SKU, error) {
+	out := map[string][]SKU{}
+	if len(productIDs) == 0 {
+		return out, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT v.product_id, s.id, s.variant_id, s.code, s.barcode, s.status, s.created_at, s.updated_at
+		FROM skus s
+		JOIN variants v ON v.id = s.variant_id
+		WHERE v.product_id = ANY($1)
+		ORDER BY s.created_at ASC, s.code ASC
+	`, productIDs)
+	if err != nil {
+		return nil, fmt.Errorf("query skus by product ids: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var productID string
+		var s SKU
+		var bc sql.NullString
+		if err := rows.Scan(&productID, &s.ID, &s.VariantID, &s.Code, &bc, &s.Status, &s.CreatedAt, &s.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan sku by product ids: %w", err)
+		}
+		if bc.Valid {
+			s.Barcode = bc.String
+		}
+		out[productID] = append(out[productID], s)
+	}
+	return out, nil
+}
+
+// VariantActiveSKUCount is one active Variant of a product with the number of
+// active SKUs it carries.
+type VariantActiveSKUCount struct {
+	ProductID    string
+	VariantID    string
+	ActiveSKUQty int
+}
+
+// ListActiveVariantSKUCountsByProductIDs reports, per active Variant of the
+// given products, how many active SKUs it carries. Readiness requires that
+// count to be exactly one.
+func (r Repository) ListActiveVariantSKUCountsByProductIDs(ctx context.Context, productIDs []string) ([]VariantActiveSKUCount, error) {
+	if len(productIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT v.product_id, v.id, COUNT(sk.id)
+		FROM variants v
+		LEFT JOIN skus sk ON sk.variant_id = v.id AND sk.status = 'active'
+		WHERE v.product_id = ANY($1) AND v.status = 'active'
+		GROUP BY v.product_id, v.id
+	`, productIDs)
+	if err != nil {
+		return nil, fmt.Errorf("query active variant sku counts: %w", err)
+	}
+	defer rows.Close()
+
+	var result []VariantActiveSKUCount
+	for rows.Next() {
+		var c VariantActiveSKUCount
+		if err := rows.Scan(&c.ProductID, &c.VariantID, &c.ActiveSKUQty); err != nil {
+			return nil, fmt.Errorf("scan active variant sku count: %w", err)
+		}
+		result = append(result, c)
+	}
+	return result, nil
+}
+
+// ListProductNamesByProductIDs returns one display name per product, preferring
+// the English translation, then Arabic, then any other locale.
+func (r Repository) ListProductNamesByProductIDs(ctx context.Context, productIDs []string) (map[string]string, error) {
+	out := map[string]string{}
+	if len(productIDs) == 0 {
+		return out, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT DISTINCT ON (product_id) product_id, name
+		FROM product_translations
+		WHERE product_id = ANY($1)
+		ORDER BY product_id,
+			CASE locale WHEN 'en' THEN 0 WHEN 'ar' THEN 1 ELSE 2 END
+	`, productIDs)
+	if err != nil {
+		return nil, fmt.Errorf("query product names: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var productID, name string
+		if err := rows.Scan(&productID, &name); err != nil {
+			return nil, fmt.Errorf("scan product name: %w", err)
+		}
+		out[productID] = name
+	}
+	return out, nil
+}
+
+// CountMediaByProductIDs returns the number of media records per product.
+func (r Repository) CountMediaByProductIDs(ctx context.Context, productIDs []string) (map[string]int, error) {
+	out := map[string]int{}
+	if len(productIDs) == 0 {
+		return out, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT product_id, COUNT(*)
+		FROM media_metadata
+		WHERE product_id = ANY($1)
+		GROUP BY product_id
+	`, productIDs)
+	if err != nil {
+		return nil, fmt.Errorf("query media counts: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var productID string
+		var count int
+		if err := rows.Scan(&productID, &count); err != nil {
+			return nil, fmt.Errorf("scan media count: %w", err)
+		}
+		out[productID] = count
+	}
+	return out, nil
 }

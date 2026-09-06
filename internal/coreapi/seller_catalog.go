@@ -13,10 +13,10 @@ import (
 )
 
 type sellerProductListResponse struct {
-	Products []commerce.SellerProductListItem `json:"products"`
-	Total    int                              `json:"total"`
-	Limit    int                              `json:"limit"`
-	Offset   int                              `json:"offset"`
+	Products []sellerProductListItemResponse `json:"products"`
+	Total    int                             `json:"total"`
+	Limit    int                             `json:"limit"`
+	Offset   int                             `json:"offset"`
 }
 
 type sellerOrderListItem struct {
@@ -95,7 +95,8 @@ func toSellerOrderListItem(o commerce.Order) sellerOrderListItem {
 	}
 }
 
-func toSellerOrderDetail(o commerce.Order) sellerOrderDetail {
+func toSellerOrderDetail(view commerce.SellerOrderView) sellerOrderDetail {
+	o := view.Order
 	items := make([]sellerOrderLineItem, len(o.Items))
 	for i, item := range o.Items {
 		source := "supplier"
@@ -144,6 +145,22 @@ func toSellerOrderDetail(o commerce.Order) sellerOrderDetail {
 		allowedActions = []string{}
 	}
 
+	timeline := make([]sellerOrderTimelineEntry, 0, len(view.Timeline))
+	for _, t := range view.Timeline {
+		detail := ""
+		if t.Reason != nil {
+			detail = *t.Reason
+		} else if t.FromStatus != nil {
+			detail = "status changed from " + *t.FromStatus + " to " + t.ToStatus
+		}
+		timeline = append(timeline, sellerOrderTimelineEntry{
+			ID:        t.ID,
+			Type:      t.ToStatus,
+			Detail:    detail,
+			CreatedAt: t.CreatedAt,
+		})
+	}
+
 	return sellerOrderDetail{
 		ID:                     o.ID,
 		OrderNumber:            o.OrderNumber,
@@ -154,9 +171,9 @@ func toSellerOrderDetail(o commerce.Order) sellerOrderDetail {
 		ItemCount:              len(o.Items),
 		ConfirmationDeadlineAt: confirmDeadline,
 		ShippingAddress:        addrMap,
-		ContactEmail:           "",
+		ContactEmail:           view.ContactEmail,
 		Items:                  items,
-		Timeline:               []sellerOrderTimelineEntry{},
+		Timeline:               timeline,
 		AllowedNextActions:     allowedActions,
 		CreatedAt:              o.CreatedAt,
 		UpdatedAt:              o.UpdatedAt,
@@ -193,6 +210,12 @@ type StoreInventoryAdjustmentRequest struct {
 	Reason        string `json:"reason"`
 }
 
+type MediaMetadataUpdateRequest struct {
+	AltText   string `json:"alt_text"`
+	SortOrder int    `json:"sort_order"`
+	IsPrimary bool   `json:"is_primary"`
+}
+
 type OrderTransitionRequest struct {
 	TargetStatus string  `json:"target_status"`
 	Reason       *string `json:"reason,omitempty"`
@@ -211,14 +234,18 @@ func (s *server) handleListStoreProducts(w http.ResponseWriter, r *http.Request)
 	queryFilter := r.URL.Query().Get("query")
 	page := parsePage(r)
 
-	items, total, err := s.deps.Commerce.ListSellerProductsForSubject(r.Context(), subject, storeID, statusFilter, sourceFilter, queryFilter, page.Limit, page.Offset)
+	views, total, err := s.deps.Commerce.ListSellerProductViewsForSubject(r.Context(), subject, storeID, statusFilter, sourceFilter, queryFilter, page.Limit, page.Offset)
 	if err != nil {
 		writeDomainError(w, err)
 		return
 	}
 
+	products := make([]sellerProductListItemResponse, len(views))
+	for i, view := range views {
+		products[i] = toSellerProductListItemResponse(view)
+	}
 	httpx.WriteJSON(w, http.StatusOK, sellerProductListResponse{
-		Products: items,
+		Products: products,
 		Total:    total,
 		Limit:    page.Limit,
 		Offset:   page.Offset,
@@ -245,7 +272,7 @@ func (s *server) handleCreateStoreProduct(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	httpx.WriteJSON(w, http.StatusCreated, detail)
+	httpx.WriteJSON(w, http.StatusCreated, toSellerProductDetailResponse(detail))
 }
 
 func (s *server) handleGetStoreProduct(w http.ResponseWriter, r *http.Request) {
@@ -263,7 +290,7 @@ func (s *server) handleGetStoreProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpx.WriteJSON(w, http.StatusOK, detail)
+	httpx.WriteJSON(w, http.StatusOK, toSellerProductDetailResponse(detail))
 }
 
 func (s *server) handleUpdateStoreProduct(w http.ResponseWriter, r *http.Request) {
@@ -287,7 +314,7 @@ func (s *server) handleUpdateStoreProduct(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	httpx.WriteJSON(w, http.StatusOK, detail)
+	httpx.WriteJSON(w, http.StatusOK, toSellerProductDetailResponse(detail))
 }
 
 func (s *server) handleCreateProductVariant(w http.ResponseWriter, r *http.Request) {
@@ -448,11 +475,7 @@ func (s *server) handleUpdateProductMedia(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	var req struct {
-		AltText   string `json:"alt_text"`
-		SortOrder int    `json:"sort_order"`
-		IsPrimary bool   `json:"is_primary"`
-	}
+	var req MediaMetadataUpdateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, CodeInvalidArgument)
 		return
@@ -499,9 +522,7 @@ func (s *server) handleListStoreLocations(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	httpx.WriteJSON(w, http.StatusOK, CollectionResponse[commerce.FulfillmentLocation]{
-		Items: locations,
-	})
+	httpx.WriteJSON(w, http.StatusOK, sellerLocationListResponse{Locations: locations})
 }
 
 func (s *server) handleListStoreInventory(w http.ResponseWriter, r *http.Request) {
@@ -518,9 +539,7 @@ func (s *server) handleListStoreInventory(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	httpx.WriteJSON(w, http.StatusOK, CollectionResponse[commerce.SellerInventorySummary]{
-		Items: summaries,
-	})
+	httpx.WriteJSON(w, http.StatusOK, sellerInventoryListResponse{Inventory: summaries})
 }
 
 func (s *server) handleCreateStoreInventorySnapshot(w http.ResponseWriter, r *http.Request) {

@@ -54,6 +54,7 @@ func readError(err error, action string) error {
 // $1 store id, $2 market code, $3 locale, $4 fallback locale.
 const eligibleListings = `
 	SELECT
+		l.listing_id,
 		l.product_id,
 		l.product_slug,
 		l.product_created_at,
@@ -358,7 +359,7 @@ func (r CatalogRepository) Products(ctx context.Context, scope CatalogScope, que
 			SELECT uri, alt_text
 			FROM media_metadata
 			WHERE product_id = l.product_id
-			ORDER BY sort_order ASC, id ASC
+			ORDER BY is_primary DESC, sort_order ASC, created_at ASC, id ASC
 			LIMIT 1
 		) img ON true
 		LEFT JOIN LATERAL (
@@ -457,15 +458,16 @@ func (r CatalogRepository) ProductBySlug(ctx context.Context, scope CatalogScope
 	var (
 		detail    ProductDetail
 		productID string
+		listingID string
 		inStock   bool
 	)
 	err := r.pool.QueryRow(ctx, `WITH listing AS (`+eligibleListings+`
 		)
-		SELECT l.product_id, l.product_slug, l.name, l.description, l.price_minor, l.price_currency, l.in_stock
+		SELECT l.listing_id, l.product_id, l.product_slug, l.name, l.description, l.price_minor, l.price_currency, l.in_stock
 		FROM listing l
 		WHERE l.product_slug = $5
 	`, args...).Scan(
-		&productID, &detail.Slug, &detail.Name, &detail.Description,
+		&listingID, &productID, &detail.Slug, &detail.Name, &detail.Description,
 		&detail.Price.AmountMinor, &detail.Price.Currency, &inStock,
 	)
 	if err != nil {
@@ -483,16 +485,20 @@ func (r CatalogRepository) ProductBySlug(ctx context.Context, scope CatalogScope
 		return ProductDetail{}, err
 	}
 
+	// Presentation and purchase behavior are fetched by the canonical listing
+	// id selected above, never by an independent (store_id, product_id) query
+	// that could resolve to a different, superseded listing.
 	var (
 		rawPb   sql.NullString
 		rawSecs []byte
 	)
-	_ = r.pool.QueryRow(ctx, `
+	if err := r.pool.QueryRow(ctx, `
 		SELECT p.purchase_behavior, p.sections
-		FROM seller_listings l
-		LEFT JOIN seller_listing_presentations p ON p.seller_listing_id = l.id
-		WHERE l.store_id = $1 AND l.product_id = $2
-	`, scope.storeID, productID).Scan(&rawPb, &rawSecs)
+		FROM seller_listing_presentations p
+		WHERE p.seller_listing_id = $1
+	`, listingID).Scan(&rawPb, &rawSecs); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return ProductDetail{}, readError(err, "get public product presentation")
+	}
 
 	pb := "add_to_cart"
 	if rawPb.Valid && rawPb.String != "" && rawPb.String != "inherit" {
@@ -554,7 +560,7 @@ func (r CatalogRepository) productImages(ctx context.Context, productID string) 
 		SELECT uri, alt_text
 		FROM media_metadata
 		WHERE product_id = $1
-		ORDER BY sort_order ASC, id ASC
+		ORDER BY is_primary DESC, sort_order ASC, created_at ASC, id ASC
 	`, productID)
 	if err != nil {
 		return nil, readError(err, "list public product media")
