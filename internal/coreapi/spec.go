@@ -106,6 +106,7 @@ func internalTags() []openapi3.Tag {
 		{Name: "Inventory", Description: "Inventory snapshots and movements"},
 		{Name: "Themes", Description: "Theme Engine installation and configuration"},
 		{Name: "Shipping", Description: "Shipment domain model and state machine management"},
+		{Name: "Payments", Description: "Payment aggregate, status transitions, and webhook inbox"},
 		{Name: "Platform Administration", Description: "Platform moderation and operational overview"},
 	}
 }
@@ -1031,6 +1032,26 @@ func internalRoutes() []openapi.RouteSpec {
 			Summary: "Get shipment by ID", Tags: []string{"Shipping"},
 			Parameters: []openapi.ParameterSpec{pathParam("shipmentID", "Shipment identifier")},
 			Responses:  readResponses("Shipment details", ShipmentResponse{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/orders/{orderID}/payments", OperationID: "internalInitializePayment",
+			Summary: "Initialize payment for order", Tags: []string{"Payments"},
+			Parameters:  []openapi.ParameterSpec{pathParam("orderID", "Order identifier")},
+			RequestBody: InitializePaymentRequest{},
+			Responses:   writeResponses("Initialized payment", PaymentResponse{}),
+		},
+		{
+			Method: http.MethodPatch, Path: "/internal/v1/payments/{paymentID}/status", OperationID: "internalUpdatePaymentStatus",
+			Summary: "Update payment status", Tags: []string{"Payments"},
+			Parameters:  []openapi.ParameterSpec{pathParam("paymentID", "Payment identifier")},
+			RequestBody: UpdatePaymentStatusRequest{},
+			Responses:   writeResponses("Updated payment", PaymentResponse{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/webhooks/payments/inbox", OperationID: "internalPersistWebhookInbox",
+			Summary: "Persist raw provider webhook in inbox", Tags: []string{"Payments"},
+			RequestBody: PersistWebhookInboxRequest{},
+			Responses:   writeResponses("Persisted webhook inbox entry", WebhookInboxResponse{}),
 		},
 	}
 }

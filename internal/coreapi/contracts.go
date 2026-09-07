@@ -1,6 +1,7 @@
 package coreapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -367,4 +368,68 @@ type ShipmentResponse struct {
 	Events                []ShipmentEventResponse `json:"events,omitempty"`
 	CreatedAt             time.Time               `json:"created_at"`
 	UpdatedAt             time.Time               `json:"updated_at"`
+}
+
+// --- Payments ---
+
+type InitializePaymentRequest struct {
+	AmountMinor       int64  `json:"amount_minor"`
+	Currency          string `json:"currency"`
+	PaymentMethod     string `json:"payment_method"`
+	Provider          string `json:"provider,omitempty"`
+	ProviderReference string `json:"provider_reference,omitempty"`
+}
+
+type UpdatePaymentStatusRequest struct {
+	Status            string `json:"status"`
+	Provider          string `json:"provider,omitempty"`
+	ProviderReference string `json:"provider_reference,omitempty"`
+	ErrorMessage      string `json:"error_message,omitempty"`
+}
+
+type PersistWebhookInboxRequest struct {
+	Provider          string          `json:"provider"`
+	ConnectionID      string          `json:"connection_id,omitempty"`
+	ProviderEventID   string          `json:"provider_event_id"`
+	EventType         string          `json:"event_type"`
+	PayloadJSON       json.RawMessage `json:"payload_json"`
+	SignatureVerified bool            `json:"signature_verified"`
+}
+
+type PaymentAttemptResponse struct {
+	ID                string    `json:"id"`
+	PaymentID         string    `json:"payment_id"`
+	Provider          string    `json:"provider"`
+	ProviderReference string    `json:"provider_reference,omitempty"`
+	Status            string    `json:"status"`
+	ErrorMessage      string    `json:"error_message,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+type PaymentResponse struct {
+	ID            string                   `json:"id"`
+	OrderID       string                   `json:"order_id"`
+	AmountMinor   int64                    `json:"amount_minor"`
+	Currency      string                   `json:"currency"`
+	PaymentMethod string                   `json:"payment_method"`
+	Status        string                   `json:"status"`
+	Attempts      []PaymentAttemptResponse `json:"attempts,omitempty"`
+	CreatedAt     time.Time                `json:"created_at"`
+	UpdatedAt     time.Time                `json:"updated_at"`
+}
+
+type WebhookInboxResponse struct {
+	ID                string          `json:"id"`
+	Provider          string          `json:"provider"`
+	ConnectionID      string          `json:"connection_id,omitempty"`
+	ProviderEventID   string          `json:"provider_event_id"`
+	EventType         string          `json:"event_type"`
+	PayloadJSON       json.RawMessage `json:"payload_json"`
+	SignatureVerified bool            `json:"signature_verified"`
+	Status            string          `json:"status"`
+	AttemptCount      int             `json:"attempt_count"`
+	Deduplicated      bool            `json:"deduplicated"`
+	ReceivedAt        time.Time       `json:"received_at"`
+	ProcessedAt       *time.Time      `json:"processed_at,omitempty"`
 }
