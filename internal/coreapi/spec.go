@@ -108,6 +108,8 @@ func internalTags() []openapi3.Tag {
 		{Name: "Shipping", Description: "Shipment domain model and state machine management"},
 		{Name: "Payments", Description: "Payment aggregate, status transitions, and webhook inbox"},
 		{Name: "Financial Ledger", Description: "Double-entry ledger accounts and journal entry posting"},
+		{Name: "Balance Projection", Description: "Financial account balance projections"},
+		{Name: "Settlement Calculation", Description: "Settlement calculation foundation and snapshots"},
 		{Name: "Platform Administration", Description: "Platform moderation and operational overview"},
 	}
 }
@@ -1095,6 +1097,37 @@ func internalRoutes() []openapi.RouteSpec {
 			Summary: "List account balance projections", Tags: []string{"Balance Projection"},
 			Parameters: pageParams,
 			Responses:  readResponses("Account balance projection collection", CollectionResponse[AccountBalanceResponse]{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/settlements/periods/{id}/calculate", OperationID: "internalCalculateSettlement",
+			Summary: "Calculate settlement for period", Tags: []string{"Settlement Calculation"},
+			Parameters:  []openapi.ParameterSpec{pathParam("id", "Settlement period identifier")},
+			RequestBody: CalculateSettlementRequest{},
+			Responses:   writeResponses("Calculated settlement collection", CollectionResponse[SettlementResponse]{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/settlements/periods/{id}/finalize", OperationID: "internalFinalizeSettlement",
+			Summary: "Finalize calculated settlements for period", Tags: []string{"Settlement Calculation"},
+			Parameters: []openapi.ParameterSpec{pathParam("id", "Settlement period identifier")},
+			Responses:  writeResponses("Finalized settlement collection", CollectionResponse[SettlementResponse]{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/settlements/{id}", OperationID: "internalGetSettlement",
+			Summary: "Get settlement details", Tags: []string{"Settlement Calculation"},
+			Parameters: []openapi.ParameterSpec{pathParam("id", "Settlement identifier")},
+			Responses:  readResponses("Settlement detail", SettlementResponse{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/settlements/accounts/{accountID}", OperationID: "internalListAccountSettlements",
+			Summary: "List settlements for account", Tags: []string{"Settlement Calculation"},
+			Parameters: append([]openapi.ParameterSpec{pathParam("accountID", "Account identifier")}, pageParams...),
+			Responses:  readResponses("Account settlement collection", CollectionResponse[SettlementResponse]{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/settlements/periods/{id}", OperationID: "internalListPeriodSettlements",
+			Summary: "List settlements for period", Tags: []string{"Settlement Calculation"},
+			Parameters: append([]openapi.ParameterSpec{pathParam("id", "Settlement period identifier")}, pageParams...),
+			Responses:  readResponses("Period settlement collection", CollectionResponse[SettlementResponse]{}),
 		},
 	}
 }
