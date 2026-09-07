@@ -514,3 +514,36 @@ type SettlementResponse struct {
 	CalculatedAt          *time.Time `json:"calculated_at,omitempty"`
 	FinalizedAt           *time.Time `json:"finalized_at,omitempty"`
 }
+
+type CreateFinancialRuleRequest struct {
+	Name             string  `json:"name"`
+	RuleType         string  `json:"rule_type"`
+	Percentage       float64 `json:"percentage"`
+	FixedAmountMinor int64   `json:"fixed_amount_minor"`
+	Currency         string  `json:"currency"`
+	AllocationType   string  `json:"allocation_type"`
+	Status           string  `json:"status,omitempty"`
+}
+
+type FinancialRuleResponse struct {
+	ID               string    `json:"id"`
+	Name             string    `json:"name"`
+	RuleType         string    `json:"rule_type"`
+	Percentage       float64   `json:"percentage"`
+	FixedAmountMinor int64     `json:"fixed_amount_minor"`
+	Currency         string    `json:"currency"`
+	AllocationType   string    `json:"allocation_type"`
+	Status           string    `json:"status"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+type SettlementAllocationResponse struct {
+	ID             string    `json:"id"`
+	SettlementID   string    `json:"settlement_id"`
+	AccountID      string    `json:"account_id"`
+	AllocationType string    `json:"allocation_type"`
+	AmountMinor    int64     `json:"amount_minor"`
+	Currency       string    `json:"currency"`
+	CreatedAt      time.Time `json:"created_at"`
+}

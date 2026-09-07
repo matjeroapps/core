@@ -6,6 +6,7 @@ import (
 
 	"github.com/matjeroapps/core/internal/balance"
 	"github.com/matjeroapps/core/internal/finance"
+	"github.com/matjeroapps/core/internal/marketplace_finance"
 	"github.com/matjeroapps/core/internal/payments"
 	"github.com/matjeroapps/core/internal/settlement"
 	"github.com/matjeroapps/core/internal/shipping"
@@ -154,6 +155,8 @@ func codeFor(err error) string {
 		errors.Is(err, balance.ErrSettlementPeriodNotFound),
 		errors.Is(err, settlement.ErrSettlementNotFound),
 		errors.Is(err, settlement.ErrSettlementPeriodNotFound),
+		errors.Is(err, marketplace_finance.ErrRuleNotFound),
+		errors.Is(err, marketplace_finance.ErrSettlementNotFound),
 		errors.Is(err, suppliers.ErrNotFound):
 		return CodeNotFound
 	case errors.Is(err, storefront.ErrStoreNotFound),
@@ -185,6 +188,11 @@ func codeFor(err error) string {
 		errors.Is(err, balance.ErrNilEventPayload),
 		errors.Is(err, settlement.ErrInvalidAccountID),
 		errors.Is(err, settlement.ErrInvalidSettlementPeriodID),
+		errors.Is(err, marketplace_finance.ErrInvalidRuleType),
+		errors.Is(err, marketplace_finance.ErrInvalidPercentage),
+		errors.Is(err, marketplace_finance.ErrInvalidFixedAmount),
+		errors.Is(err, marketplace_finance.ErrInvalidCurrency),
+		errors.Is(err, marketplace_finance.ErrInvalidAllocationType),
 		errors.Is(err, suppliers.ErrInvalidInput):
 		return CodeValidationError
 	case errors.Is(err, commerce.ErrUnauthorized):
@@ -207,6 +215,11 @@ func codeFor(err error) string {
 		errors.Is(err, settlement.ErrInvalidSettlementState),
 		errors.Is(err, settlement.ErrFinalizedSettlementImmutable),
 		errors.Is(err, settlement.ErrSettlementAlreadyFinalized),
+		errors.Is(err, marketplace_finance.ErrRuleInactive),
+		errors.Is(err, marketplace_finance.ErrSettlementFinalized),
+		errors.Is(err, marketplace_finance.ErrAllocationTotalMismatch),
+		errors.Is(err, marketplace_finance.ErrNegativeAllocation),
+		errors.Is(err, marketplace_finance.ErrDuplicateAllocation),
 		errors.Is(err, suppliers.ErrAlreadyExists):
 		return CodeConflict
 	case errors.Is(err, commerce.ErrCheckoutExpired):
