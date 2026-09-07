@@ -110,6 +110,7 @@ func internalTags() []openapi3.Tag {
 		{Name: "Financial Ledger", Description: "Double-entry ledger accounts and journal entry posting"},
 		{Name: "Balance Projection", Description: "Financial account balance projections"},
 		{Name: "Settlement Calculation", Description: "Settlement calculation foundation and snapshots"},
+		{Name: "Marketplace Financial Rules", Description: "Configurable revenue distribution rules and settlement allocations"},
 		{Name: "Platform Administration", Description: "Platform moderation and operational overview"},
 	}
 }
@@ -1128,6 +1129,32 @@ func internalRoutes() []openapi.RouteSpec {
 			Summary: "List settlements for period", Tags: []string{"Settlement Calculation"},
 			Parameters: append([]openapi.ParameterSpec{pathParam("id", "Settlement period identifier")}, pageParams...),
 			Responses:  readResponses("Period settlement collection", CollectionResponse[SettlementResponse]{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/financial-rules", OperationID: "internalCreateFinancialRule",
+			Summary: "Create financial rule", Tags: []string{"Marketplace Financial Rules"},
+			RequestBody: CreateFinancialRuleRequest{},
+			Responses:   createResponses("Created financial rule", FinancialRuleResponse{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/financial-rules", OperationID: "internalListFinancialRules",
+			Summary: "List financial rules", Tags: []string{"Marketplace Financial Rules"},
+			Parameters: []openapi.ParameterSpec{
+				openapi.StringParam("status", "Status filter (ACTIVE, INACTIVE)", false),
+			},
+			Responses: readResponses("Financial rule collection", CollectionResponse[FinancialRuleResponse]{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/settlements/{id}/allocate", OperationID: "internalAllocateSettlement",
+			Summary: "Calculate and persist settlement allocations", Tags: []string{"Marketplace Financial Rules"},
+			Parameters: []openapi.ParameterSpec{pathParam("id", "Settlement identifier")},
+			Responses:  writeResponses("Settlement allocation collection", CollectionResponse[SettlementAllocationResponse]{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/settlements/{id}/allocations", OperationID: "internalListSettlementAllocations",
+			Summary: "Get settlement allocations", Tags: []string{"Marketplace Financial Rules"},
+			Parameters: []openapi.ParameterSpec{pathParam("id", "Settlement identifier")},
+			Responses:  readResponses("Settlement allocation collection", CollectionResponse[SettlementAllocationResponse]{}),
 		},
 	}
 }

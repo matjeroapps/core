@@ -19,6 +19,7 @@ import (
 
 	"github.com/matjeroapps/core/internal/balance"
 	"github.com/matjeroapps/core/internal/finance"
+	"github.com/matjeroapps/core/internal/marketplace_finance"
 	"github.com/matjeroapps/core/internal/payments"
 	"github.com/matjeroapps/core/internal/serviceauth"
 	"github.com/matjeroapps/core/internal/settlement"
@@ -106,21 +107,30 @@ type SettlementService interface {
 	ListPeriodSettlements(ctx context.Context, periodID string, page commerce.Page) ([]settlement.Settlement, error)
 }
 
+// MarketplaceFinanceService manages marketplace financial allocation rules and calculations.
+type MarketplaceFinanceService interface {
+	CreateRule(ctx context.Context, params marketplace_finance.CreateRuleParams) (*marketplace_finance.FinancialRule, error)
+	ListRules(ctx context.Context, statusFilter string) ([]marketplace_finance.FinancialRule, error)
+	AllocateSettlement(ctx context.Context, params marketplace_finance.AllocateSettlementParams) ([]marketplace_finance.SettlementAllocation, error)
+	ListAllocations(ctx context.Context, settlementID string) ([]marketplace_finance.SettlementAllocation, error)
+}
+
 // Dependencies wires the internal API. Every field is a Core-owned capability;
 // no actor ever constructs these directly.
 type Dependencies struct {
-	Commerce   commerce.Service
-	Repo       commerce.Repository
-	Markets    MarketService
-	Catalog    CatalogReader
-	Stores     StoreLocator
-	Revisions  RevisionReader
-	Themes     themes.Service
-	Shipping   ShippingService
-	Payments   PaymentService
-	Finance    FinanceService
-	Balance    BalanceService
-	Settlement SettlementService
+	Commerce           commerce.Service
+	Repo               commerce.Repository
+	Markets            MarketService
+	Catalog            CatalogReader
+	Stores             StoreLocator
+	Revisions          RevisionReader
+	Themes             themes.Service
+	Shipping           ShippingService
+	Payments           PaymentService
+	Finance            FinanceService
+	Balance            BalanceService
+	Settlement         SettlementService
+	MarketplaceFinance MarketplaceFinanceService
 }
 
 // NewRouter registers the internal API under /internal/v1.
@@ -341,6 +351,15 @@ func NewRouter(deps Dependencies) chi.Router {
 			r.Get("/settlements/{id}", server.handleGetSettlement)
 			r.Get("/settlements/accounts/{accountID}", server.handleListAccountSettlements)
 			r.Get("/settlements/periods/{id}", server.handleListPeriodSettlements)
+		})
+
+		// Marketplace Financial Rules capabilities.
+		r.Group(func(r chi.Router) {
+			r.Use(requireCallers(serviceauth.CallerSeller, serviceauth.CallerAdmin))
+			r.Post("/financial-rules", server.handleCreateFinancialRule)
+			r.Get("/financial-rules", server.handleListFinancialRules)
+			r.Post("/settlements/{id}/allocate", server.handleAllocateSettlement)
+			r.Get("/settlements/{id}/allocations", server.handleListSettlementAllocations)
 		})
 	})
 

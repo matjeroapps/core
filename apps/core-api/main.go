@@ -15,8 +15,14 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/matjeroapps/core/internal/balance"
 	"github.com/matjeroapps/core/internal/coreapi"
+	"github.com/matjeroapps/core/internal/finance"
+	"github.com/matjeroapps/core/internal/marketplace_finance"
+	"github.com/matjeroapps/core/internal/payments"
 	"github.com/matjeroapps/core/internal/serviceauth"
+	"github.com/matjeroapps/core/internal/settlement"
+	"github.com/matjeroapps/core/internal/shipping"
 	"github.com/matjeroapps/core/modules/commerce"
 	"github.com/matjeroapps/core/modules/markets"
 	"github.com/matjeroapps/core/modules/storefront"
@@ -98,6 +104,12 @@ func run(ctx context.Context) error {
 	service.S3Storage = s3Storage
 
 	resolver := storefront.NewStoreResolver(repo)
+
+	finService := finance.NewService(finance.NewRepository(db.Pool))
+	balService := balance.NewService(balance.NewRepository(db.Pool))
+	settleService := settlement.NewService(settlement.NewRepository(db.Pool), balService)
+	mfService := marketplace_finance.NewService(marketplace_finance.NewRepository(db.Pool))
+
 	deps := coreapi.Dependencies{
 		Commerce:  service,
 		Repo:      repo,
@@ -108,6 +120,12 @@ func run(ctx context.Context) error {
 		Themes: themes.NewService(themes.NewRepository(db.Pool), repo, themes.Options{
 			PreviewSecret: []byte(cfg.ThemePreviewSecret),
 		}),
+		Shipping:           shipping.NewService(shipping.NewRepository(db.Pool)),
+		Payments:           payments.NewService(payments.NewRepository(db.Pool)),
+		Finance:            finService,
+		Balance:            balService,
+		Settlement:         settleService,
+		MarketplaceFinance: mfService,
 	}
 
 	appCfg := httpx.ConfigFrom(cfg)
