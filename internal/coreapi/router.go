@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/matjeroapps/core/internal/balance"
 	"github.com/matjeroapps/core/internal/finance"
 	"github.com/matjeroapps/core/internal/payments"
 	"github.com/matjeroapps/core/internal/serviceauth"
@@ -88,6 +89,12 @@ type FinanceService interface {
 	GetJournalEntry(ctx context.Context, id string) (*finance.JournalEntry, error)
 }
 
+// BalanceService manages financial balance projections.
+type BalanceService interface {
+	GetAccountBalance(ctx context.Context, accountID string) (*balance.AccountBalance, error)
+	ListAccountBalances(ctx context.Context, page commerce.Page) ([]balance.AccountBalance, error)
+}
+
 // Dependencies wires the internal API. Every field is a Core-owned capability;
 // no actor ever constructs these directly.
 type Dependencies struct {
@@ -101,6 +108,7 @@ type Dependencies struct {
 	Shipping  ShippingService
 	Payments  PaymentService
 	Finance   FinanceService
+	Balance   BalanceService
 }
 
 // NewRouter registers the internal API under /internal/v1.
@@ -304,6 +312,13 @@ func NewRouter(deps Dependencies) chi.Router {
 			r.Get("/ledger/accounts/{id}", server.handleGetLedgerAccount)
 			r.Post("/ledger/journal-entries", server.handlePostJournalEntry)
 			r.Get("/ledger/journal-entries/{id}", server.handleGetJournalEntry)
+		})
+
+		// Balance Projection capabilities.
+		r.Group(func(r chi.Router) {
+			r.Use(requireCallers(serviceauth.CallerSeller, serviceauth.CallerAdmin))
+			r.Get("/balances/accounts/{accountID}", server.handleGetAccountBalance)
+			r.Get("/balances/accounts", server.handleListAccountBalances)
 		})
 	})
 

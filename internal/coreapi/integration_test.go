@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/matjeroapps/core/internal/balance"
+	"github.com/matjeroapps/core/internal/finance"
 	"github.com/matjeroapps/core/internal/serviceauth"
 	"github.com/matjeroapps/core/internal/testdb"
 	"github.com/matjeroapps/core/modules/commerce"
@@ -82,6 +84,11 @@ func setupIntegration(t *testing.T) integrationEnv {
 		"000015_media_upload_intent",
 		"000016_catalog_invariants",
 		"000012_order_aggregate_schema",
+		"000017_create_shipping_schema",
+		"000018_supplier_retail_affiliation",
+		"000019_create_payments_schema",
+		"000020_create_ledger_schema",
+		"000021_create_balance_projection_schema",
 	} {
 		applyMigrationFile(t, db, filepath.Join("..", "..", "migrations", name+".up.sql"))
 	}
@@ -106,6 +113,11 @@ func setupIntegration(t *testing.T) integrationEnv {
 		t.Fatalf("seed built-in themes: %v", err)
 	}
 
+	finRepo := finance.NewRepository(db.Pool)
+	financeSvc := finance.NewService(finRepo)
+	balRepo := balance.NewRepository(db.Pool)
+	balanceSvc := balance.NewService(balRepo)
+
 	resolver := storefront.NewStoreResolver(repo)
 	deps := Dependencies{
 		Commerce:  service,
@@ -115,6 +127,8 @@ func setupIntegration(t *testing.T) integrationEnv {
 		Stores:    resolver,
 		Revisions: storefront.NewRevisionReader(resolver, repo),
 		Themes:    themeService,
+		Finance:   financeSvc,
+		Balance:   balanceSvc,
 	}
 	appRouter := httpx.NewRouter(httpx.App{})
 	appRouter.Mount("/", serviceauth.Middleware(testAuthConfig())(NewRouter(deps)))
@@ -788,5 +802,52 @@ func TestIntegrationFinalizeCheckoutCorrelationIDPropagation(t *testing.T) {
 	}
 	if customCorrID != "caller-supplied-corr-123" {
 		t.Fatalf("correlation_id = %q, want 'caller-supplied-corr-123'", customCorrID)
+	}
+}
+
+func TestBalanceProjectionAPI(t *testing.T) {
+	env := setupIntegration(t)
+
+	// 1. Create a ledger account via API
+	createAccountJSON := `{"account_code":"ACC-BAL-API-1","name":"Balance API Test Account","account_type":"ASSET","currency":"SAR"}`
+	req := authenticatedRequest(t, http.MethodPost, "/internal/v1/ledger/accounts", "admin", testAdminToken)
+	req.Body = io.NopCloser(strings.NewReader(createAccountJSON))
+	rec := httptest.NewRecorder()
+	env.handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create account status = %d (body %q)", rec.Code, rec.Body.String())
+	}
+
+	var acc LedgerAccountResponse
+	if err := json.NewDecoder(rec.Body).Decode(&acc); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. Query initial balance projection for created account
+	req = authenticatedRequest(t, http.MethodGet, "/internal/v1/balances/accounts/"+acc.ID, "seller", testSellerToken)
+	rec = httptest.NewRecorder()
+	env.handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get account balance status = %d (body %q)", rec.Code, rec.Body.String())
+	}
+
+	var bal AccountBalanceResponse
+	if err := json.NewDecoder(rec.Body).Decode(&bal); err != nil {
+		t.Fatal(err)
+	}
+
+	if bal.AccountID != acc.ID || bal.Currency != "SAR" || bal.BalanceMinor != 0 {
+		t.Fatalf("unexpected balance response: %+v", bal)
+	}
+
+	// 3. List account balances
+	req = authenticatedRequest(t, http.MethodGet, "/internal/v1/balances/accounts", "seller", testSellerToken)
+	rec = httptest.NewRecorder()
+	env.handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list account balances status = %d (body %q)", rec.Code, rec.Body.String())
 	}
 }
