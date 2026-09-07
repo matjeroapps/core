@@ -105,6 +105,7 @@ func internalTags() []openapi3.Tag {
 		{Name: "Seller Listings", Description: "Seller listing price and status controls"},
 		{Name: "Inventory", Description: "Inventory snapshots and movements"},
 		{Name: "Themes", Description: "Theme Engine installation and configuration"},
+		{Name: "Shipping", Description: "Shipment domain model and state machine management"},
 		{Name: "Platform Administration", Description: "Platform moderation and operational overview"},
 	}
 }
@@ -1010,6 +1011,26 @@ func internalRoutes() []openapi.RouteSpec {
 			Parameters:  []openapi.ParameterSpec{pathParam("locationID", "Location identifier")},
 			RequestBody: contracts.StatusUpdateRequest{},
 			Responses:   writeResponses("Applied status", StatusResponse{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/orders/{orderID}/shipments", OperationID: "internalCreateOrderShipment",
+			Summary: "Create a shipment for an order", Tags: []string{"Shipping"},
+			Parameters:  []openapi.ParameterSpec{pathParam("orderID", "Order identifier")},
+			RequestBody: CreateShipmentRequest{},
+			Responses:   writeResponses("Created shipment", ShipmentResponse{}),
+		},
+		{
+			Method: http.MethodPatch, Path: "/internal/v1/shipments/{shipmentID}/status", OperationID: "internalUpdateShipmentStatus",
+			Summary: "Transition shipment status", Tags: []string{"Shipping"},
+			Parameters:  []openapi.ParameterSpec{pathParam("shipmentID", "Shipment identifier")},
+			RequestBody: UpdateShipmentStatusRequest{},
+			Responses:   writeResponses("Updated shipment", ShipmentResponse{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/shipments/{shipmentID}", OperationID: "internalGetShipment",
+			Summary: "Get shipment by ID", Tags: []string{"Shipping"},
+			Parameters: []openapi.ParameterSpec{pathParam("shipmentID", "Shipment identifier")},
+			Responses:  readResponses("Shipment details", ShipmentResponse{}),
 		},
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/matjeroapps/core/internal/serviceauth"
+	"github.com/matjeroapps/core/internal/shipping"
 	"github.com/matjeroapps/core/modules/commerce"
 	"github.com/matjeroapps/core/modules/markets"
 	"github.com/matjeroapps/core/modules/storefront"
@@ -59,6 +60,14 @@ type MarketService interface {
 	GetByCode(ctx context.Context, code string, locale i18n.Locale) (markets.Market, error)
 }
 
+// ShippingService manages shipment lifecycle and state machine.
+type ShippingService interface {
+	CreateShipment(ctx context.Context, params shipping.CreateShipmentParams) (*shipping.Shipment, error)
+	UpdateShipmentStatus(ctx context.Context, params shipping.UpdateStatusParams) (*shipping.Shipment, error)
+	GetShipment(ctx context.Context, shipmentID string) (*shipping.Shipment, error)
+	ListShipmentsForOrder(ctx context.Context, orderID string) ([]shipping.Shipment, error)
+}
+
 // Dependencies wires the internal API. Every field is a Core-owned capability;
 // no actor ever constructs these directly.
 type Dependencies struct {
@@ -69,6 +78,7 @@ type Dependencies struct {
 	Stores    StoreLocator
 	Revisions RevisionReader
 	Themes    themes.Service
+	Shipping  ShippingService
 }
 
 // NewRouter registers the internal API under /internal/v1.
@@ -246,6 +256,14 @@ func NewRouter(deps Dependencies) chi.Router {
 			r.Post("/stores/{storeID}/theme/discard", server.handleDiscardThemeDraft)
 			r.Post("/stores/{storeID}/theme/upgrade", server.handleUpgradeTheme)
 			r.Post("/stores/{storeID}/theme/preview", server.handleCreateThemePreview)
+		})
+
+		// Shipping capabilities.
+		r.Group(func(r chi.Router) {
+			r.Use(requireCallers(serviceauth.CallerSeller, serviceauth.CallerAdmin))
+			r.Post("/orders/{orderID}/shipments", server.handleCreateOrderShipment)
+			r.Patch("/shipments/{shipmentID}/status", server.handleUpdateShipmentStatus)
+			r.Get("/shipments/{shipmentID}", server.handleGetShipment)
 		})
 	})
 
