@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/matjeroapps/core/internal/finance"
 	"github.com/matjeroapps/core/internal/payments"
 	"github.com/matjeroapps/core/internal/shipping"
 	"github.com/matjeroapps/core/internal/suppliers"
@@ -144,6 +145,8 @@ func codeFor(err error) string {
 		errors.Is(err, shipping.ErrOrderNotFound),
 		errors.Is(err, payments.ErrPaymentNotFound),
 		errors.Is(err, payments.ErrOrderNotFound),
+		errors.Is(err, finance.ErrAccountNotFound),
+		errors.Is(err, finance.ErrJournalEntryNotFound),
 		errors.Is(err, suppliers.ErrNotFound):
 		return CodeNotFound
 	case errors.Is(err, storefront.ErrStoreNotFound),
@@ -161,6 +164,13 @@ func codeFor(err error) string {
 		errors.Is(err, shipping.ErrInvalidStatus),
 		errors.Is(err, payments.ErrInvalidInput),
 		errors.Is(err, payments.ErrInvalidStatus),
+		errors.Is(err, finance.ErrInvalidAccountType),
+		errors.Is(err, finance.ErrInvalidAccountStatus),
+		errors.Is(err, finance.ErrUnbalancedEntry),
+		errors.Is(err, finance.ErrInvalidLineAmounts),
+		errors.Is(err, finance.ErrCurrencyMismatch),
+		errors.Is(err, finance.ErrMissingLines),
+		errors.Is(err, finance.ErrInvalidReference),
 		errors.Is(err, suppliers.ErrInvalidInput):
 		return CodeValidationError
 	case errors.Is(err, commerce.ErrUnauthorized):
@@ -175,6 +185,9 @@ func codeFor(err error) string {
 	case errors.Is(err, commerce.ErrConflict),
 		errors.Is(err, themes.ErrConflict),
 		errors.Is(err, commerce.ErrCartExpired),
+		errors.Is(err, finance.ErrDuplicateAccountCode),
+		errors.Is(err, finance.ErrDuplicatePosting),
+		errors.Is(err, finance.ErrInactiveAccount),
 		errors.Is(err, suppliers.ErrAlreadyExists):
 		return CodeConflict
 	case errors.Is(err, commerce.ErrCheckoutExpired):

@@ -107,6 +107,7 @@ func internalTags() []openapi3.Tag {
 		{Name: "Themes", Description: "Theme Engine installation and configuration"},
 		{Name: "Shipping", Description: "Shipment domain model and state machine management"},
 		{Name: "Payments", Description: "Payment aggregate, status transitions, and webhook inbox"},
+		{Name: "Financial Ledger", Description: "Double-entry ledger accounts and journal entry posting"},
 		{Name: "Platform Administration", Description: "Platform moderation and operational overview"},
 	}
 }
@@ -1052,6 +1053,36 @@ func internalRoutes() []openapi.RouteSpec {
 			Summary: "Persist raw provider webhook in inbox", Tags: []string{"Payments"},
 			RequestBody: PersistWebhookInboxRequest{},
 			Responses:   writeResponses("Persisted webhook inbox entry", WebhookInboxResponse{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/ledger/accounts", OperationID: "internalCreateLedgerAccount",
+			Summary: "Create ledger account", Tags: []string{"Financial Ledger"},
+			RequestBody: CreateLedgerAccountRequest{},
+			Responses:   createResponses("Created ledger account", LedgerAccountResponse{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/ledger/accounts", OperationID: "internalListLedgerAccounts",
+			Summary: "List ledger accounts", Tags: []string{"Financial Ledger"},
+			Parameters: pageParams,
+			Responses:  readResponses("Ledger account collection", CollectionResponse[LedgerAccountResponse]{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/ledger/accounts/{id}", OperationID: "internalGetLedgerAccount",
+			Summary: "Get ledger account", Tags: []string{"Financial Ledger"},
+			Parameters: []openapi.ParameterSpec{pathParam("id", "Account identifier")},
+			Responses:  readResponses("Ledger account", LedgerAccountResponse{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/ledger/journal-entries", OperationID: "internalPostJournalEntry",
+			Summary: "Post double-entry journal entry", Tags: []string{"Financial Ledger"},
+			RequestBody: PostJournalEntryRequest{},
+			Responses:   createResponses("Posted journal entry", JournalEntryResponse{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/ledger/journal-entries/{id}", OperationID: "internalGetJournalEntry",
+			Summary: "Get journal entry details", Tags: []string{"Financial Ledger"},
+			Parameters: []openapi.ParameterSpec{pathParam("id", "Journal entry identifier")},
+			Responses:  readResponses("Journal entry", JournalEntryResponse{}),
 		},
 	}
 }

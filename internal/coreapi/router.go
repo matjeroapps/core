@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/matjeroapps/core/internal/finance"
 	"github.com/matjeroapps/core/internal/payments"
 	"github.com/matjeroapps/core/internal/serviceauth"
 	"github.com/matjeroapps/core/internal/shipping"
@@ -78,6 +79,15 @@ type PaymentService interface {
 	PersistWebhookInbox(ctx context.Context, params payments.PersistWebhookInboxParams) (*payments.WebhookInbox, bool, error)
 }
 
+// FinanceService manages double-entry financial ledger accounts and journal entry posting.
+type FinanceService interface {
+	CreateAccount(ctx context.Context, params finance.CreateAccountParams) (*finance.Account, error)
+	GetAccount(ctx context.Context, id string) (*finance.Account, error)
+	ListAccounts(ctx context.Context, page commerce.Page) ([]finance.Account, error)
+	PostJournalEntry(ctx context.Context, params finance.PostJournalEntryParams) (*finance.JournalEntry, error)
+	GetJournalEntry(ctx context.Context, id string) (*finance.JournalEntry, error)
+}
+
 // Dependencies wires the internal API. Every field is a Core-owned capability;
 // no actor ever constructs these directly.
 type Dependencies struct {
@@ -90,6 +100,7 @@ type Dependencies struct {
 	Themes    themes.Service
 	Shipping  ShippingService
 	Payments  PaymentService
+	Finance   FinanceService
 }
 
 // NewRouter registers the internal API under /internal/v1.
@@ -283,6 +294,16 @@ func NewRouter(deps Dependencies) chi.Router {
 			r.Post("/orders/{orderID}/payments", server.handleInitializePayment)
 			r.Patch("/payments/{paymentID}/status", server.handleUpdatePaymentStatus)
 			r.Post("/webhooks/payments/inbox", server.handlePersistWebhookInbox)
+		})
+
+		// Ledger capabilities.
+		r.Group(func(r chi.Router) {
+			r.Use(requireCallers(serviceauth.CallerSeller, serviceauth.CallerAdmin))
+			r.Post("/ledger/accounts", server.handleCreateLedgerAccount)
+			r.Get("/ledger/accounts", server.handleListLedgerAccounts)
+			r.Get("/ledger/accounts/{id}", server.handleGetLedgerAccount)
+			r.Post("/ledger/journal-entries", server.handlePostJournalEntry)
+			r.Get("/ledger/journal-entries/{id}", server.handleGetJournalEntry)
 		})
 	})
 
