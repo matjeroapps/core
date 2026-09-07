@@ -1,0 +1,5257 @@
+diff --git a/docs/api/internal/openapi.json b/docs/api/internal/openapi.json
+index 481d3a0..24133b7 100644
+--- a/docs/api/internal/openapi.json
++++ b/docs/api/internal/openapi.json
+@@ -3738,9 +3738,9 @@
+         ]
+       }
+     },
+-    "/internal/v1/orders/{orderID}/shipments": {
++    "/internal/v1/orders/{orderID}/payments": {
+       "post": {
+-        "operationId": "internalCreateOrderShipment",
++        "operationId": "internalInitializePayment",
+         "parameters": [
+           {
+             "description": "Override locale resolution",
+@@ -3765,49 +3765,27 @@
+             "application/json": {
+               "schema": {
+                 "properties": {
+-                  "cod_amount_minor": {
++                  "amount_minor": {
+                     "format": "int64",
+                     "type": "integer"
+                   },
+                   "currency": {
+                     "type": "string"
+                   },
+-                  "fulfillment_location_id": {
++                  "payment_method": {
+                     "type": "string"
+                   },
+-                  "items": {
+-                    "items": {
+-                      "properties": {
+-                        "order_item_id": {
+-                          "type": "string"
+-                        },
+-                        "quantity": {
+-                          "format": "int64",
+-                          "type": "integer"
+-                        }
+-                      },
+-                      "required": [
+-                        "order_item_id",
+-                        "quantity"
+-                      ],
+-                      "type": "object"
+-                    },
+-                    "type": "array"
+-                  },
+-                  "shipping_cost_minor": {
+-                    "format": "int64",
+-                    "type": "integer"
++                  "provider": {
++                    "type": "string"
+                   },
+-                  "tracking_number": {
++                  "provider_reference": {
+                     "type": "string"
+                   }
+                 },
+                 "required": [
+-                  "cod_amount_minor",
++                  "amount_minor",
+                   "currency",
+-                  "fulfillment_location_id",
+-                  "items",
+-                  "shipping_cost_minor"
++                  "payment_method"
+                 ],
+                 "type": "object"
+               }
+@@ -3821,96 +3799,792 @@
+               "application/json": {
+                 "schema": {
+                   "properties": {
+-                    "cod_amount_minor": {
++                    "amount_minor": {
+                       "format": "int64",
+                       "type": "integer"
+                     },
+-                    "created_at": {
+-                      "format": "date-time",
+-                      "type": "string"
+-                    },
+-                    "currency": {
+-                      "type": "string"
+-                    },
+-                    "events": {
++                    "attempts": {
+                       "items": {
+                         "properties": {
++                          "created_at": {
++                            "format": "date-time",
++                            "type": "string"
++                          },
++                          "error_message": {
++                            "type": "string"
++                          },
+                           "id": {
+                             "type": "string"
+                           },
+-                          "notes": {
++                          "payment_id": {
+                             "type": "string"
+                           },
+-                          "occurred_at": {
+-                            "format": "date-time",
++                          "provider": {
+                             "type": "string"
+                           },
+-                          "shipment_id": {
++                          "provider_reference": {
+                             "type": "string"
+                           },
+                           "status": {
+                             "type": "string"
++                          },
++                          "updated_at": {
++                            "format": "date-time",
++                            "type": "string"
+                           }
+                         },
+                         "required": [
++                          "created_at",
+                           "id",
+-                          "occurred_at",
+-                          "shipment_id",
+-                          "status"
++                          "payment_id",
++                          "provider",
++                          "status",
++                          "updated_at"
+                         ],
+                         "type": "object"
+                       },
+                       "type": "array"
+                     },
+-                    "fulfillment_location_id": {
++                    "created_at": {
++                      "format": "date-time",
++                      "type": "string"
++                    },
++                    "currency": {
+                       "type": "string"
+                     },
+                     "id": {
+                       "type": "string"
+                     },
+-                    "items": {
++                    "order_id": {
++                      "type": "string"
++                    },
++                    "payment_method": {
++                      "type": "string"
++                    },
++                    "status": {
++                      "type": "string"
++                    },
++                    "updated_at": {
++                      "format": "date-time",
++                      "type": "string"
++                    }
++                  },
++                  "required": [
++                    "amount_minor",
++                    "created_at",
++                    "currency",
++                    "id",
++                    "order_id",
++                    "payment_method",
++                    "status",
++                    "updated_at"
++                  ],
++                  "type": "object"
++                }
++              }
++            },
++            "description": "Initialized payment"
++          },
++          "400": {
++            "content": {
++              "application/json": {
++                "schema": {
++                  "properties": {
++                    "error": {
++                      "properties": {
++                        "code": {
++                          "type": "string"
++                        },
++                        "message": {
++                          "type": "string"
++                        }
++                      },
++                      "required": [
++                        "code",
++                        "message"
++                      ],
++                      "type": "object"
++                    }
++                  },
++                  "required": [
++                    "error"
++                  ],
++                  "type": "object"
++                }
++              }
++            },
++            "description": "Invalid input"
++          },
++          "401": {
++            "content": {
++              "application/json": {
++                "schema": {
++                  "properties": {
++                    "error": {
++                      "properties": {
++                        "code": {
++                          "type": "string"
++                        },
++                        "message": {
++                          "type": "string"
++                        }
++                      },
++                      "required": [
++                        "code",
++                        "message"
++                      ],
++                      "type": "object"
++                    }
++                  },
++                  "required": [
++                    "error"
++                  ],
++                  "type": "object"
++                }
++              }
++            },
++            "description": "Unauthorized"
++          },
++          "403": {
++            "content": {
++              "application/json": {
++                "schema": {
++                  "properties": {
++                    "error": {
++                      "properties": {
++                        "code": {
++                          "type": "string"
++                        },
++                        "message": {
++                          "type": "string"
++                        }
++                      },
++                      "required": [
++                        "code",
++                        "message"
++                      ],
++                      "type": "object"
++                    }
++                  },
++                  "required": [
++                    "error"
++                  ],
++                  "type": "object"
++                }
++              }
++            },
++            "description": "Forbidden"
++          },
++          "404": {
++            "content": {
++              "application/json": {
++                "schema": {
++                  "properties": {
++                    "error": {
++                      "properties": {
++                        "code": {
++                          "type": "string"
++                        },
++                        "message": {
++                          "type": "string"
++                        }
++                      },
++                      "required": [
++                        "code",
++                        "message"
++                      ],
++                      "type": "object"
++                    }
++                  },
++                  "required": [
++                    "error"
++                  ],
++                  "type": "object"
++                }
++              }
++            },
++            "description": "Not found"
++          },
++          "409": {
++            "content": {
++              "application/json": {
++                "schema": {
++                  "properties": {
++                    "error": {
++                      "properties": {
++                        "code": {
++                          "type": "string"
++                        },
++                        "message": {
++                          "type": "string"
++                        }
++                      },
++                      "required": [
++                        "code",
++                        "message"
++                      ],
++                      "type": "object"
++                    }
++                  },
++                  "required": [
++                    "error"
++                  ],
++                  "type": "object"
++                }
++              }
++            },
++            "description": "Conflict"
++          },
++          "500": {
++            "content": {
++              "application/json": {
++                "schema": {
++                  "properties": {
++                    "error": {
++                      "properties": {
++                        "code": {
++                          "type": "string"
++                        },
++                        "message": {
++                          "type": "string"
++                        }
++                      },
++                      "required": [
++                        "code",
++                        "message"
++                      ],
++                      "type": "object"
++                    }
++                  },
++                  "required": [
++                    "error"
++                  ],
++                  "type": "object"
++                }
++              }
++            },
++            "description": "Internal error"
++          }
++        },
++        "security": [
++          {
++            "bearerAuth": []
++          }
++        ],
++        "summary": "Initialize payment for order",
++        "tags": [
++          "Payments"
++        ]
++      }
++    },
++    "/internal/v1/orders/{orderID}/shipments": {
++      "post": {
++        "operationId": "internalCreateOrderShipment",
++        "parameters": [
++          {
++            "description": "Override locale resolution",
++            "in": "query",
++            "name": "locale",
++            "schema": {
++              "type": "string"
++            }
++          },
++          {
++            "description": "Order identifier",
++            "in": "path",
++            "name": "orderID",
++            "required": true,
++            "schema": {
++              "type": "string"
++            }
++          }
++        ],
++        "requestBody": {
++          "content": {
++            "application/json": {
++              "schema": {
++                "properties": {
++                  "cod_amount_minor": {
++                    "format": "int64",
++                    "type": "integer"
++                  },
++                  "currency": {
++                    "type": "string"
++                  },
++                  "fulfillment_location_id": {
++                    "type": "string"
++                  },
++                  "items": {
++                    "items": {
++                      "properties": {
++                        "order_item_id": {
++                          "type": "string"
++                        },
++                        "quantity": {
++                          "format": "int64",
++                          "type": "integer"
++                        }
++                      },
++                      "required": [
++                        "order_item_id",
++                        "quantity"
++                      ],
++                      "type": "object"
++                    },
++                    "type": "array"
++                  },
++                  "shipping_cost_minor": {
++                    "format": "int64",
++                    "type": "integer"
++                  },
++                  "tracking_number": {
++                    "type": "string"
++                  }
++                },
++                "required": [
++                  "cod_amount_minor",
++                  "currency",
++                  "fulfillment_location_id",
++                  "items",
++                  "shipping_cost_minor"
++                ],
++                "type": "object"
++              }
++            }
++          },
++          "required": true
++        },
++        "responses": {
++          "200": {
++            "content": {
++              "application/json": {
++                "schema": {
++                  "properties": {
++                    "cod_amount_minor": {
++                      "format": "int64",
++                      "type": "integer"
++                    },
++                    "created_at": {
++                      "format": "date-time",
++                      "type": "string"
++                    },
++                    "currency": {
++                      "type": "string"
++                    },
++                    "events": {
++                      "items": {
++                        "properties": {
++                          "id": {
++                            "type": "string"
++                          },
++                          "notes": {
++                            "type": "string"
++                          },
++                          "occurred_at": {
++                            "format": "date-time",
++                            "type": "string"
++                          },
++                          "shipment_id": {
++                            "type": "string"
++                          },
++                          "status": {
++                            "type": "string"
++                          }
++                        },
++                        "required": [
++                          "id",
++                          "occurred_at",
++                          "shipment_id",
++                          "status"
++                        ],
++                        "type": "object"
++                      },
++                      "type": "array"
++                    },
++                    "fulfillment_location_id": {
++                      "type": "string"
++                    },
++                    "id": {
++                      "type": "string"
++                    },
++                    "items": {
++                      "items": {
++                        "properties": {
++                          "created_at": {
++                            "format": "date-time",
++                            "type": "string"
++                          },
++                          "id": {
++                            "type": "string"
++                          },
++                          "order_item_id": {
++                            "type": "string"
++                          },
++                          "quantity": {
++                            "format": "int64",
++                            "type": "integer"
++                          },
++                          "shipment_id": {
++                            "type": "string"
++                          }
++                        },
++                        "required": [
++                          "created_at",
++                          "id",
++                          "order_item_id",
++                          "quantity",
++                          "shipment_id"
++                        ],
++                        "type": "object"
++                      },
++                      "type": "array"
++                    },
++                    "order_id": {
++                      "type": "string"
++                    },
++                    "shipping_cost_minor": {
++                      "format": "int64",
++                      "type": "integer"
++                    },
++                    "status": {
++                      "type": "string"
++                    },
++                    "tracking_number": {
++                      "type": "string"
++                    },
++                    "updated_at": {
++                      "format": "date-time",
++                      "type": "string"
++                    }
++                  },
++                  "required": [
++                    "cod_amount_minor",
++                    "created_at",
++                    "currency",
++                    "fulfillment_location_id",
++                    "id",
++                    "items",
++                    "order_id",
++                    "shipping_cost_minor",
++                    "status",
++                    "updated_at"
++                  ],
++                  "type": "object"
++                }
++              }
++            },
++            "description": "Created shipment"
++          },
++          "400": {
++            "content": {
++              "application/json": {
++                "schema": {
++                  "properties": {
++                    "error": {
++                      "properties": {
++                        "code": {
++                          "type": "string"
++                        },
++                        "message": {
++                          "type": "string"
++                        }
++                      },
++                      "required": [
++                        "code",
++                        "message"
++                      ],
++                      "type": "object"
++                    }
++                  },
++                  "required": [
++                    "error"
++                  ],
++                  "type": "object"
++                }
++              }
++            },
++            "description": "Invalid input"
++          },
++          "401": {
++            "content": {
++              "application/json": {
++                "schema": {
++                  "properties": {
++                    "error": {
++                      "properties": {
++                        "code": {
++                          "type": "string"
++                        },
++                        "message": {
++                          "type": "string"
++                        }
++                      },
++                      "required": [
++                        "code",
++                        "message"
++                      ],
++                      "type": "object"
++                    }
++                  },
++                  "required": [
++                    "error"
++                  ],
++                  "type": "object"
++                }
++              }
++            },
++            "description": "Unauthorized"
++          },
++          "403": {
++            "content": {
++              "application/json": {
++                "schema": {
++                  "properties": {
++                    "error": {
++                      "properties": {
++                        "code": {
++                          "type": "string"
++                        },
++                        "message": {
++                          "type": "string"
++                        }
++                      },
++                      "required": [
++                        "code",
++                        "message"
++                      ],
++                      "type": "object"
++                    }
++                  },
++                  "required": [
++                    "error"
++                  ],
++                  "type": "object"
++                }
++              }
++            },
++            "description": "Forbidden"
++          },
++          "404": {
++            "content": {
++              "application/json": {
++                "schema": {
++                  "properties": {
++                    "error": {
++                      "properties": {
++                        "code": {
++                          "type": "string"
++                        },
++                        "message": {
++                          "type": "string"
++                        }
++                      },
++                      "required": [
++                        "code",
++                        "message"
++                      ],
++                      "type": "object"
++                    }
++                  },
++                  "required": [
++                    "error"
++                  ],
++                  "type": "object"
++                }
++              }
++            },
++            "description": "Not found"
++          },
++          "409": {
++            "content": {
++              "application/json": {
++                "schema": {
++                  "properties": {
++                    "error": {
++                      "properties": {
++                        "code": {
++                          "type": "string"
++                        },
++                        "message": {
++                          "type": "string"
++                        }
++                      },
++                      "required": [
++                        "code",
++                        "message"
++                      ],
++                      "type": "object"
++                    }
++                  },
++                  "required": [
++                    "error"
++                  ],
++                  "type": "object"
++                }
++              }
++            },
++            "description": "Conflict"
++          },
++          "500": {
++            "content": {
++              "application/json": {
++                "schema": {
++                  "properties": {
++                    "error": {
++                      "properties": {
++                        "code": {
++                          "type": "string"
++                        },
++                        "message": {
++                          "type": "string"
++                        }
++                      },
++                      "required": [
++                        "code",
++                        "message"
++                      ],
++                      "type": "object"
++                    }
++                  },
++                  "required": [
++                    "error"
++                  ],
++                  "type": "object"
++                }
++              }
++            },
++            "description": "Internal error"
++          }
++        },
++        "security": [
++          {
++            "bearerAuth": []
++          }
++        ],
++        "summary": "Create a shipment for an order",
++        "tags": [
++          "Shipping"
++        ]
++      }
++    },
++    "/internal/v1/payments/{paymentID}/status": {
++      "patch": {
++        "operationId": "internalUpdatePaymentStatus",
++        "parameters": [
++          {
++            "description": "Override locale resolution",
++            "in": "query",
++            "name": "locale",
++            "schema": {
++              "type": "string"
++            }
++          },
++          {
++            "description": "Payment identifier",
++            "in": "path",
++            "name": "paymentID",
++            "required": true,
++            "schema": {
++              "type": "string"
++            }
++          }
++        ],
++        "requestBody": {
++          "content": {
++            "application/json": {
++              "schema": {
++                "properties": {
++                  "error_message": {
++                    "type": "string"
++                  },
++                  "provider": {
++                    "type": "string"
++                  },
++                  "provider_reference": {
++                    "type": "string"
++                  },
++                  "status": {
++                    "type": "string"
++                  }
++                },
++                "required": [
++                  "status"
++                ],
++                "type": "object"
++              }
++            }
++          },
++          "required": true
++        },
++        "responses": {
++          "200": {
++            "content": {
++              "application/json": {
++                "schema": {
++                  "properties": {
++                    "amount_minor": {
++                      "format": "int64",
++                      "type": "integer"
++                    },
++                    "attempts": {
+                       "items": {
+                         "properties": {
+                           "created_at": {
+                             "format": "date-time",
+                             "type": "string"
+                           },
++                          "error_message": {
++                            "type": "string"
++                          },
+                           "id": {
+                             "type": "string"
+                           },
+-                          "order_item_id": {
++                          "payment_id": {
+                             "type": "string"
+                           },
+-                          "quantity": {
+-                            "format": "int64",
+-                            "type": "integer"
++                          "provider": {
++                            "type": "string"
+                           },
+-                          "shipment_id": {
++                          "provider_reference": {
++                            "type": "string"
++                          },
++                          "status": {
++                            "type": "string"
++                          },
++                          "updated_at": {
++                            "format": "date-time",
+                             "type": "string"
+                           }
+                         },
+                         "required": [
+                           "created_at",
+                           "id",
+-                          "order_item_id",
+-                          "quantity",
+-                          "shipment_id"
++                          "payment_id",
++                          "provider",
++                          "status",
++                          "updated_at"
+                         ],
+                         "type": "object"
+                       },
+                       "type": "array"
+                     },
+-                    "order_id": {
++                    "created_at": {
++                      "format": "date-time",
+                       "type": "string"
+                     },
+-                    "shipping_cost_minor": {
+-                      "format": "int64",
+-                      "type": "integer"
++                    "currency": {
++                      "type": "string"
+                     },
+-                    "status": {
++                    "id": {
+                       "type": "string"
+                     },
+-                    "tracking_number": {
++                    "order_id": {
++                      "type": "string"
++                    },
++                    "payment_method": {
++                      "type": "string"
++                    },
++                    "status": {
+                       "type": "string"
+                     },
+                     "updated_at": {
+@@ -3919,14 +4593,12 @@
+                     }
+                   },
+                   "required": [
+-                    "cod_amount_minor",
++                    "amount_minor",
+                     "created_at",
+                     "currency",
+-                    "fulfillment_location_id",
+                     "id",
+-                    "items",
+                     "order_id",
+-                    "shipping_cost_minor",
++                    "payment_method",
+                     "status",
+                     "updated_at"
+                   ],
+@@ -3934,7 +4606,7 @@
+                 }
+               }
+             },
+-            "description": "Created shipment"
++            "description": "Updated payment"
+           },
+           "400": {
+             "content": {
+@@ -4122,9 +4794,9 @@
+             "bearerAuth": []
+           }
+         ],
+-        "summary": "Create a shipment for an order",
++        "summary": "Update payment status",
+         "tags": [
+-          "Shipping"
++          "Payments"
+         ]
+       }
+     },
+@@ -29808,9 +30480,214 @@
+                 }
+               }
+             },
+-            "description": "Not found"
++            "description": "Not found"
++          },
++          "409": {
++            "content": {
++              "application/json": {
++                "schema": {
++                  "properties": {
++                    "error": {
++                      "properties": {
++                        "code": {
++                          "type": "string"
++                        },
++                        "message": {
++                          "type": "string"
++                        }
++                      },
++                      "required": [
++                        "code",
++                        "message"
++                      ],
++                      "type": "object"
++                    }
++                  },
++                  "required": [
++                    "error"
++                  ],
++                  "type": "object"
++                }
++              }
++            },
++            "description": "Conflict"
++          },
++          "500": {
++            "content": {
++              "application/json": {
++                "schema": {
++                  "properties": {
++                    "error": {
++                      "properties": {
++                        "code": {
++                          "type": "string"
++                        },
++                        "message": {
++                          "type": "string"
++                        }
++                      },
++                      "required": [
++                        "code",
++                        "message"
++                      ],
++                      "type": "object"
++                    }
++                  },
++                  "required": [
++                    "error"
++                  ],
++                  "type": "object"
++                }
++              }
++            },
++            "description": "Internal error"
++          }
++        },
++        "security": [
++          {
++            "bearerAuth": []
++          }
++        ],
++        "summary": "Create a retail store owned by the supplier's affiliated seller",
++        "tags": [
++          "Suppliers"
++        ]
++      }
++    },
++    "/internal/v1/themes": {
++      "get": {
++        "operationId": "internalListThemes",
++        "parameters": [
++          {
++            "description": "Override locale resolution",
++            "in": "query",
++            "name": "locale",
++            "schema": {
++              "type": "string"
++            }
++          }
++        ],
++        "responses": {
++          "200": {
++            "content": {
++              "application/json": {
++                "schema": {
++                  "properties": {
++                    "items": {
++                      "items": {
++                        "properties": {
++                          "created_at": {
++                            "format": "date-time",
++                            "type": "string"
++                          },
++                          "description": {
++                            "type": "string"
++                          },
++                          "id": {
++                            "type": "string"
++                          },
++                          "key": {
++                            "type": "string"
++                          },
++                          "name": {
++                            "type": "string"
++                          },
++                          "status": {
++                            "type": "string"
++                          },
++                          "type": {
++                            "type": "string"
++                          },
++                          "updated_at": {
++                            "format": "date-time",
++                            "type": "string"
++                          }
++                        },
++                        "required": [
++                          "created_at",
++                          "description",
++                          "id",
++                          "key",
++                          "name",
++                          "status",
++                          "type",
++                          "updated_at"
++                        ],
++                        "type": "object"
++                      },
++                      "type": "array"
++                    }
++                  },
++                  "required": [
++                    "items"
++                  ],
++                  "type": "object"
++                }
++              }
++            },
++            "description": "Theme collection"
++          },
++          "401": {
++            "content": {
++              "application/json": {
++                "schema": {
++                  "properties": {
++                    "error": {
++                      "properties": {
++                        "code": {
++                          "type": "string"
++                        },
++                        "message": {
++                          "type": "string"
++                        }
++                      },
++                      "required": [
++                        "code",
++                        "message"
++                      ],
++                      "type": "object"
++                    }
++                  },
++                  "required": [
++                    "error"
++                  ],
++                  "type": "object"
++                }
++              }
++            },
++            "description": "Unauthorized"
++          },
++          "403": {
++            "content": {
++              "application/json": {
++                "schema": {
++                  "properties": {
++                    "error": {
++                      "properties": {
++                        "code": {
++                          "type": "string"
++                        },
++                        "message": {
++                          "type": "string"
++                        }
++                      },
++                      "required": [
++                        "code",
++                        "message"
++                      ],
++                      "type": "object"
++                    }
++                  },
++                  "required": [
++                    "error"
++                  ],
++                  "type": "object"
++                }
++              }
++            },
++            "description": "Forbidden"
+           },
+-          "409": {
++          "404": {
+             "content": {
+               "application/json": {
+                 "schema": {
+@@ -29838,7 +30715,7 @@
+                 }
+               }
+             },
+-            "description": "Conflict"
++            "description": "Not found"
+           },
+           "500": {
+             "content": {
+@@ -29876,15 +30753,15 @@
+             "bearerAuth": []
+           }
+         ],
+-        "summary": "Create a retail store owned by the supplier's affiliated seller",
++        "summary": "List registered themes",
+         "tags": [
+-          "Suppliers"
++          "Themes"
+         ]
+       }
+     },
+-    "/internal/v1/themes": {
++    "/internal/v1/themes/{key}/versions": {
+       "get": {
+-        "operationId": "internalListThemes",
++        "operationId": "internalListThemeVersions",
+         "parameters": [
+           {
+             "description": "Override locale resolution",
+@@ -29893,6 +30770,15 @@
+             "schema": {
+               "type": "string"
+             }
++          },
++          {
++            "description": "Theme key",
++            "in": "path",
++            "name": "key",
++            "required": true,
++            "schema": {
++              "type": "string"
++            }
+           }
+         ],
+         "responses": {
+@@ -29904,42 +30790,53 @@
+                     "items": {
+                       "items": {
+                         "properties": {
++                          "component_registry_version": {
++                            "type": "string"
++                          },
++                          "configuration_schema": {
++                            "additionalProperties": true,
++                            "type": "object"
++                          },
+                           "created_at": {
+                             "format": "date-time",
+                             "type": "string"
+                           },
+-                          "description": {
+-                            "type": "string"
++                          "default_configuration": {
++                            "additionalProperties": true,
++                            "type": "object"
+                           },
+-                          "id": {
++                          "deprecated_at": {
++                            "format": "date-time",
++                            "nullable": true,
+                             "type": "string"
+                           },
+-                          "key": {
++                          "id": {
+                             "type": "string"
+                           },
+-                          "name": {
++                          "published_at": {
++                            "format": "date-time",
++                            "nullable": true,
+                             "type": "string"
+                           },
+                           "status": {
+                             "type": "string"
+                           },
+-                          "type": {
++                          "theme_id": {
+                             "type": "string"
+                           },
+-                          "updated_at": {
+-                            "format": "date-time",
++                          "version": {
+                             "type": "string"
+                           }
+                         },
+                         "required": [
++                          "component_registry_version",
++                          "configuration_schema",
+                           "created_at",
+-                          "description",
++                          "default_configuration",
+                           "id",
+-                          "key",
+-                          "name",
+                           "status",
+-                          "type",
+-                          "updated_at"
++                          "theme_id",
++                          "version"
+                         ],
+                         "type": "object"
+                       },
+@@ -29953,7 +30850,7 @@
+                 }
+               }
+             },
+-            "description": "Theme collection"
++            "description": "Theme version collection"
+           },
+           "401": {
+             "content": {
+@@ -30081,15 +30978,15 @@
+             "bearerAuth": []
+           }
+         ],
+-        "summary": "List registered themes",
++        "summary": "List versions of a theme",
+         "tags": [
+           "Themes"
+         ]
+       }
+     },
+-    "/internal/v1/themes/{key}/versions": {
+-      "get": {
+-        "operationId": "internalListThemeVersions",
++    "/internal/v1/webhooks/payments/inbox": {
++      "post": {
++        "operationId": "internalPersistWebhookInbox",
+         "parameters": [
+           {
+             "description": "Override locale resolution",
+@@ -30098,87 +30995,147 @@
+             "schema": {
+               "type": "string"
+             }
+-          },
+-          {
+-            "description": "Theme key",
+-            "in": "path",
+-            "name": "key",
+-            "required": true,
+-            "schema": {
+-              "type": "string"
+-            }
+           }
+         ],
++        "requestBody": {
++          "content": {
++            "application/json": {
++              "schema": {
++                "properties": {
++                  "connection_id": {
++                    "type": "string"
++                  },
++                  "event_type": {
++                    "type": "string"
++                  },
++                  "payload_json": {
++                    "items": {
++                      "format": "int32",
++                      "type": "integer"
++                    },
++                    "type": "array"
++                  },
++                  "provider": {
++                    "type": "string"
++                  },
++                  "provider_event_id": {
++                    "type": "string"
++                  },
++                  "signature_verified": {
++                    "type": "boolean"
++                  }
++                },
++                "required": [
++                  "event_type",
++                  "payload_json",
++                  "provider",
++                  "provider_event_id",
++                  "signature_verified"
++                ],
++                "type": "object"
++              }
++            }
++          },
++          "required": true
++        },
+         "responses": {
+           "200": {
+             "content": {
+               "application/json": {
+                 "schema": {
+                   "properties": {
+-                    "items": {
++                    "attempt_count": {
++                      "format": "int32",
++                      "type": "integer"
++                    },
++                    "connection_id": {
++                      "type": "string"
++                    },
++                    "deduplicated": {
++                      "type": "boolean"
++                    },
++                    "event_type": {
++                      "type": "string"
++                    },
++                    "id": {
++                      "type": "string"
++                    },
++                    "payload_json": {
+                       "items": {
+-                        "properties": {
+-                          "component_registry_version": {
+-                            "type": "string"
+-                          },
+-                          "configuration_schema": {
+-                            "additionalProperties": true,
+-                            "type": "object"
+-                          },
+-                          "created_at": {
+-                            "format": "date-time",
+-                            "type": "string"
+-                          },
+-                          "default_configuration": {
+-                            "additionalProperties": true,
+-                            "type": "object"
+-                          },
+-                          "deprecated_at": {
+-                            "format": "date-time",
+-                            "nullable": true,
+-                            "type": "string"
+-                          },
+-                          "id": {
+-                            "type": "string"
+-                          },
+-                          "published_at": {
+-                            "format": "date-time",
+-                            "nullable": true,
+-                            "type": "string"
+-                          },
+-                          "status": {
+-                            "type": "string"
+-                          },
+-                          "theme_id": {
+-                            "type": "string"
+-                          },
+-                          "version": {
+-                            "type": "string"
+-                          }
+-                        },
+-                        "required": [
+-                          "component_registry_version",
+-                          "configuration_schema",
+-                          "created_at",
+-                          "default_configuration",
+-                          "id",
+-                          "status",
+-                          "theme_id",
+-                          "version"
+-                        ],
+-                        "type": "object"
++                        "format": "int32",
++                        "type": "integer"
+                       },
+                       "type": "array"
++                    },
++                    "processed_at": {
++                      "format": "date-time",
++                      "nullable": true,
++                      "type": "string"
++                    },
++                    "provider": {
++                      "type": "string"
++                    },
++                    "provider_event_id": {
++                      "type": "string"
++                    },
++                    "received_at": {
++                      "format": "date-time",
++                      "type": "string"
++                    },
++                    "signature_verified": {
++                      "type": "boolean"
++                    },
++                    "status": {
++                      "type": "string"
+                     }
+                   },
+                   "required": [
+-                    "items"
++                    "attempt_count",
++                    "deduplicated",
++                    "event_type",
++                    "id",
++                    "payload_json",
++                    "provider",
++                    "provider_event_id",
++                    "received_at",
++                    "signature_verified",
++                    "status"
+                   ],
+                   "type": "object"
+                 }
+               }
+             },
+-            "description": "Theme version collection"
++            "description": "Persisted webhook inbox entry"
++          },
++          "400": {
++            "content": {
++              "application/json": {
++                "schema": {
++                  "properties": {
++                    "error": {
++                      "properties": {
++                        "code": {
++                          "type": "string"
++                        },
++                        "message": {
++                          "type": "string"
++                        }
++                      },
++                      "required": [
++                        "code",
++                        "message"
++                      ],
++                      "type": "object"
++                    }
++                  },
++                  "required": [
++                    "error"
++                  ],
++                  "type": "object"
++                }
++              }
++            },
++            "description": "Invalid input"
+           },
+           "401": {
+             "content": {
+@@ -30270,6 +31227,36 @@
+             },
+             "description": "Not found"
+           },
++          "409": {
++            "content": {
++              "application/json": {
++                "schema": {
++                  "properties": {
++                    "error": {
++                      "properties": {
++                        "code": {
++                          "type": "string"
++                        },
++                        "message": {
++                          "type": "string"
++                        }
++                      },
++                      "required": [
++                        "code",
++                        "message"
++                      ],
++                      "type": "object"
++                    }
++                  },
++                  "required": [
++                    "error"
++                  ],
++                  "type": "object"
++                }
++              }
++            },
++            "description": "Conflict"
++          },
+           "500": {
+             "content": {
+               "application/json": {
+@@ -30306,9 +31293,9 @@
+             "bearerAuth": []
+           }
+         ],
+-        "summary": "List versions of a theme",
++        "summary": "Persist raw provider webhook in inbox",
+         "tags": [
+-          "Themes"
++          "Payments"
+         ]
+       }
+     }
+@@ -30355,6 +31342,10 @@
+       "description": "Shipment domain model and state machine management",
+       "name": "Shipping"
+     },
++    {
++      "description": "Payment aggregate, status transitions, and webhook inbox",
++      "name": "Payments"
++    },
+     {
+       "description": "Platform moderation and operational overview",
+       "name": "Platform Administration"
+diff --git a/docs/implementation/phase-07-payments-foundation-diff.txt b/docs/implementation/phase-07-payments-foundation-diff.txt
+new file mode 100644
+index 0000000..fbc8e86
+--- /dev/null
++++ b/docs/implementation/phase-07-payments-foundation-diff.txt
+@@ -0,0 +1,1804 @@
++diff --git a/docs/api/internal/openapi.json b/docs/api/internal/openapi.json
++index 481d3a0..24133b7 100644
++--- a/docs/api/internal/openapi.json
+++++ b/docs/api/internal/openapi.json
++@@ -3738,9 +3738,9 @@
++         ]
++       }
++     },
++-    "/internal/v1/orders/{orderID}/shipments": {
+++    "/internal/v1/orders/{orderID}/payments": {
++       "post": {
++-        "operationId": "internalCreateOrderShipment",
+++        "operationId": "internalInitializePayment",
++         "parameters": [
++           {
++             "description": "Override locale resolution",
++@@ -3765,49 +3765,27 @@
++             "application/json": {
++               "schema": {
++                 "properties": {
++-                  "cod_amount_minor": {
+++                  "amount_minor": {
++                     "format": "int64",
++                     "type": "integer"
++                   },
++                   "currency": {
++                     "type": "string"
++                   },
++-                  "fulfillment_location_id": {
+++                  "payment_method": {
++                     "type": "string"
++                   },
++-                  "items": {
++-                    "items": {
++-                      "properties": {
++-                        "order_item_id": {
++-                          "type": "string"
++-                        },
++-                        "quantity": {
++-                          "format": "int64",
++-                          "type": "integer"
++-                        }
++-                      },
++-                      "required": [
++-                        "order_item_id",
++-                        "quantity"
++-                      ],
++-                      "type": "object"
++-                    },
++-                    "type": "array"
++-                  },
++-                  "shipping_cost_minor": {
++-                    "format": "int64",
++-                    "type": "integer"
+++                  "provider": {
+++                    "type": "string"
++                   },
++-                  "tracking_number": {
+++                  "provider_reference": {
++                     "type": "string"
++                   }
++                 },
++                 "required": [
++-                  "cod_amount_minor",
+++                  "amount_minor",
++                   "currency",
++-                  "fulfillment_location_id",
++-                  "items",
++-                  "shipping_cost_minor"
+++                  "payment_method"
++                 ],
++                 "type": "object"
++               }
++@@ -3821,96 +3799,792 @@
++               "application/json": {
++                 "schema": {
++                   "properties": {
++-                    "cod_amount_minor": {
+++                    "amount_minor": {
++                       "format": "int64",
++                       "type": "integer"
++                     },
++-                    "created_at": {
++-                      "format": "date-time",
++-                      "type": "string"
++-                    },
++-                    "currency": {
++-                      "type": "string"
++-                    },
++-                    "events": {
+++                    "attempts": {
++                       "items": {
++                         "properties": {
+++                          "created_at": {
+++                            "format": "date-time",
+++                            "type": "string"
+++                          },
+++                          "error_message": {
+++                            "type": "string"
+++                          },
++                           "id": {
++                             "type": "string"
++                           },
++-                          "notes": {
+++                          "payment_id": {
++                             "type": "string"
++                           },
++-                          "occurred_at": {
++-                            "format": "date-time",
+++                          "provider": {
++                             "type": "string"
++                           },
++-                          "shipment_id": {
+++                          "provider_reference": {
++                             "type": "string"
++                           },
++                           "status": {
++                             "type": "string"
+++                          },
+++                          "updated_at": {
+++                            "format": "date-time",
+++                            "type": "string"
++                           }
++                         },
++                         "required": [
+++                          "created_at",
++                           "id",
++-                          "occurred_at",
++-                          "shipment_id",
++-                          "status"
+++                          "payment_id",
+++                          "provider",
+++                          "status",
+++                          "updated_at"
++                         ],
++                         "type": "object"
++                       },
++                       "type": "array"
++                     },
++-                    "fulfillment_location_id": {
+++                    "created_at": {
+++                      "format": "date-time",
+++                      "type": "string"
+++                    },
+++                    "currency": {
++                       "type": "string"
++                     },
++                     "id": {
++                       "type": "string"
++                     },
++-                    "items": {
+++                    "order_id": {
+++                      "type": "string"
+++                    },
+++                    "payment_method": {
+++                      "type": "string"
+++                    },
+++                    "status": {
+++                      "type": "string"
+++                    },
+++                    "updated_at": {
+++                      "format": "date-time",
+++                      "type": "string"
+++                    }
+++                  },
+++                  "required": [
+++                    "amount_minor",
+++                    "created_at",
+++                    "currency",
+++                    "id",
+++                    "order_id",
+++                    "payment_method",
+++                    "status",
+++                    "updated_at"
+++                  ],
+++                  "type": "object"
+++                }
+++              }
+++            },
+++            "description": "Initialized payment"
+++          },
+++          "400": {
+++            "content": {
+++              "application/json": {
+++                "schema": {
+++                  "properties": {
+++                    "error": {
+++                      "properties": {
+++                        "code": {
+++                          "type": "string"
+++                        },
+++                        "message": {
+++                          "type": "string"
+++                        }
+++                      },
+++                      "required": [
+++                        "code",
+++                        "message"
+++                      ],
+++                      "type": "object"
+++                    }
+++                  },
+++                  "required": [
+++                    "error"
+++                  ],
+++                  "type": "object"
+++                }
+++              }
+++            },
+++            "description": "Invalid input"
+++          },
+++          "401": {
+++            "content": {
+++              "application/json": {
+++                "schema": {
+++                  "properties": {
+++                    "error": {
+++                      "properties": {
+++                        "code": {
+++                          "type": "string"
+++                        },
+++                        "message": {
+++                          "type": "string"
+++                        }
+++                      },
+++                      "required": [
+++                        "code",
+++                        "message"
+++                      ],
+++                      "type": "object"
+++                    }
+++                  },
+++                  "required": [
+++                    "error"
+++                  ],
+++                  "type": "object"
+++                }
+++              }
+++            },
+++            "description": "Unauthorized"
+++          },
+++          "403": {
+++            "content": {
+++              "application/json": {
+++                "schema": {
+++                  "properties": {
+++                    "error": {
+++                      "properties": {
+++                        "code": {
+++                          "type": "string"
+++                        },
+++                        "message": {
+++                          "type": "string"
+++                        }
+++                      },
+++                      "required": [
+++                        "code",
+++                        "message"
+++                      ],
+++                      "type": "object"
+++                    }
+++                  },
+++                  "required": [
+++                    "error"
+++                  ],
+++                  "type": "object"
+++                }
+++              }
+++            },
+++            "description": "Forbidden"
+++          },
+++          "404": {
+++            "content": {
+++              "application/json": {
+++                "schema": {
+++                  "properties": {
+++                    "error": {
+++                      "properties": {
+++                        "code": {
+++                          "type": "string"
+++                        },
+++                        "message": {
+++                          "type": "string"
+++                        }
+++                      },
+++                      "required": [
+++                        "code",
+++                        "message"
+++                      ],
+++                      "type": "object"
+++                    }
+++                  },
+++                  "required": [
+++                    "error"
+++                  ],
+++                  "type": "object"
+++                }
+++              }
+++            },
+++            "description": "Not found"
+++          },
+++          "409": {
+++            "content": {
+++              "application/json": {
+++                "schema": {
+++                  "properties": {
+++                    "error": {
+++                      "properties": {
+++                        "code": {
+++                          "type": "string"
+++                        },
+++                        "message": {
+++                          "type": "string"
+++                        }
+++                      },
+++                      "required": [
+++                        "code",
+++                        "message"
+++                      ],
+++                      "type": "object"
+++                    }
+++                  },
+++                  "required": [
+++                    "error"
+++                  ],
+++                  "type": "object"
+++                }
+++              }
+++            },
+++            "description": "Conflict"
+++          },
+++          "500": {
+++            "content": {
+++              "application/json": {
+++                "schema": {
+++                  "properties": {
+++                    "error": {
+++                      "properties": {
+++                        "code": {
+++                          "type": "string"
+++                        },
+++                        "message": {
+++                          "type": "string"
+++                        }
+++                      },
+++                      "required": [
+++                        "code",
+++                        "message"
+++                      ],
+++                      "type": "object"
+++                    }
+++                  },
+++                  "required": [
+++                    "error"
+++                  ],
+++                  "type": "object"
+++                }
+++              }
+++            },
+++            "description": "Internal error"
+++          }
+++        },
+++        "security": [
+++          {
+++            "bearerAuth": []
+++          }
+++        ],
+++        "summary": "Initialize payment for order",
+++        "tags": [
+++          "Payments"
+++        ]
+++      }
+++    },
+++    "/internal/v1/orders/{orderID}/shipments": {
+++      "post": {
+++        "operationId": "internalCreateOrderShipment",
+++        "parameters": [
+++          {
+++            "description": "Override locale resolution",
+++            "in": "query",
+++            "name": "locale",
+++            "schema": {
+++              "type": "string"
+++            }
+++          },
+++          {
+++            "description": "Order identifier",
+++            "in": "path",
+++            "name": "orderID",
+++            "required": true,
+++            "schema": {
+++              "type": "string"
+++            }
+++          }
+++        ],
+++        "requestBody": {
+++          "content": {
+++            "application/json": {
+++              "schema": {
+++                "properties": {
+++                  "cod_amount_minor": {
+++                    "format": "int64",
+++                    "type": "integer"
+++                  },
+++                  "currency": {
+++                    "type": "string"
+++                  },
+++                  "fulfillment_location_id": {
+++                    "type": "string"
+++                  },
+++                  "items": {
+++                    "items": {
+++                      "properties": {
+++                        "order_item_id": {
+++                          "type": "string"
+++                        },
+++                        "quantity": {
+++                          "format": "int64",
+++                          "type": "integer"
+++                        }
+++                      },
+++                      "required": [
+++                        "order_item_id",
+++                        "quantity"
+++                      ],
+++                      "type": "object"
+++                    },
+++                    "type": "array"
+++                  },
+++                  "shipping_cost_minor": {
+++                    "format": "int64",
+++                    "type": "integer"
+++                  },
+++                  "tracking_number": {
+++                    "type": "string"
+++                  }
+++                },
+++                "required": [
+++                  "cod_amount_minor",
+++                  "currency",
+++                  "fulfillment_location_id",
+++                  "items",
+++                  "shipping_cost_minor"
+++                ],
+++                "type": "object"
+++              }
+++            }
+++          },
+++          "required": true
+++        },
+++        "responses": {
+++          "200": {
+++            "content": {
+++              "application/json": {
+++                "schema": {
+++                  "properties": {
+++                    "cod_amount_minor": {
+++                      "format": "int64",
+++                      "type": "integer"
+++                    },
+++                    "created_at": {
+++                      "format": "date-time",
+++                      "type": "string"
+++                    },
+++                    "currency": {
+++                      "type": "string"
+++                    },
+++                    "events": {
+++                      "items": {
+++                        "properties": {
+++                          "id": {
+++                            "type": "string"
+++                          },
+++                          "notes": {
+++                            "type": "string"
+++                          },
+++                          "occurred_at": {
+++                            "format": "date-time",
+++                            "type": "string"
+++                          },
+++                          "shipment_id": {
+++                            "type": "string"
+++                          },
+++                          "status": {
+++                            "type": "string"
+++                          }
+++                        },
+++                        "required": [
+++                          "id",
+++                          "occurred_at",
+++                          "shipment_id",
+++                          "status"
+++                        ],
+++                        "type": "object"
+++                      },
+++                      "type": "array"
+++                    },
+++                    "fulfillment_location_id": {
+++                      "type": "string"
+++                    },
+++                    "id": {
+++                      "type": "string"
+++                    },
+++                    "items": {
+++                      "items": {
+++                        "properties": {
+++                          "created_at": {
+++                            "format": "date-time",
+++                            "type": "string"
+++                          },
+++                          "id": {
+++                            "type": "string"
+++                          },
+++                          "order_item_id": {
+++                            "type": "string"
+++                          },
+++                          "quantity": {
+++                            "format": "int64",
+++                            "type": "integer"
+++                          },
+++                          "shipment_id": {
+++                            "type": "string"
+++                          }
+++                        },
+++                        "required": [
+++                          "created_at",
+++                          "id",
+++                          "order_item_id",
+++                          "quantity",
+++                          "shipment_id"
+++                        ],
+++                        "type": "object"
+++                      },
+++                      "type": "array"
+++                    },
+++                    "order_id": {
+++                      "type": "string"
+++                    },
+++                    "shipping_cost_minor": {
+++                      "format": "int64",
+++                      "type": "integer"
+++                    },
+++                    "status": {
+++                      "type": "string"
+++                    },
+++                    "tracking_number": {
+++                      "type": "string"
+++                    },
+++                    "updated_at": {
+++                      "format": "date-time",
+++                      "type": "string"
+++                    }
+++                  },
+++                  "required": [
+++                    "cod_amount_minor",
+++                    "created_at",
+++                    "currency",
+++                    "fulfillment_location_id",
+++                    "id",
+++                    "items",
+++                    "order_id",
+++                    "shipping_cost_minor",
+++                    "status",
+++                    "updated_at"
+++                  ],
+++                  "type": "object"
+++                }
+++              }
+++            },
+++            "description": "Created shipment"
+++          },
+++          "400": {
+++            "content": {
+++              "application/json": {
+++                "schema": {
+++                  "properties": {
+++                    "error": {
+++                      "properties": {
+++                        "code": {
+++                          "type": "string"
+++                        },
+++                        "message": {
+++                          "type": "string"
+++                        }
+++                      },
+++                      "required": [
+++                        "code",
+++                        "message"
+++                      ],
+++                      "type": "object"
+++                    }
+++                  },
+++                  "required": [
+++                    "error"
+++                  ],
+++                  "type": "object"
+++                }
+++              }
+++            },
+++            "description": "Invalid input"
+++          },
+++          "401": {
+++            "content": {
+++              "application/json": {
+++                "schema": {
+++                  "properties": {
+++                    "error": {
+++                      "properties": {
+++                        "code": {
+++                          "type": "string"
+++                        },
+++                        "message": {
+++                          "type": "string"
+++                        }
+++                      },
+++                      "required": [
+++                        "code",
+++                        "message"
+++                      ],
+++                      "type": "object"
+++                    }
+++                  },
+++                  "required": [
+++                    "error"
+++                  ],
+++                  "type": "object"
+++                }
+++              }
+++            },
+++            "description": "Unauthorized"
+++          },
+++          "403": {
+++            "content": {
+++              "application/json": {
+++                "schema": {
+++                  "properties": {
+++                    "error": {
+++                      "properties": {
+++                        "code": {
+++                          "type": "string"
+++                        },
+++                        "message": {
+++                          "type": "string"
+++                        }
+++                      },
+++                      "required": [
+++                        "code",
+++                        "message"
+++                      ],
+++                      "type": "object"
+++                    }
+++                  },
+++                  "required": [
+++                    "error"
+++                  ],
+++                  "type": "object"
+++                }
+++              }
+++            },
+++            "description": "Forbidden"
+++          },
+++          "404": {
+++            "content": {
+++              "application/json": {
+++                "schema": {
+++                  "properties": {
+++                    "error": {
+++                      "properties": {
+++                        "code": {
+++                          "type": "string"
+++                        },
+++                        "message": {
+++                          "type": "string"
+++                        }
+++                      },
+++                      "required": [
+++                        "code",
+++                        "message"
+++                      ],
+++                      "type": "object"
+++                    }
+++                  },
+++                  "required": [
+++                    "error"
+++                  ],
+++                  "type": "object"
+++                }
+++              }
+++            },
+++            "description": "Not found"
+++          },
+++          "409": {
+++            "content": {
+++              "application/json": {
+++                "schema": {
+++                  "properties": {
+++                    "error": {
+++                      "properties": {
+++                        "code": {
+++                          "type": "string"
+++                        },
+++                        "message": {
+++                          "type": "string"
+++                        }
+++                      },
+++                      "required": [
+++                        "code",
+++                        "message"
+++                      ],
+++                      "type": "object"
+++                    }
+++                  },
+++                  "required": [
+++                    "error"
+++                  ],
+++                  "type": "object"
+++                }
+++              }
+++            },
+++            "description": "Conflict"
+++          },
+++          "500": {
+++            "content": {
+++              "application/json": {
+++                "schema": {
+++                  "properties": {
+++                    "error": {
+++                      "properties": {
+++                        "code": {
+++                          "type": "string"
+++                        },
+++                        "message": {
+++                          "type": "string"
+++                        }
+++                      },
+++                      "required": [
+++                        "code",
+++                        "message"
+++                      ],
+++                      "type": "object"
+++                    }
+++                  },
+++                  "required": [
+++                    "error"
+++                  ],
+++                  "type": "object"
+++                }
+++              }
+++            },
+++            "description": "Internal error"
+++          }
+++        },
+++        "security": [
+++          {
+++            "bearerAuth": []
+++          }
+++        ],
+++        "summary": "Create a shipment for an order",
+++        "tags": [
+++          "Shipping"
+++        ]
+++      }
+++    },
+++    "/internal/v1/payments/{paymentID}/status": {
+++      "patch": {
+++        "operationId": "internalUpdatePaymentStatus",
+++        "parameters": [
+++          {
+++            "description": "Override locale resolution",
+++            "in": "query",
+++            "name": "locale",
+++            "schema": {
+++              "type": "string"
+++            }
+++          },
+++          {
+++            "description": "Payment identifier",
+++            "in": "path",
+++            "name": "paymentID",
+++            "required": true,
+++            "schema": {
+++              "type": "string"
+++            }
+++          }
+++        ],
+++        "requestBody": {
+++          "content": {
+++            "application/json": {
+++              "schema": {
+++                "properties": {
+++                  "error_message": {
+++                    "type": "string"
+++                  },
+++                  "provider": {
+++                    "type": "string"
+++                  },
+++                  "provider_reference": {
+++                    "type": "string"
+++                  },
+++                  "status": {
+++                    "type": "string"
+++                  }
+++                },
+++                "required": [
+++                  "status"
+++                ],
+++                "type": "object"
+++              }
+++            }
+++          },
+++          "required": true
+++        },
+++        "responses": {
+++          "200": {
+++            "content": {
+++              "application/json": {
+++                "schema": {
+++                  "properties": {
+++                    "amount_minor": {
+++                      "format": "int64",
+++                      "type": "integer"
+++                    },
+++                    "attempts": {
++                       "items": {
++                         "properties": {
++                           "created_at": {
++                             "format": "date-time",
++                             "type": "string"
++                           },
+++                          "error_message": {
+++                            "type": "string"
+++                          },
++                           "id": {
++                             "type": "string"
++                           },
++-                          "order_item_id": {
+++                          "payment_id": {
++                             "type": "string"
++                           },
++-                          "quantity": {
++-                            "format": "int64",
++-                            "type": "integer"
+++                          "provider": {
+++                            "type": "string"
++                           },
++-                          "shipment_id": {
+++                          "provider_reference": {
+++                            "type": "string"
+++                          },
+++                          "status": {
+++                            "type": "string"
+++                          },
+++                          "updated_at": {
+++                            "format": "date-time",
++                             "type": "string"
++                           }
++                         },
++                         "required": [
++                           "created_at",
++                           "id",
++-                          "order_item_id",
++-                          "quantity",
++-                          "shipment_id"
+++                          "payment_id",
+++                          "provider",
+++                          "status",
+++                          "updated_at"
++                         ],
++                         "type": "object"
++                       },
++                       "type": "array"
++                     },
++-                    "order_id": {
+++                    "created_at": {
+++                      "format": "date-time",
++                       "type": "string"
++                     },
++-                    "shipping_cost_minor": {
++-                      "format": "int64",
++-                      "type": "integer"
+++                    "currency": {
+++                      "type": "string"
++                     },
++-                    "status": {
+++                    "id": {
++                       "type": "string"
++                     },
++-                    "tracking_number": {
+++                    "order_id": {
+++                      "type": "string"
+++                    },
+++                    "payment_method": {
+++                      "type": "string"
+++                    },
+++                    "status": {
++                       "type": "string"
++                     },
++                     "updated_at": {
++@@ -3919,14 +4593,12 @@
++                     }
++                   },
++                   "required": [
++-                    "cod_amount_minor",
+++                    "amount_minor",
++                     "created_at",
++                     "currency",
++-                    "fulfillment_location_id",
++                     "id",
++-                    "items",
++                     "order_id",
++-                    "shipping_cost_minor",
+++                    "payment_method",
++                     "status",
++                     "updated_at"
++                   ],
++@@ -3934,7 +4606,7 @@
++                 }
++               }
++             },
++-            "description": "Created shipment"
+++            "description": "Updated payment"
++           },
++           "400": {
++             "content": {
++@@ -4122,9 +4794,9 @@
++             "bearerAuth": []
++           }
++         ],
++-        "summary": "Create a shipment for an order",
+++        "summary": "Update payment status",
++         "tags": [
++-          "Shipping"
+++          "Payments"
++         ]
++       }
++     },
++@@ -29808,9 +30480,214 @@
++                 }
++               }
++             },
++-            "description": "Not found"
+++            "description": "Not found"
+++          },
+++          "409": {
+++            "content": {
+++              "application/json": {
+++                "schema": {
+++                  "properties": {
+++                    "error": {
+++                      "properties": {
+++                        "code": {
+++                          "type": "string"
+++                        },
+++                        "message": {
+++                          "type": "string"
+++                        }
+++                      },
+++                      "required": [
+++                        "code",
+++                        "message"
+++                      ],
+++                      "type": "object"
+++                    }
+++                  },
+++                  "required": [
+++                    "error"
+++                  ],
+++                  "type": "object"
+++                }
+++              }
+++            },
+++            "description": "Conflict"
+++          },
+++          "500": {
+++            "content": {
+++              "application/json": {
+++                "schema": {
+++                  "properties": {
+++                    "error": {
+++                      "properties": {
+++                        "code": {
+++                          "type": "string"
+++                        },
+++                        "message": {
+++                          "type": "string"
+++                        }
+++                      },
+++                      "required": [
+++                        "code",
+++                        "message"
+++                      ],
+++                      "type": "object"
+++                    }
+++                  },
+++                  "required": [
+++                    "error"
+++                  ],
+++                  "type": "object"
+++                }
+++              }
+++            },
+++            "description": "Internal error"
+++          }
+++        },
+++        "security": [
+++          {
+++            "bearerAuth": []
+++          }
+++        ],
+++        "summary": "Create a retail store owned by the supplier's affiliated seller",
+++        "tags": [
+++          "Suppliers"
+++        ]
+++      }
+++    },
+++    "/internal/v1/themes": {
+++      "get": {
+++        "operationId": "internalListThemes",
+++        "parameters": [
+++          {
+++            "description": "Override locale resolution",
+++            "in": "query",
+++            "name": "locale",
+++            "schema": {
+++              "type": "string"
+++            }
+++          }
+++        ],
+++        "responses": {
+++          "200": {
+++            "content": {
+++              "application/json": {
+++                "schema": {
+++                  "properties": {
+++                    "items": {
+++                      "items": {
+++                        "properties": {
+++                          "created_at": {
+++                            "format": "date-time",
+++                            "type": "string"
+++                          },
+++                          "description": {
+++                            "type": "string"
+++                          },
+++                          "id": {
+++                            "type": "string"
+++                          },
+++                          "key": {
+++                            "type": "string"
+++                          },
+++                          "name": {
+++                            "type": "string"
+++                          },
+++                          "status": {
+++                            "type": "string"
+++                          },
+++                          "type": {
+++                            "type": "string"
+++                          },
+++                          "updated_at": {
+++                            "format": "date-time",
+++                            "type": "string"
+++                          }
+++                        },
+++                        "required": [
+++                          "created_at",
+++                          "description",
+++                          "id",
+++                          "key",
+++                          "name",
+++                          "status",
+++                          "type",
+++                          "updated_at"
+++                        ],
+++                        "type": "object"
+++                      },
+++                      "type": "array"
+++                    }
+++                  },
+++                  "required": [
+++                    "items"
+++                  ],
+++                  "type": "object"
+++                }
+++              }
+++            },
+++            "description": "Theme collection"
+++          },
+++          "401": {
+++            "content": {
+++              "application/json": {
+++                "schema": {
+++                  "properties": {
+++                    "error": {
+++                      "properties": {
+++                        "code": {
+++                          "type": "string"
+++                        },
+++                        "message": {
+++                          "type": "string"
+++                        }
+++                      },
+++                      "required": [
+++                        "code",
+++                        "message"
+++                      ],
+++                      "type": "object"
+++                    }
+++                  },
+++                  "required": [
+++                    "error"
+++                  ],
+++                  "type": "object"
+++                }
+++              }
+++            },
+++            "description": "Unauthorized"
+++          },
+++          "403": {
+++            "content": {
+++              "application/json": {
+++                "schema": {
+++                  "properties": {
+++                    "error": {
+++                      "properties": {
+++                        "code": {
+++                          "type": "string"
+++                        },
+++                        "message": {
+++                          "type": "string"
+++                        }
+++                      },
+++                      "required": [
+++                        "code",
+++                        "message"
+++                      ],
+++                      "type": "object"
+++                    }
+++                  },
+++                  "required": [
+++                    "error"
+++                  ],
+++                  "type": "object"
+++                }
+++              }
+++            },
+++            "description": "Forbidden"
++           },
++-          "409": {
+++          "404": {
++             "content": {
++               "application/json": {
++                 "schema": {
++@@ -29838,7 +30715,7 @@
++                 }
++               }
++             },
++-            "description": "Conflict"
+++            "description": "Not found"
++           },
++           "500": {
++             "content": {
++@@ -29876,15 +30753,15 @@
++             "bearerAuth": []
++           }
++         ],
++-        "summary": "Create a retail store owned by the supplier's affiliated seller",
+++        "summary": "List registered themes",
++         "tags": [
++-          "Suppliers"
+++          "Themes"
++         ]
++       }
++     },
++-    "/internal/v1/themes": {
+++    "/internal/v1/themes/{key}/versions": {
++       "get": {
++-        "operationId": "internalListThemes",
+++        "operationId": "internalListThemeVersions",
++         "parameters": [
++           {
++             "description": "Override locale resolution",
++@@ -29893,6 +30770,15 @@
++             "schema": {
++               "type": "string"
++             }
+++          },
+++          {
+++            "description": "Theme key",
+++            "in": "path",
+++            "name": "key",
+++            "required": true,
+++            "schema": {
+++              "type": "string"
+++            }
++           }
++         ],
++         "responses": {
++@@ -29904,42 +30790,53 @@
++                     "items": {
++                       "items": {
++                         "properties": {
+++                          "component_registry_version": {
+++                            "type": "string"
+++                          },
+++                          "configuration_schema": {
+++                            "additionalProperties": true,
+++                            "type": "object"
+++                          },
++                           "created_at": {
++                             "format": "date-time",
++                             "type": "string"
++                           },
++-                          "description": {
++-                            "type": "string"
+++                          "default_configuration": {
+++                            "additionalProperties": true,
+++                            "type": "object"
++                           },
++-                          "id": {
+++                          "deprecated_at": {
+++                            "format": "date-time",
+++                            "nullable": true,
++                             "type": "string"
++                           },
++-                          "key": {
+++                          "id": {
++                             "type": "string"
++                           },
++-                          "name": {
+++                          "published_at": {
+++                            "format": "date-time",
+++                            "nullable": true,
++                             "type": "string"
++                           },
++                           "status": {
++                             "type": "string"
++                           },
++-                          "type": {
+++                          "theme_id": {
++                             "type": "string"
++                           },
++-                          "updated_at": {
++-                            "format": "date-time",
+++                          "version": {
++                             "type": "string"
++                           }
++                         },
++                         "required": [
+++                          "component_registry_version",
+++                          "configuration_schema",
++                           "created_at",
++-                          "description",
+++                          "default_configuration",
++                           "id",
++-                          "key",
++-                          "name",
++                           "status",
++-                          "type",
++-                          "updated_at"
+++                          "theme_id",
+++                          "version"
++                         ],
++                         "type": "object"
++                       },
++@@ -29953,7 +30850,7 @@
++                 }
++               }
++             },
++-            "description": "Theme collection"
+++            "description": "Theme version collection"
++           },
++           "401": {
++             "content": {
++@@ -30081,15 +30978,15 @@
++             "bearerAuth": []
++           }
++         ],
++-        "summary": "List registered themes",
+++        "summary": "List versions of a theme",
++         "tags": [
++           "Themes"
++         ]
++       }
++     },
++-    "/internal/v1/themes/{key}/versions": {
++-      "get": {
++-        "operationId": "internalListThemeVersions",
+++    "/internal/v1/webhooks/payments/inbox": {
+++      "post": {
+++        "operationId": "internalPersistWebhookInbox",
++         "parameters": [
++           {
++             "description": "Override locale resolution",
++@@ -30098,87 +30995,147 @@
++             "schema": {
++               "type": "string"
++             }
++-          },
++-          {
++-            "description": "Theme key",
++-            "in": "path",
++-            "name": "key",
++-            "required": true,
++-            "schema": {
++-              "type": "string"
++-            }
++           }
++         ],
+++        "requestBody": {
+++          "content": {
+++            "application/json": {
+++              "schema": {
+++                "properties": {
+++                  "connection_id": {
+++                    "type": "string"
+++                  },
+++                  "event_type": {
+++                    "type": "string"
+++                  },
+++                  "payload_json": {
+++                    "items": {
+++                      "format": "int32",
+++                      "type": "integer"
+++                    },
+++                    "type": "array"
+++                  },
+++                  "provider": {
+++                    "type": "string"
+++                  },
+++                  "provider_event_id": {
+++                    "type": "string"
+++                  },
+++                  "signature_verified": {
+++                    "type": "boolean"
+++                  }
+++                },
+++                "required": [
+++                  "event_type",
+++                  "payload_json",
+++                  "provider",
+++                  "provider_event_id",
+++                  "signature_verified"
+++                ],
+++                "type": "object"
+++              }
+++            }
+++          },
+++          "required": true
+++        },
++         "responses": {
++           "200": {
++             "content": {
++               "application/json": {
++                 "schema": {
++                   "properties": {
++-                    "items": {
+++                    "attempt_count": {
+++                      "format": "int32",
+++                      "type": "integer"
+++                    },
+++                    "connection_id": {
+++                      "type": "string"
+++                    },
+++                    "deduplicated": {
+++                      "type": "boolean"
+++                    },
+++                    "event_type": {
+++                      "type": "string"
+++                    },
+++                    "id": {
+++                      "type": "string"
+++                    },
+++                    "payload_json": {
++                       "items": {
++-                        "properties": {
++-                          "component_registry_version": {
++-                            "type": "string"
++-                          },
++-                          "configuration_schema": {
++-                            "additionalProperties": true,
++-                            "type": "object"
++-                          },
++-                          "created_at": {
++-                            "format": "date-time",
++-                            "type": "string"
++-                          },
++-                          "default_configuration": {
++-                            "additionalProperties": true,
++-                            "type": "object"
++-                          },
++-                          "deprecated_at": {
++-                            "format": "date-time",
++-                            "nullable": true,
++-                            "type": "string"
++-                          },
++-                          "id": {
++-                            "type": "string"
++-                          },
++-                          "published_at": {
++-                            "format": "date-time",
++-                            "nullable": true,
++-                            "type": "string"
++-                          },
++-                          "status": {
++-                            "type": "string"
++-                          },
++-                          "theme_id": {
++-                            "type": "string"
++-                          },
++-                          "version": {
++-                            "type": "string"
++-                          }
++-                        },
++-                        "required": [
++-                          "component_registry_version",
++-                          "configuration_schema",
++-                          "created_at",
++-                          "default_configuration",
++-                          "id",
++-                          "status",
++-                          "theme_id",
++-                          "version"
++-                        ],
++-                        "type": "object"
+++                        "format": "int32",
+++                        "type": "integer"
++                       },
++                       "type": "array"
+++                    },
+++                    "processed_at": {
+++                      "format": "date-time",
+++                      "nullable": true,
+++                      "type": "string"
+++                    },
+++                    "provider": {
+++                      "type": "string"
+++                    },
+++                    "provider_event_id": {
+++                      "type": "string"
+++                    },
+++                    "received_at": {
+++                      "format": "date-time",
+++                      "type": "string"
+++                    },
+++                    "signature_verified": {
+++                      "type": "boolean"
+++                    },
+++                    "status": {
+++                      "type": "string"
++                     }
++                   },
++                   "required": [
++-                    "items"
+++                    "attempt_count",
+++                    "deduplicated",
+++                    "event_type",
+++                    "id",
+++                    "payload_json",
+++                    "provider",
+++                    "provider_event_id",
+++                    "received_at",
+++                    "signature_verified",
+++                    "status"
++                   ],
++                   "type": "object"
++                 }
++               }
++             },
++-            "description": "Theme version collection"
+++            "description": "Persisted webhook inbox entry"
+++          },
+++          "400": {
+++            "content": {
+++              "application/json": {
+++                "schema": {
+++                  "properties": {
+++                    "error": {
+++                      "properties": {
+++                        "code": {
+++                          "type": "string"
+++                        },
+++                        "message": {
+++                          "type": "string"
+++                        }
+++                      },
+++                      "required": [
+++                        "code",
+++                        "message"
+++                      ],
+++                      "type": "object"
+++                    }
+++                  },
+++                  "required": [
+++                    "error"
+++                  ],
+++                  "type": "object"
+++                }
+++              }
+++            },
+++            "description": "Invalid input"
++           },
++           "401": {
++             "content": {
++@@ -30270,6 +31227,36 @@
++             },
++             "description": "Not found"
++           },
+++          "409": {
+++            "content": {
+++              "application/json": {
+++                "schema": {
+++                  "properties": {
+++                    "error": {
+++                      "properties": {
+++                        "code": {
+++                          "type": "string"
+++                        },
+++                        "message": {
+++                          "type": "string"
+++                        }
+++                      },
+++                      "required": [
+++                        "code",
+++                        "message"
+++                      ],
+++                      "type": "object"
+++                    }
+++                  },
+++                  "required": [
+++                    "error"
+++                  ],
+++                  "type": "object"
+++                }
+++              }
+++            },
+++            "description": "Conflict"
+++          },
++           "500": {
++             "content": {
++               "application/json": {
++@@ -30306,9 +31293,9 @@
++             "bearerAuth": []
++           }
++         ],
++-        "summary": "List versions of a theme",
+++        "summary": "Persist raw provider webhook in inbox",
++         "tags": [
++-          "Themes"
+++          "Payments"
++         ]
++       }
++     }
++@@ -30355,6 +31342,10 @@
++       "description": "Shipment domain model and state machine management",
++       "name": "Shipping"
++     },
+++    {
+++      "description": "Payment aggregate, status transitions, and webhook inbox",
+++      "name": "Payments"
+++    },
++     {
++       "description": "Platform moderation and operational overview",
++       "name": "Platform Administration"
++diff --git a/internal/coreapi/contracts.go b/internal/coreapi/contracts.go
++index 6d60e52..bcdd34d 100644
++--- a/internal/coreapi/contracts.go
+++++ b/internal/coreapi/contracts.go
++@@ -1,6 +1,7 @@
++ package coreapi
++ 
++ import (
+++	"encoding/json"
++ 	"net/http"
++ 	"strconv"
++ 	"time"
++@@ -368,3 +369,67 @@ type ShipmentResponse struct {
++ 	CreatedAt             time.Time               `json:"created_at"`
++ 	UpdatedAt             time.Time               `json:"updated_at"`
++ }
+++
+++// --- Payments ---
+++
+++type InitializePaymentRequest struct {
+++	AmountMinor       int64  `json:"amount_minor"`
+++	Currency          string `json:"currency"`
+++	PaymentMethod     string `json:"payment_method"`
+++	Provider          string `json:"provider,omitempty"`
+++	ProviderReference string `json:"provider_reference,omitempty"`
+++}
+++
+++type UpdatePaymentStatusRequest struct {
+++	Status            string `json:"status"`
+++	Provider          string `json:"provider,omitempty"`
+++	ProviderReference string `json:"provider_reference,omitempty"`
+++	ErrorMessage      string `json:"error_message,omitempty"`
+++}
+++
+++type PersistWebhookInboxRequest struct {
+++	Provider          string          `json:"provider"`
+++	ConnectionID      string          `json:"connection_id,omitempty"`
+++	ProviderEventID   string          `json:"provider_event_id"`
+++	EventType         string          `json:"event_type"`
+++	PayloadJSON       json.RawMessage `json:"payload_json"`
+++	SignatureVerified bool            `json:"signature_verified"`
+++}
+++
+++type PaymentAttemptResponse struct {
+++	ID                string    `json:"id"`
+++	PaymentID         string    `json:"payment_id"`
+++	Provider          string    `json:"provider"`
+++	ProviderReference string    `json:"provider_reference,omitempty"`
+++	Status            string    `json:"status"`
+++	ErrorMessage      string    `json:"error_message,omitempty"`
+++	CreatedAt         time.Time `json:"created_at"`
+++	UpdatedAt         time.Time `json:"updated_at"`
+++}
+++
+++type PaymentResponse struct {
+++	ID            string                   `json:"id"`
+++	OrderID       string                   `json:"order_id"`
+++	AmountMinor   int64                    `json:"amount_minor"`
+++	Currency      string                   `json:"currency"`
+++	PaymentMethod string                   `json:"payment_method"`
+++	Status        string                   `json:"status"`
+++	Attempts      []PaymentAttemptResponse `json:"attempts,omitempty"`
+++	CreatedAt     time.Time                `json:"created_at"`
+++	UpdatedAt     time.Time                `json:"updated_at"`
+++}
+++
+++type WebhookInboxResponse struct {
+++	ID                string          `json:"id"`
+++	Provider          string          `json:"provider"`
+++	ConnectionID      string          `json:"connection_id,omitempty"`
+++	ProviderEventID   string          `json:"provider_event_id"`
+++	EventType         string          `json:"event_type"`
+++	PayloadJSON       json.RawMessage `json:"payload_json"`
+++	SignatureVerified bool            `json:"signature_verified"`
+++	Status            string          `json:"status"`
+++	AttemptCount      int             `json:"attempt_count"`
+++	Deduplicated      bool            `json:"deduplicated"`
+++	ReceivedAt        time.Time       `json:"received_at"`
+++	ProcessedAt       *time.Time      `json:"processed_at,omitempty"`
+++}
++diff --git a/internal/coreapi/errors.go b/internal/coreapi/errors.go
++index 71d897a..fe235d3 100644
++--- a/internal/coreapi/errors.go
+++++ b/internal/coreapi/errors.go
++@@ -4,6 +4,7 @@ import (
++ 	"errors"
++ 	"net/http"
++ 
+++	"github.com/matjeroapps/core/internal/payments"
++ 	"github.com/matjeroapps/core/internal/shipping"
++ 	"github.com/matjeroapps/core/internal/suppliers"
++ 	"github.com/matjeroapps/core/modules/commerce"
++@@ -40,6 +41,7 @@ const (
++ 	CodePriceChanged              = "price_changed"
++ 	CodeListingUnavailable        = "listing_unavailable"
++ 	CodeInvalidShipmentTransition = "invalid_shipment_transition"
+++	CodeInvalidPaymentTransition  = "invalid_payment_transition"
++ 	CodeInternalError             = "internal_error"
++ )
++ 
++@@ -54,7 +56,7 @@ func statusFor(code string) int {
++ 		return http.StatusUnauthorized
++ 	case CodeForbidden:
++ 		return http.StatusForbidden
++-	case CodeConflict, CodeMarketMismatch, CodeInsufficientInventory, CodeCheckoutExpired, CodeIdempotencyConflict, CodeInvalidOrderTransition, CodeInvalidShipmentTransition, CodePriceChanged, CodeListingUnavailable:
+++	case CodeConflict, CodeMarketMismatch, CodeInsufficientInventory, CodeCheckoutExpired, CodeIdempotencyConflict, CodeInvalidOrderTransition, CodeInvalidShipmentTransition, CodeInvalidPaymentTransition, CodePriceChanged, CodeListingUnavailable:
++ 		return http.StatusConflict
++ 	case CodeUnavailable, CodePreviewUnavailable:
++ 		return http.StatusServiceUnavailable
++@@ -140,6 +142,8 @@ func codeFor(err error) string {
++ 		errors.Is(err, storefront.ErrCatalogNotFound),
++ 		errors.Is(err, shipping.ErrShipmentNotFound),
++ 		errors.Is(err, shipping.ErrOrderNotFound),
+++		errors.Is(err, payments.ErrPaymentNotFound),
+++		errors.Is(err, payments.ErrOrderNotFound),
++ 		errors.Is(err, suppliers.ErrNotFound):
++ 		return CodeNotFound
++ 	case errors.Is(err, storefront.ErrStoreNotFound),
++@@ -155,6 +159,8 @@ func codeFor(err error) string {
++ 		errors.Is(err, themes.ErrInvalidInput),
++ 		errors.Is(err, shipping.ErrInvalidInput),
++ 		errors.Is(err, shipping.ErrInvalidStatus),
+++		errors.Is(err, payments.ErrInvalidInput),
+++		errors.Is(err, payments.ErrInvalidStatus),
++ 		errors.Is(err, suppliers.ErrInvalidInput):
++ 		return CodeValidationError
++ 	case errors.Is(err, commerce.ErrUnauthorized):
++@@ -179,6 +185,8 @@ func codeFor(err error) string {
++ 		return CodeInvalidOrderTransition
++ 	case errors.Is(err, shipping.ErrInvalidTransition):
++ 		return CodeInvalidShipmentTransition
+++	case errors.Is(err, payments.ErrInvalidTransition):
+++		return CodeInvalidPaymentTransition
++ 	case errors.Is(err, commerce.ErrPriceChanged):
++ 		return CodePriceChanged
++ 	case errors.Is(err, commerce.ErrListingUnavailable):
++diff --git a/internal/coreapi/router.go b/internal/coreapi/router.go
++index 11ba78f..30cef41 100644
++--- a/internal/coreapi/router.go
+++++ b/internal/coreapi/router.go
++@@ -17,6 +17,7 @@ import (
++ 
++ 	"github.com/go-chi/chi/v5"
++ 
+++	"github.com/matjeroapps/core/internal/payments"
++ 	"github.com/matjeroapps/core/internal/serviceauth"
++ 	"github.com/matjeroapps/core/internal/shipping"
++ 	"github.com/matjeroapps/core/modules/commerce"
++@@ -68,6 +69,15 @@ type ShippingService interface {
++ 	ListShipmentsForOrder(ctx context.Context, orderID string) ([]shipping.Shipment, error)
++ }
++ 
+++// PaymentService manages payment lifecycle and webhook inbox.
+++type PaymentService interface {
+++	InitializePayment(ctx context.Context, params payments.InitializePaymentParams) (*payments.Payment, error)
+++	UpdatePaymentStatus(ctx context.Context, params payments.UpdateStatusParams) (*payments.Payment, error)
+++	GetPayment(ctx context.Context, paymentID string) (*payments.Payment, error)
+++	GetPaymentByOrder(ctx context.Context, orderID string) (*payments.Payment, error)
+++	PersistWebhookInbox(ctx context.Context, params payments.PersistWebhookInboxParams) (*payments.WebhookInbox, bool, error)
+++}
+++
++ // Dependencies wires the internal API. Every field is a Core-owned capability;
++ // no actor ever constructs these directly.
++ type Dependencies struct {
++@@ -79,6 +89,7 @@ type Dependencies struct {
++ 	Revisions RevisionReader
++ 	Themes    themes.Service
++ 	Shipping  ShippingService
+++	Payments  PaymentService
++ }
++ 
++ // NewRouter registers the internal API under /internal/v1.
++@@ -265,6 +276,14 @@ func NewRouter(deps Dependencies) chi.Router {
++ 			r.Patch("/shipments/{shipmentID}/status", server.handleUpdateShipmentStatus)
++ 			r.Get("/shipments/{shipmentID}", server.handleGetShipment)
++ 		})
+++
+++		// Payment capabilities.
+++		r.Group(func(r chi.Router) {
+++			r.Use(requireCallers(serviceauth.CallerSeller, serviceauth.CallerAdmin))
+++			r.Post("/orders/{orderID}/payments", server.handleInitializePayment)
+++			r.Patch("/payments/{paymentID}/status", server.handleUpdatePaymentStatus)
+++			r.Post("/webhooks/payments/inbox", server.handlePersistWebhookInbox)
+++		})
++ 	})
++ 
++ 	return r
++diff --git a/internal/coreapi/spec.go b/internal/coreapi/spec.go
++index e9a53d2..b1b3467 100644
++--- a/internal/coreapi/spec.go
+++++ b/internal/coreapi/spec.go
++@@ -106,6 +106,7 @@ func internalTags() []openapi3.Tag {
++ 		{Name: "Inventory", Description: "Inventory snapshots and movements"},
++ 		{Name: "Themes", Description: "Theme Engine installation and configuration"},
++ 		{Name: "Shipping", Description: "Shipment domain model and state machine management"},
+++		{Name: "Payments", Description: "Payment aggregate, status transitions, and webhook inbox"},
++ 		{Name: "Platform Administration", Description: "Platform moderation and operational overview"},
++ 	}
++ }
++@@ -1032,5 +1033,25 @@ func internalRoutes() []openapi.RouteSpec {
++ 			Parameters: []openapi.ParameterSpec{pathParam("shipmentID", "Shipment identifier")},
++ 			Responses:  readResponses("Shipment details", ShipmentResponse{}),
++ 		},
+++		{
+++			Method: http.MethodPost, Path: "/internal/v1/orders/{orderID}/payments", OperationID: "internalInitializePayment",
+++			Summary: "Initialize payment for order", Tags: []string{"Payments"},
+++			Parameters:  []openapi.ParameterSpec{pathParam("orderID", "Order identifier")},
+++			RequestBody: InitializePaymentRequest{},
+++			Responses:   writeResponses("Initialized payment", PaymentResponse{}),
+++		},
+++		{
+++			Method: http.MethodPatch, Path: "/internal/v1/payments/{paymentID}/status", OperationID: "internalUpdatePaymentStatus",
+++			Summary: "Update payment status", Tags: []string{"Payments"},
+++			Parameters:  []openapi.ParameterSpec{pathParam("paymentID", "Payment identifier")},
+++			RequestBody: UpdatePaymentStatusRequest{},
+++			Responses:   writeResponses("Updated payment", PaymentResponse{}),
+++		},
+++		{
+++			Method: http.MethodPost, Path: "/internal/v1/webhooks/payments/inbox", OperationID: "internalPersistWebhookInbox",
+++			Summary: "Persist raw provider webhook in inbox", Tags: []string{"Payments"},
+++			RequestBody: PersistWebhookInboxRequest{},
+++			Responses:   writeResponses("Persisted webhook inbox entry", WebhookInboxResponse{}),
+++		},
++ 	}
++ }
++diff --git a/packages/outbox/outbox.go b/packages/outbox/outbox.go
++index 2974b1d..0697680 100644
++--- a/packages/outbox/outbox.go
+++++ b/packages/outbox/outbox.go
++@@ -291,6 +291,10 @@ func ResolveRoutingKey(eventType string) (exchange string, routingKey string, er
++ 		return "shipping.events", "shipment.created", nil
++ 	case "shipping.shipment.status_changed.v1":
++ 		return "shipping.events", "shipment.status_changed", nil
+++	case "payments.payment.captured.v1":
+++		return "payments.events", "payment.captured", nil
+++	case "payments.payment.failed.v1":
+++		return "payments.events", "payment.failed", nil
++ 	default:
++ 		return "", "", fmt.Errorf("unknown routing for event_type: %s", eventType)
++ 	}
+diff --git a/docs/implementation/phase-07-payments-foundation-report.md b/docs/implementation/phase-07-payments-foundation-report.md
+new file mode 100644
+index 0000000..0b2a45f
+--- /dev/null
++++ b/docs/implementation/phase-07-payments-foundation-report.md
+@@ -0,0 +1,54 @@
++# Phase 7 Payments Foundation Implementation Report
++
++## Feature Name & Summary
++**Feature**: Phase 7 Payments Foundation  
++**Target Repository**: `matjeroapps/core`  
++**Summary**: Established the Payments domain aggregate, status transition state machine (`CREATED`, `PENDING`, `AUTHORIZED`, `CAPTURED`, `FAILED`, `CANCELLED`, `REFUNDED`), transactional outbox event publishing (`payments.payment.captured.v1`, `payments.payment.failed.v1`), and the Webhook Inbox pattern with deduplication based on `(provider, provider_event_id)` for idempotent payment capture and Cash on Delivery (COD) tracking.
++
++---
++
++## Architecture & Design Compliance
++
++1. **ADR-003 (Monetary Values)**: All monetary fields strictly use `amount_minor` (`BIGINT`) and ISO 4217 `currency` (`CHAR(3)`). No floating-point values are used anywhere.
++2. **ADR-006 (Transactional Outbox)**: Outbox event envelopes (`PaymentCaptured`, `PaymentFailed`) are enqueued atomically inside the database transaction alongside payment status mutations.
++3. **ADR-007 / Master Plan Rule 45 (Webhook Inbox)**: External payment webhooks are persisted to `webhook_inbox` prior to processing, enforcing strict deduplication via a unique index on `(provider, provider_event_id)`.
++4. **ADR-017 (Core Internal API)**: Internal endpoints are exposed under `/internal/v1` and protected using `X-Matjero-Service` authorization (`serviceauth.RequireCaller(CallerSeller, CallerAdmin)`).
++
++---
++
++## Database & API Changes
++
++### Database Migrations (`000019_create_payments_schema.up.sql`)
++- `payments` table:
++  - Columns: `id` (UUID PK), `order_id` (UUID FK to `orders`), `amount_minor` (BIGINT), `currency` (CHAR(3)), `payment_method` (TEXT), `status` (TEXT with CHECK constraint), `created_at`, `updated_at`.
++  - Indexes: `payments_order_id_idx`, `payments_status_idx`.
++- `payment_attempts` table:
++  - Columns: `id` (UUID PK), `payment_id` (UUID FK to `payments`), `provider` (TEXT), `provider_reference` (TEXT), `status` (TEXT), `error_message` (TEXT), `created_at`, `updated_at`.
++  - Index: `payment_attempts_payment_id_idx`.
++- `webhook_inbox` table:
++  - Columns: `id` (UUID PK), `provider` (TEXT), `connection_id` (TEXT), `provider_event_id` (TEXT), `event_type` (TEXT), `payload_json` (JSONB), `signature_verified` (BOOLEAN), `status` (TEXT), `attempt_count` (INT), `received_at`, `processed_at`.
++  - Unique Constraint: `webhook_inbox_provider_event_uidx UNIQUE (provider, provider_event_id)`.
++  - Index: `webhook_inbox_status_idx`.
++
++### Internal HTTP Endpoints (`/internal/v1`)
++- `POST /internal/v1/orders/{orderID}/payments`: Initializes a payment for an order (status `CREATED`).
++- `PATCH /internal/v1/payments/{paymentID}/status`: Transitions payment status according to state machine rules and records attempt details. Emits outbox events when transitioning to `CAPTURED` or `FAILED`.
++- `POST /internal/v1/webhooks/payments/inbox`: Persists raw provider webhook payload in `webhook_inbox` with deduplication handling.
++
++---
++
++## Testing Results
++
++- `gofmt -s -w .`: PASS
++- `go vet ./...`: PASS
++- `go test -count=1 ./internal/payments/... ./packages/events/...`: PASS
++  - Unit tests verifying payment state transitions (e.g. blocking `FAILED` -> `CAPTURED`, `REFUNDED` -> `CAPTURED`, valid forward transitions, self-transitions).
++  - Integration tests verifying payment initialization, status transitions, atomic outbox event enqueueing (`payments.payment.captured.v1`, `payments.payment.failed.v1`), and `webhook_inbox` deduplication.
++- `go run ./cmd/openapi-gen`: PASS (regenerated `docs/api/internal/openapi.json`).
++
++---
++
++## PR Status
++- Branch: `feature/p7-payments-foundation`
++- PR Title: `feat: Phase 7 Payments Foundation`
++- Full git diff saved to: `docs/implementation/phase-07-payments-foundation-diff.txt`
+diff --git a/internal/coreapi/contracts.go b/internal/coreapi/contracts.go
+index 6d60e52..bcdd34d 100644
+--- a/internal/coreapi/contracts.go
++++ b/internal/coreapi/contracts.go
+@@ -1,6 +1,7 @@
+ package coreapi
+ 
+ import (
++	"encoding/json"
+ 	"net/http"
+ 	"strconv"
+ 	"time"
+@@ -368,3 +369,67 @@ type ShipmentResponse struct {
+ 	CreatedAt             time.Time               `json:"created_at"`
+ 	UpdatedAt             time.Time               `json:"updated_at"`
+ }
++
++// --- Payments ---
++
++type InitializePaymentRequest struct {
++	AmountMinor       int64  `json:"amount_minor"`
++	Currency          string `json:"currency"`
++	PaymentMethod     string `json:"payment_method"`
++	Provider          string `json:"provider,omitempty"`
++	ProviderReference string `json:"provider_reference,omitempty"`
++}
++
++type UpdatePaymentStatusRequest struct {
++	Status            string `json:"status"`
++	Provider          string `json:"provider,omitempty"`
++	ProviderReference string `json:"provider_reference,omitempty"`
++	ErrorMessage      string `json:"error_message,omitempty"`
++}
++
++type PersistWebhookInboxRequest struct {
++	Provider          string          `json:"provider"`
++	ConnectionID      string          `json:"connection_id,omitempty"`
++	ProviderEventID   string          `json:"provider_event_id"`
++	EventType         string          `json:"event_type"`
++	PayloadJSON       json.RawMessage `json:"payload_json"`
++	SignatureVerified bool            `json:"signature_verified"`
++}
++
++type PaymentAttemptResponse struct {
++	ID                string    `json:"id"`
++	PaymentID         string    `json:"payment_id"`
++	Provider          string    `json:"provider"`
++	ProviderReference string    `json:"provider_reference,omitempty"`
++	Status            string    `json:"status"`
++	ErrorMessage      string    `json:"error_message,omitempty"`
++	CreatedAt         time.Time `json:"created_at"`
++	UpdatedAt         time.Time `json:"updated_at"`
++}
++
++type PaymentResponse struct {
++	ID            string                   `json:"id"`
++	OrderID       string                   `json:"order_id"`
++	AmountMinor   int64                    `json:"amount_minor"`
++	Currency      string                   `json:"currency"`
++	PaymentMethod string                   `json:"payment_method"`
++	Status        string                   `json:"status"`
++	Attempts      []PaymentAttemptResponse `json:"attempts,omitempty"`
++	CreatedAt     time.Time                `json:"created_at"`
++	UpdatedAt     time.Time                `json:"updated_at"`
++}
++
++type WebhookInboxResponse struct {
++	ID                string          `json:"id"`
++	Provider          string          `json:"provider"`
++	ConnectionID      string          `json:"connection_id,omitempty"`
++	ProviderEventID   string          `json:"provider_event_id"`
++	EventType         string          `json:"event_type"`
++	PayloadJSON       json.RawMessage `json:"payload_json"`
++	SignatureVerified bool            `json:"signature_verified"`
++	Status            string          `json:"status"`
++	AttemptCount      int             `json:"attempt_count"`
++	Deduplicated      bool            `json:"deduplicated"`
++	ReceivedAt        time.Time       `json:"received_at"`
++	ProcessedAt       *time.Time      `json:"processed_at,omitempty"`
++}
+diff --git a/internal/coreapi/errors.go b/internal/coreapi/errors.go
+index 71d897a..fe235d3 100644
+--- a/internal/coreapi/errors.go
++++ b/internal/coreapi/errors.go
+@@ -4,6 +4,7 @@ import (
+ 	"errors"
+ 	"net/http"
+ 
++	"github.com/matjeroapps/core/internal/payments"
+ 	"github.com/matjeroapps/core/internal/shipping"
+ 	"github.com/matjeroapps/core/internal/suppliers"
+ 	"github.com/matjeroapps/core/modules/commerce"
+@@ -40,6 +41,7 @@ const (
+ 	CodePriceChanged              = "price_changed"
+ 	CodeListingUnavailable        = "listing_unavailable"
+ 	CodeInvalidShipmentTransition = "invalid_shipment_transition"
++	CodeInvalidPaymentTransition  = "invalid_payment_transition"
+ 	CodeInternalError             = "internal_error"
+ )
+ 
+@@ -54,7 +56,7 @@ func statusFor(code string) int {
+ 		return http.StatusUnauthorized
+ 	case CodeForbidden:
+ 		return http.StatusForbidden
+-	case CodeConflict, CodeMarketMismatch, CodeInsufficientInventory, CodeCheckoutExpired, CodeIdempotencyConflict, CodeInvalidOrderTransition, CodeInvalidShipmentTransition, CodePriceChanged, CodeListingUnavailable:
++	case CodeConflict, CodeMarketMismatch, CodeInsufficientInventory, CodeCheckoutExpired, CodeIdempotencyConflict, CodeInvalidOrderTransition, CodeInvalidShipmentTransition, CodeInvalidPaymentTransition, CodePriceChanged, CodeListingUnavailable:
+ 		return http.StatusConflict
+ 	case CodeUnavailable, CodePreviewUnavailable:
+ 		return http.StatusServiceUnavailable
+@@ -140,6 +142,8 @@ func codeFor(err error) string {
+ 		errors.Is(err, storefront.ErrCatalogNotFound),
+ 		errors.Is(err, shipping.ErrShipmentNotFound),
+ 		errors.Is(err, shipping.ErrOrderNotFound),
++		errors.Is(err, payments.ErrPaymentNotFound),
++		errors.Is(err, payments.ErrOrderNotFound),
+ 		errors.Is(err, suppliers.ErrNotFound):
+ 		return CodeNotFound
+ 	case errors.Is(err, storefront.ErrStoreNotFound),
+@@ -155,6 +159,8 @@ func codeFor(err error) string {
+ 		errors.Is(err, themes.ErrInvalidInput),
+ 		errors.Is(err, shipping.ErrInvalidInput),
+ 		errors.Is(err, shipping.ErrInvalidStatus),
++		errors.Is(err, payments.ErrInvalidInput),
++		errors.Is(err, payments.ErrInvalidStatus),
+ 		errors.Is(err, suppliers.ErrInvalidInput):
+ 		return CodeValidationError
+ 	case errors.Is(err, commerce.ErrUnauthorized):
+@@ -179,6 +185,8 @@ func codeFor(err error) string {
+ 		return CodeInvalidOrderTransition
+ 	case errors.Is(err, shipping.ErrInvalidTransition):
+ 		return CodeInvalidShipmentTransition
++	case errors.Is(err, payments.ErrInvalidTransition):
++		return CodeInvalidPaymentTransition
+ 	case errors.Is(err, commerce.ErrPriceChanged):
+ 		return CodePriceChanged
+ 	case errors.Is(err, commerce.ErrListingUnavailable):
+diff --git a/internal/coreapi/payments.go b/internal/coreapi/payments.go
+new file mode 100644
+index 0000000..bb6bd99
+--- /dev/null
++++ b/internal/coreapi/payments.go
+@@ -0,0 +1,152 @@
++package coreapi
++
++import (
++	"encoding/json"
++	"net/http"
++
++	"github.com/go-chi/chi/v5"
++
++	"github.com/matjeroapps/core/internal/payments"
++	"github.com/matjeroapps/core/internal/serviceauth"
++	"github.com/matjeroapps/core/packages/httpx"
++)
++
++func (s *server) handleInitializePayment(w http.ResponseWriter, r *http.Request) {
++	orderID := chi.URLParam(r, "orderID")
++	if orderID == "" {
++		writeError(w, CodeValidationError)
++		return
++	}
++
++	var req InitializePaymentRequest
++	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
++		writeError(w, CodeValidationError)
++		return
++	}
++
++	params := payments.InitializePaymentParams{
++		OrderID:           orderID,
++		AmountMinor:       req.AmountMinor,
++		Currency:          req.Currency,
++		PaymentMethod:     req.PaymentMethod,
++		Provider:          req.Provider,
++		ProviderReference: req.ProviderReference,
++		CorrelationID:     r.Header.Get("X-Correlation-ID"),
++		CausationID:       serviceauth.SubjectFrom(r),
++	}
++
++	p, err := s.deps.Payments.InitializePayment(r.Context(), params)
++	if err != nil {
++		writeDomainError(w, err)
++		return
++	}
++
++	httpx.WriteJSON(w, http.StatusCreated, toPaymentResponse(p))
++}
++
++func (s *server) handleUpdatePaymentStatus(w http.ResponseWriter, r *http.Request) {
++	paymentID := chi.URLParam(r, "paymentID")
++	if paymentID == "" {
++		writeError(w, CodeValidationError)
++		return
++	}
++
++	var req UpdatePaymentStatusRequest
++	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
++		writeError(w, CodeValidationError)
++		return
++	}
++
++	params := payments.UpdateStatusParams{
++		PaymentID:         paymentID,
++		NewStatus:         payments.Status(req.Status),
++		Provider:          req.Provider,
++		ProviderReference: req.ProviderReference,
++		ErrorMessage:      req.ErrorMessage,
++		CorrelationID:     r.Header.Get("X-Correlation-ID"),
++		CausationID:       serviceauth.SubjectFrom(r),
++	}
++
++	p, err := s.deps.Payments.UpdatePaymentStatus(r.Context(), params)
++	if err != nil {
++		writeDomainError(w, err)
++		return
++	}
++
++	httpx.WriteJSON(w, http.StatusOK, toPaymentResponse(p))
++}
++
++func (s *server) handlePersistWebhookInbox(w http.ResponseWriter, r *http.Request) {
++	var req PersistWebhookInboxRequest
++	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
++		writeError(w, CodeValidationError)
++		return
++	}
++
++	params := payments.PersistWebhookInboxParams{
++		Provider:          req.Provider,
++		ConnectionID:      req.ConnectionID,
++		ProviderEventID:   req.ProviderEventID,
++		EventType:         req.EventType,
++		PayloadJSON:       req.PayloadJSON,
++		SignatureVerified: req.SignatureVerified,
++	}
++
++	inbox, deduplicated, err := s.deps.Payments.PersistWebhookInbox(r.Context(), params)
++	if err != nil {
++		writeDomainError(w, err)
++		return
++	}
++
++	status := http.StatusCreated
++	if deduplicated {
++		status = http.StatusOK
++	}
++
++	httpx.WriteJSON(w, status, toWebhookInboxResponse(inbox, deduplicated))
++}
++
++func toPaymentResponse(p *payments.Payment) PaymentResponse {
++	attempts := make([]PaymentAttemptResponse, 0, len(p.Attempts))
++	for _, a := range p.Attempts {
++		attempts = append(attempts, PaymentAttemptResponse{
++			ID:                a.ID,
++			PaymentID:         a.PaymentID,
++			Provider:          a.Provider,
++			ProviderReference: a.ProviderReference,
++			Status:            a.Status,
++			ErrorMessage:      a.ErrorMessage,
++			CreatedAt:         a.CreatedAt,
++			UpdatedAt:         a.UpdatedAt,
++		})
++	}
++
++	return PaymentResponse{
++		ID:            p.ID,
++		OrderID:       p.OrderID,
++		AmountMinor:   p.AmountMinor,
++		Currency:      p.Currency,
++		PaymentMethod: p.PaymentMethod,
++		Status:        string(p.Status),
++		Attempts:      attempts,
++		CreatedAt:     p.CreatedAt,
++		UpdatedAt:     p.UpdatedAt,
++	}
++}
++
++func toWebhookInboxResponse(w *payments.WebhookInbox, deduplicated bool) WebhookInboxResponse {
++	return WebhookInboxResponse{
++		ID:                w.ID,
++		Provider:          w.Provider,
++		ConnectionID:      w.ConnectionID,
++		ProviderEventID:   w.ProviderEventID,
++		EventType:         w.EventType,
++		PayloadJSON:       w.PayloadJSON,
++		SignatureVerified: w.SignatureVerified,
++		Status:            w.Status,
++		AttemptCount:      w.AttemptCount,
++		Deduplicated:      deduplicated,
++		ReceivedAt:        w.ReceivedAt,
++		ProcessedAt:       w.ProcessedAt,
++	}
++}
+diff --git a/internal/coreapi/router.go b/internal/coreapi/router.go
+index 11ba78f..30cef41 100644
+--- a/internal/coreapi/router.go
++++ b/internal/coreapi/router.go
+@@ -17,6 +17,7 @@ import (
+ 
+ 	"github.com/go-chi/chi/v5"
+ 
++	"github.com/matjeroapps/core/internal/payments"
+ 	"github.com/matjeroapps/core/internal/serviceauth"
+ 	"github.com/matjeroapps/core/internal/shipping"
+ 	"github.com/matjeroapps/core/modules/commerce"
+@@ -68,6 +69,15 @@ type ShippingService interface {
+ 	ListShipmentsForOrder(ctx context.Context, orderID string) ([]shipping.Shipment, error)
+ }
+ 
++// PaymentService manages payment lifecycle and webhook inbox.
++type PaymentService interface {
++	InitializePayment(ctx context.Context, params payments.InitializePaymentParams) (*payments.Payment, error)
++	UpdatePaymentStatus(ctx context.Context, params payments.UpdateStatusParams) (*payments.Payment, error)
++	GetPayment(ctx context.Context, paymentID string) (*payments.Payment, error)
++	GetPaymentByOrder(ctx context.Context, orderID string) (*payments.Payment, error)
++	PersistWebhookInbox(ctx context.Context, params payments.PersistWebhookInboxParams) (*payments.WebhookInbox, bool, error)
++}
++
+ // Dependencies wires the internal API. Every field is a Core-owned capability;
+ // no actor ever constructs these directly.
+ type Dependencies struct {
+@@ -79,6 +89,7 @@ type Dependencies struct {
+ 	Revisions RevisionReader
+ 	Themes    themes.Service
+ 	Shipping  ShippingService
++	Payments  PaymentService
+ }
+ 
+ // NewRouter registers the internal API under /internal/v1.
+@@ -265,6 +276,14 @@ func NewRouter(deps Dependencies) chi.Router {
+ 			r.Patch("/shipments/{shipmentID}/status", server.handleUpdateShipmentStatus)
+ 			r.Get("/shipments/{shipmentID}", server.handleGetShipment)
+ 		})
++
++		// Payment capabilities.
++		r.Group(func(r chi.Router) {
++			r.Use(requireCallers(serviceauth.CallerSeller, serviceauth.CallerAdmin))
++			r.Post("/orders/{orderID}/payments", server.handleInitializePayment)
++			r.Patch("/payments/{paymentID}/status", server.handleUpdatePaymentStatus)
++			r.Post("/webhooks/payments/inbox", server.handlePersistWebhookInbox)
++		})
+ 	})
+ 
+ 	return r
+diff --git a/internal/coreapi/spec.go b/internal/coreapi/spec.go
+index e9a53d2..b1b3467 100644
+--- a/internal/coreapi/spec.go
++++ b/internal/coreapi/spec.go
+@@ -106,6 +106,7 @@ func internalTags() []openapi3.Tag {
+ 		{Name: "Inventory", Description: "Inventory snapshots and movements"},
+ 		{Name: "Themes", Description: "Theme Engine installation and configuration"},
+ 		{Name: "Shipping", Description: "Shipment domain model and state machine management"},
++		{Name: "Payments", Description: "Payment aggregate, status transitions, and webhook inbox"},
+ 		{Name: "Platform Administration", Description: "Platform moderation and operational overview"},
+ 	}
+ }
+@@ -1032,5 +1033,25 @@ func internalRoutes() []openapi.RouteSpec {
+ 			Parameters: []openapi.ParameterSpec{pathParam("shipmentID", "Shipment identifier")},
+ 			Responses:  readResponses("Shipment details", ShipmentResponse{}),
+ 		},
++		{
++			Method: http.MethodPost, Path: "/internal/v1/orders/{orderID}/payments", OperationID: "internalInitializePayment",
++			Summary: "Initialize payment for order", Tags: []string{"Payments"},
++			Parameters:  []openapi.ParameterSpec{pathParam("orderID", "Order identifier")},
++			RequestBody: InitializePaymentRequest{},
++			Responses:   writeResponses("Initialized payment", PaymentResponse{}),
++		},
++		{
++			Method: http.MethodPatch, Path: "/internal/v1/payments/{paymentID}/status", OperationID: "internalUpdatePaymentStatus",
++			Summary: "Update payment status", Tags: []string{"Payments"},
++			Parameters:  []openapi.ParameterSpec{pathParam("paymentID", "Payment identifier")},
++			RequestBody: UpdatePaymentStatusRequest{},
++			Responses:   writeResponses("Updated payment", PaymentResponse{}),
++		},
++		{
++			Method: http.MethodPost, Path: "/internal/v1/webhooks/payments/inbox", OperationID: "internalPersistWebhookInbox",
++			Summary: "Persist raw provider webhook in inbox", Tags: []string{"Payments"},
++			RequestBody: PersistWebhookInboxRequest{},
++			Responses:   writeResponses("Persisted webhook inbox entry", WebhookInboxResponse{}),
++		},
+ 	}
+ }
+diff --git a/internal/payments/payments.go b/internal/payments/payments.go
+new file mode 100644
+index 0000000..365d6e1
+--- /dev/null
++++ b/internal/payments/payments.go
+@@ -0,0 +1,73 @@
++package payments
++
++import (
++	"encoding/json"
++	"time"
++)
++
++type Payment struct {
++	ID            string           `json:"id"`
++	OrderID       string           `json:"order_id"`
++	AmountMinor   int64            `json:"amount_minor"`
++	Currency      string           `json:"currency"`
++	PaymentMethod string           `json:"payment_method"`
++	Status        Status           `json:"status"`
++	Attempts      []PaymentAttempt `json:"attempts,omitempty"`
++	CreatedAt     time.Time        `json:"created_at"`
++	UpdatedAt     time.Time        `json:"updated_at"`
++}
++
++type PaymentAttempt struct {
++	ID                string    `json:"id"`
++	PaymentID         string    `json:"payment_id"`
++	Provider          string    `json:"provider"`
++	ProviderReference string    `json:"provider_reference,omitempty"`
++	Status            string    `json:"status"`
++	ErrorMessage      string    `json:"error_message,omitempty"`
++	CreatedAt         time.Time `json:"created_at"`
++	UpdatedAt         time.Time `json:"updated_at"`
++}
++
++type WebhookInbox struct {
++	ID                string          `json:"id"`
++	Provider          string          `json:"provider"`
++	ConnectionID      string          `json:"connection_id,omitempty"`
++	ProviderEventID   string          `json:"provider_event_id"`
++	EventType         string          `json:"event_type"`
++	PayloadJSON       json.RawMessage `json:"payload_json"`
++	SignatureVerified bool            `json:"signature_verified"`
++	Status            string          `json:"status"`
++	AttemptCount      int             `json:"attempt_count"`
++	ReceivedAt        time.Time       `json:"received_at"`
++	ProcessedAt       *time.Time      `json:"processed_at,omitempty"`
++}
++
++type InitializePaymentParams struct {
++	OrderID           string `json:"order_id"`
++	AmountMinor       int64  `json:"amount_minor"`
++	Currency          string `json:"currency"`
++	PaymentMethod     string `json:"payment_method"`
++	Provider          string `json:"provider,omitempty"`
++	ProviderReference string `json:"provider_reference,omitempty"`
++	CorrelationID     string `json:"-"`
++	CausationID       string `json:"-"`
++}
++
++type UpdateStatusParams struct {
++	PaymentID         string `json:"payment_id"`
++	NewStatus         Status `json:"new_status"`
++	Provider          string `json:"provider,omitempty"`
++	ProviderReference string `json:"provider_reference,omitempty"`
++	ErrorMessage      string `json:"error_message,omitempty"`
++	CorrelationID     string `json:"-"`
++	CausationID       string `json:"-"`
++}
++
++type PersistWebhookInboxParams struct {
++	Provider          string          `json:"provider"`
++	ConnectionID      string          `json:"connection_id,omitempty"`
++	ProviderEventID   string          `json:"provider_event_id"`
++	EventType         string          `json:"event_type"`
++	PayloadJSON       json.RawMessage `json:"payload_json"`
++	SignatureVerified bool            `json:"signature_verified"`
++}
+diff --git a/internal/payments/payments_integration_test.go b/internal/payments/payments_integration_test.go
+new file mode 100644
+index 0000000..a3cb639
+--- /dev/null
++++ b/internal/payments/payments_integration_test.go
+@@ -0,0 +1,331 @@
++package payments_test
++
++import (
++	"context"
++	"encoding/json"
++	"os"
++	"path/filepath"
++	"testing"
++
++	"github.com/google/uuid"
++
++	"github.com/matjeroapps/core/internal/payments"
++	"github.com/matjeroapps/core/internal/testdb"
++	"github.com/matjeroapps/core/packages/database"
++)
++
++func setupPaymentsDB(t *testing.T) (*database.Pool, payments.Service, context.Context) {
++	t.Helper()
++	dsn := os.Getenv("TEST_DATABASE_URL")
++	if dsn == "" {
++		dsn = "postgres://commerce:commerce@localhost:5432/commerce?sslmode=disable"
++	}
++	db := testdb.Open(t, dsn)
++	ctx := context.Background()
++
++	migrations := []string{
++		"000001_event_delivery_foundation",
++		"000002_market_reference_data",
++		"000003_commerce_domain_schema",
++		"000004_admin_supplier_seller_platforms",
++		"000005_store_domain_lifecycle",
++		"000006_store_domain_integrity",
++		"000007_theme_engine_schema",
++		"000008_storefront_revisions",
++		"000009_supplier_retail_capability",
++		"000010_customer_cart_domain",
++		"000011_checkout_sessions",
++		"000012_order_aggregate_schema",
++		"000013_outbox_publish_claims",
++		"000014_seller_catalog_authoring",
++		"000015_media_upload_intent",
++		"000016_catalog_invariants",
++		"000017_create_shipping_schema",
++		"000018_supplier_retail_affiliation",
++		"000019_create_payments_schema",
++	}
++
++	for _, name := range migrations {
++		path := filepath.Join("..", "..", "migrations", name+".up.sql")
++		content, err := os.ReadFile(path)
++		if err != nil {
++			t.Fatalf("read migration %s: %v", name, err)
++		}
++		if _, err := db.Pool.Exec(ctx, string(content)); err != nil {
++			t.Fatalf("apply migration %s: %v", name, err)
++		}
++	}
++
++	repo := payments.NewRepository(db.Pool)
++	service := payments.NewService(repo)
++	return db, service, ctx
++}
++
++func seedOrderForPayments(t *testing.T, db *database.Pool, ctx context.Context) string {
++	t.Helper()
++	sellerID := uuid.NewString()
++	storeID := uuid.NewString()
++	custID := uuid.NewString()
++	cartID := uuid.NewString()
++	sessionID := uuid.NewString()
++	orderID := uuid.NewString()
++
++	_, err := db.Pool.Exec(ctx, `
++		INSERT INTO sellers (id, code, name, status) VALUES ($1, $2, 'Test Seller', 'active')
++	`, sellerID, "sel-"+sellerID[:8])
++	if err != nil {
++		t.Fatalf("seed seller: %v", err)
++	}
++
++	_, err = db.Pool.Exec(ctx, `
++		INSERT INTO stores (id, seller_id, market_code, code, name, status) VALUES ($1, $2, 'EG', $3, 'Test Store', 'active')
++	`, storeID, sellerID, "str-"+storeID[:8])
++	if err != nil {
++		t.Fatalf("seed store: %v", err)
++	}
++
++	_, err = db.Pool.Exec(ctx, `
++		INSERT INTO customers (id, store_id, market_code, email, display_name, status) VALUES ($1, $2, 'EG', $3, 'Test Customer', 'active')
++	`, custID, storeID, "cust-"+custID[:8]+"@example.com")
++	if err != nil {
++		t.Fatalf("seed customer: %v", err)
++	}
++
++	_, err = db.Pool.Exec(ctx, `
++		INSERT INTO carts (id, store_id, market_code, customer_id, cart_token_digest, status, created_at, updated_at)
++		VALUES ($1, $2, 'EG', $3, $4, 'checked_out', clock_timestamp(), clock_timestamp())
++	`, cartID, storeID, custID, "token-"+cartID[:8])
++	if err != nil {
++		t.Fatalf("seed cart: %v", err)
++	}
++
++	_, err = db.Pool.Exec(ctx, `
++		INSERT INTO checkout_sessions (id, store_id, cart_id, customer_id, status, expires_at, guest_order_access_token_digest, created_at, updated_at)
++		VALUES ($1, $2, $3, $4, 'finalized', clock_timestamp() + interval '1 hour', decode('0000000000000000000000000000000000000000000000000000000000000000', 'hex'), clock_timestamp(), clock_timestamp())
++	`, sessionID, storeID, cartID, custID)
++	if err != nil {
++		t.Fatalf("seed checkout session: %v", err)
++	}
++
++	_, err = db.Pool.Exec(ctx, `
++		INSERT INTO orders (
++			id, order_number, store_id, market_code, customer_id, checkout_session_id,
++			status, currency_code, subtotal_minor, total_minor, confirmation_deadline_at
++		) VALUES (
++			$1, $2, $3, 'EG', $4, $5, 'pending', 'EGP', 1000, 1000, clock_timestamp() + interval '1 day'
++		)
++	`, orderID, "ORD-"+orderID[:8], storeID, custID, sessionID)
++	if err != nil {
++		t.Fatalf("seed order: %v", err)
++	}
++
++	return orderID
++}
++
++func TestInitializeAndGetPayment(t *testing.T) {
++	db, service, ctx := setupPaymentsDB(t)
++	orderID := seedOrderForPayments(t, db, ctx)
++
++	params := payments.InitializePaymentParams{
++		OrderID:           orderID,
++		AmountMinor:       1500,
++		Currency:          "EGP",
++		PaymentMethod:     "card",
++		Provider:          "tap",
++		ProviderReference: "chg_test_123",
++	}
++
++	p, err := service.InitializePayment(ctx, params)
++	if err != nil {
++		t.Fatalf("InitializePayment failed: %v", err)
++	}
++
++	if p.ID == "" {
++		t.Errorf("expected non-empty payment ID")
++	}
++	if p.OrderID != orderID {
++		t.Errorf("expected order_id %s, got %s", orderID, p.OrderID)
++	}
++	if p.Status != payments.StatusCreated {
++		t.Errorf("expected status CREATED, got %s", p.Status)
++	}
++	if len(p.Attempts) != 1 {
++		t.Fatalf("expected 1 payment attempt, got %d", len(p.Attempts))
++	}
++	if p.Attempts[0].Provider != "tap" {
++		t.Errorf("expected provider tap, got %s", p.Attempts[0].Provider)
++	}
++
++	// Retrieve by ID
++	got, err := service.GetPayment(ctx, p.ID)
++	if err != nil {
++		t.Fatalf("GetPayment failed: %v", err)
++	}
++	if got.ID != p.ID || got.Status != payments.StatusCreated {
++		t.Errorf("mismatch in fetched payment: %+v", got)
++	}
++
++	// Retrieve by Order ID
++	gotByOrder, err := service.GetPaymentByOrder(ctx, orderID)
++	if err != nil {
++		t.Fatalf("GetPaymentByOrder failed: %v", err)
++	}
++	if gotByOrder.ID != p.ID {
++		t.Errorf("mismatch in fetched payment by order: %+v", gotByOrder)
++	}
++}
++
++func TestUpdatePaymentStatus_TransitionsAndOutbox(t *testing.T) {
++	db, service, ctx := setupPaymentsDB(t)
++	orderID := seedOrderForPayments(t, db, ctx)
++
++	p, err := service.InitializePayment(ctx, payments.InitializePaymentParams{
++		OrderID:       orderID,
++		AmountMinor:   2000,
++		Currency:      "EGP",
++		PaymentMethod: "card",
++	})
++	if err != nil {
++		t.Fatalf("InitializePayment failed: %v", err)
++	}
++
++	// Transition CREATED -> PENDING
++	pPending, err := service.UpdatePaymentStatus(ctx, payments.UpdateStatusParams{
++		PaymentID: p.ID,
++		NewStatus: payments.StatusPending,
++	})
++	if err != nil {
++		t.Fatalf("UpdatePaymentStatus to PENDING failed: %v", err)
++	}
++	if pPending.Status != payments.StatusPending {
++		t.Errorf("expected PENDING, got %s", pPending.Status)
++	}
++
++	// Transition PENDING -> CAPTURED (Terminal state -> Emits Outbox Event)
++	pCaptured, err := service.UpdatePaymentStatus(ctx, payments.UpdateStatusParams{
++		PaymentID:         p.ID,
++		NewStatus:         payments.StatusCaptured,
++		Provider:          "moyasar",
++		ProviderReference: "chg_cap_456",
++		CorrelationID:     "corr-123",
++		CausationID:       "caus-456",
++	})
++	if err != nil {
++		t.Fatalf("UpdatePaymentStatus to CAPTURED failed: %v", err)
++	}
++	if pCaptured.Status != payments.StatusCaptured {
++		t.Errorf("expected CAPTURED, got %s", pCaptured.Status)
++	}
++
++	// Verify Outbox Event created for PaymentCaptured
++	var eventType, aggregateID string
++	err = db.Pool.QueryRow(ctx, `
++		SELECT event_type, aggregate_id
++		FROM outbox_events
++		WHERE aggregate_type = 'payment' AND aggregate_id = $1
++		ORDER BY created_at DESC LIMIT 1
++	`, p.ID).Scan(&eventType, &aggregateID)
++	if err != nil {
++		t.Fatalf("failed to query outbox_events: %v", err)
++	}
++
++	if eventType != "payments.payment.captured.v1" {
++		t.Errorf("expected outbox event_type payments.payment.captured.v1, got %s", eventType)
++	}
++
++	// Try invalid transition CAPTURED -> FAILED (Blocked!)
++	_, err = service.UpdatePaymentStatus(ctx, payments.UpdateStatusParams{
++		PaymentID: p.ID,
++		NewStatus: payments.StatusFailed,
++	})
++	if err == nil {
++		t.Errorf("expected error transitioning CAPTURED to FAILED, got nil")
++	}
++}
++
++func TestUpdatePaymentStatus_FailedOutbox(t *testing.T) {
++	db, service, ctx := setupPaymentsDB(t)
++	orderID := seedOrderForPayments(t, db, ctx)
++
++	p, err := service.InitializePayment(ctx, payments.InitializePaymentParams{
++		OrderID:       orderID,
++		AmountMinor:   3000,
++		Currency:      "EGP",
++		PaymentMethod: "card",
++	})
++	if err != nil {
++		t.Fatalf("InitializePayment failed: %v", err)
++	}
++
++	// Transition CREATED -> FAILED
++	pFailed, err := service.UpdatePaymentStatus(ctx, payments.UpdateStatusParams{
++		PaymentID:    p.ID,
++		NewStatus:    payments.StatusFailed,
++		Provider:     "tap",
++		ErrorMessage: "insufficient_funds",
++	})
++	if err != nil {
++		t.Fatalf("UpdatePaymentStatus to FAILED failed: %v", err)
++	}
++	if pFailed.Status != payments.StatusFailed {
++		t.Errorf("expected FAILED, got %s", pFailed.Status)
++	}
++
++	// Verify Outbox Event created for PaymentFailed
++	var eventType string
++	err = db.Pool.QueryRow(ctx, `
++		SELECT event_type
++		FROM outbox_events
++		WHERE aggregate_type = 'payment' AND aggregate_id = $1 AND event_type = 'payments.payment.failed.v1'
++	`, p.ID).Scan(&eventType)
++	if err != nil {
++		t.Fatalf("failed to query outbox_events for payment failed event: %v", err)
++	}
++
++	// Attempt FAILED -> CAPTURED (Strictly blocked state transition)
++	_, err = service.UpdatePaymentStatus(ctx, payments.UpdateStatusParams{
++		PaymentID: p.ID,
++		NewStatus: payments.StatusCaptured,
++	})
++	if err == nil {
++		t.Errorf("expected error transitioning FAILED to CAPTURED, got nil")
++	}
++}
++
++func TestPersistWebhookInbox_Deduplication(t *testing.T) {
++	_, service, ctx := setupPaymentsDB(t)
++
++	payload := json.RawMessage(`{"id":"evt_1001","type":"charge.captured","amount":5000}`)
++	params := payments.PersistWebhookInboxParams{
++		Provider:          "tap",
++		ConnectionID:      "conn_abc",
++		ProviderEventID:   "evt_1001",
++		EventType:         "charge.captured",
++		PayloadJSON:       payload,
++		SignatureVerified: true,
++	}
++
++	// First insertion
++	wb1, dedup1, err := service.PersistWebhookInbox(ctx, params)
++	if err != nil {
++		t.Fatalf("PersistWebhookInbox (1st) failed: %v", err)
++	}
++	if dedup1 {
++		t.Errorf("expected deduplicated=false on first insertion")
++	}
++	if wb1.ID == "" {
++		t.Errorf("expected non-empty webhook inbox ID")
++	}
++
++	// Second insertion (duplicate provider_event_id)
++	wb2, dedup2, err := service.PersistWebhookInbox(ctx, params)
++	if err != nil {
++		t.Fatalf("PersistWebhookInbox (2nd) failed: %v", err)
++	}
++	if !dedup2 {
++		t.Errorf("expected deduplicated=true on second insertion")
++	}
++	if wb2.ID != wb1.ID {
++		t.Errorf("expected duplicate return to match original ID %s, got %s", wb1.ID, wb2.ID)
++	}
++}
+diff --git a/internal/payments/repository.go b/internal/payments/repository.go
+new file mode 100644
+index 0000000..db846a6
+--- /dev/null
++++ b/internal/payments/repository.go
+@@ -0,0 +1,347 @@
++package payments
++
++import (
++	"context"
++	"database/sql"
++	"errors"
++	"fmt"
++	"strings"
++	"time"
++
++	"github.com/jackc/pgx/v5"
++	"github.com/jackc/pgx/v5/pgconn"
++)
++
++type DBExecutor interface {
++	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
++	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
++	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
++}
++
++type DBPool interface {
++	DBExecutor
++	Begin(ctx context.Context) (pgx.Tx, error)
++}
++
++type Repository struct {
++	pool DBPool
++}
++
++func NewRepository(pool DBPool) Repository {
++	return Repository{pool: pool}
++}
++
++func (r Repository) getExec(exec DBExecutor) DBExecutor {
++	if exec != nil {
++		return exec
++	}
++	return r.pool
++}
++
++func (r Repository) withTx(ctx context.Context, fn func(ctx context.Context, tx pgx.Tx) error) error {
++	if r.pool == nil {
++		return errors.New("database pool is not initialized")
++	}
++	tx, err := r.pool.Begin(ctx)
++	if err != nil {
++		return fmt.Errorf("begin transaction: %w", err)
++	}
++	defer tx.Rollback(ctx)
++
++	if err := fn(ctx, tx); err != nil {
++		return err
++	}
++	return tx.Commit(ctx)
++}
++
++func (r Repository) CreatePaymentTx(ctx context.Context, tx pgx.Tx, payment Payment, attempt *PaymentAttempt) error {
++	_, err := tx.Exec(ctx, `
++		INSERT INTO payments (
++			id, order_id, amount_minor, currency, payment_method, status, created_at, updated_at
++		)
++		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
++	`, payment.ID, payment.OrderID, payment.AmountMinor, payment.Currency, payment.PaymentMethod, string(payment.Status), payment.CreatedAt, payment.UpdatedAt)
++	if err != nil {
++		return fmt.Errorf("insert payment: %w", err)
++	}
++
++	if attempt != nil {
++		var providerRef *string
++		if strings.TrimSpace(attempt.ProviderReference) != "" {
++			ref := strings.TrimSpace(attempt.ProviderReference)
++			providerRef = &ref
++		}
++		var errMsg *string
++		if strings.TrimSpace(attempt.ErrorMessage) != "" {
++			em := strings.TrimSpace(attempt.ErrorMessage)
++			errMsg = &em
++		}
++
++		_, err := tx.Exec(ctx, `
++			INSERT INTO payment_attempts (
++				id, payment_id, provider, provider_reference, status, error_message, created_at, updated_at
++			)
++			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
++		`, attempt.ID, attempt.PaymentID, attempt.Provider, providerRef, attempt.Status, errMsg, attempt.CreatedAt, attempt.UpdatedAt)
++		if err != nil {
++			return fmt.Errorf("insert payment attempt: %w", err)
++		}
++	}
++
++	return nil
++}
++
++func (r Repository) UpdatePaymentStatusTx(
++	ctx context.Context,
++	tx pgx.Tx,
++	paymentID string,
++	newStatus Status,
++	attempt *PaymentAttempt,
++	now time.Time,
++) (*Payment, Status, error) {
++	var (
++		currentPayment Payment
++		currentStatus  string
++	)
++
++	err := tx.QueryRow(ctx, `
++		SELECT id, order_id, amount_minor, currency, payment_method, status, created_at, updated_at
++		FROM payments
++		WHERE id = $1
++		FOR UPDATE
++	`, paymentID).Scan(
++		&currentPayment.ID,
++		&currentPayment.OrderID,
++		&currentPayment.AmountMinor,
++		&currentPayment.Currency,
++		&currentPayment.PaymentMethod,
++		&currentStatus,
++		&currentPayment.CreatedAt,
++		&currentPayment.UpdatedAt,
++	)
++	if err != nil {
++		if errors.Is(err, pgx.ErrNoRows) {
++			return nil, "", ErrPaymentNotFound
++		}
++		return nil, "", fmt.Errorf("lock payment for update: %w", err)
++	}
++
++	fromStatus := Status(currentStatus)
++	if err := ValidateTransition(fromStatus, newStatus); err != nil {
++		return nil, fromStatus, err
++	}
++
++	_, err = tx.Exec(ctx, `
++		UPDATE payments
++		SET status = $1, updated_at = $2
++		WHERE id = $3
++	`, string(newStatus), now, paymentID)
++	if err != nil {
++		return nil, fromStatus, fmt.Errorf("update payment status: %w", err)
++	}
++
++	if attempt != nil {
++		var providerRef *string
++		if strings.TrimSpace(attempt.ProviderReference) != "" {
++			ref := strings.TrimSpace(attempt.ProviderReference)
++			providerRef = &ref
++		}
++		var errMsg *string
++		if strings.TrimSpace(attempt.ErrorMessage) != "" {
++			em := strings.TrimSpace(attempt.ErrorMessage)
++			errMsg = &em
++		}
++
++		_, err := tx.Exec(ctx, `
++			INSERT INTO payment_attempts (
++				id, payment_id, provider, provider_reference, status, error_message, created_at, updated_at
++			)
++			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
++		`, attempt.ID, attempt.PaymentID, attempt.Provider, providerRef, attempt.Status, errMsg, attempt.CreatedAt, attempt.UpdatedAt)
++		if err != nil {
++			return nil, fromStatus, fmt.Errorf("insert payment attempt: %w", err)
++		}
++	}
++
++	currentPayment.Status = newStatus
++	currentPayment.UpdatedAt = now
++	return &currentPayment, fromStatus, nil
++}
++
++func (r Repository) GetPaymentByID(ctx context.Context, exec DBExecutor, id string) (*Payment, error) {
++	db := r.getExec(exec)
++	var payment Payment
++	var statusStr string
++
++	err := db.QueryRow(ctx, `
++		SELECT id, order_id, amount_minor, currency, payment_method, status, created_at, updated_at
++		FROM payments
++		WHERE id = $1
++	`, id).Scan(
++		&payment.ID,
++		&payment.OrderID,
++		&payment.AmountMinor,
++		&payment.Currency,
++		&payment.PaymentMethod,
++		&statusStr,
++		&payment.CreatedAt,
++		&payment.UpdatedAt,
++	)
++	if err != nil {
++		if errors.Is(err, pgx.ErrNoRows) {
++			return nil, ErrPaymentNotFound
++		}
++		return nil, fmt.Errorf("get payment by id: %w", err)
++	}
++	payment.Status = Status(statusStr)
++
++	attempts, err := r.ListPaymentAttempts(ctx, db, id)
++	if err != nil {
++		return nil, err
++	}
++	payment.Attempts = attempts
++
++	return &payment, nil
++}
++
++func (r Repository) GetPaymentByOrderID(ctx context.Context, exec DBExecutor, orderID string) (*Payment, error) {
++	db := r.getExec(exec)
++	var payment Payment
++	var statusStr string
++
++	err := db.QueryRow(ctx, `
++		SELECT id, order_id, amount_minor, currency, payment_method, status, created_at, updated_at
++		FROM payments
++		WHERE order_id = $1
++		ORDER BY created_at DESC
++		LIMIT 1
++	`, orderID).Scan(
++		&payment.ID,
++		&payment.OrderID,
++		&payment.AmountMinor,
++		&payment.Currency,
++		&payment.PaymentMethod,
++		&statusStr,
++		&payment.CreatedAt,
++		&payment.UpdatedAt,
++	)
++	if err != nil {
++		if errors.Is(err, pgx.ErrNoRows) {
++			return nil, ErrPaymentNotFound
++		}
++		return nil, fmt.Errorf("get payment by order id: %w", err)
++	}
++	payment.Status = Status(statusStr)
++
++	attempts, err := r.ListPaymentAttempts(ctx, db, payment.ID)
++	if err != nil {
++		return nil, err
++	}
++	payment.Attempts = attempts
++
++	return &payment, nil
++}
++
++func (r Repository) ListPaymentAttempts(ctx context.Context, exec DBExecutor, paymentID string) ([]PaymentAttempt, error) {
++	db := r.getExec(exec)
++	rows, err := db.Query(ctx, `
++		SELECT id, payment_id, provider, provider_reference, status, error_message, created_at, updated_at
++		FROM payment_attempts
++		WHERE payment_id = $1
++		ORDER BY created_at ASC
++	`, paymentID)
++	if err != nil {
++		return nil, fmt.Errorf("query payment attempts: %w", err)
++	}
++	defer rows.Close()
++
++	var attempts []PaymentAttempt
++	for rows.Next() {
++		var a PaymentAttempt
++		var providerRef, errMsg sql.NullString
++		if err := rows.Scan(
++			&a.ID,
++			&a.PaymentID,
++			&a.Provider,
++			&providerRef,
++			&a.Status,
++			&errMsg,
++			&a.CreatedAt,
++			&a.UpdatedAt,
++		); err != nil {
++			return nil, fmt.Errorf("scan payment attempt: %w", err)
++		}
++		if providerRef.Valid {
++			a.ProviderReference = providerRef.String
++		}
++		if errMsg.Valid {
++			a.ErrorMessage = errMsg.String
++		}
++		attempts = append(attempts, a)
++	}
++	if err := rows.Err(); err != nil {
++		return nil, fmt.Errorf("rows error listing payment attempts: %w", err)
++	}
++	return attempts, nil
++}
++
++func (r Repository) PersistWebhookInbox(ctx context.Context, exec DBExecutor, inbox WebhookInbox) (*WebhookInbox, bool, error) {
++	db := r.getExec(exec)
++
++	var connID *string
++	if strings.TrimSpace(inbox.ConnectionID) != "" {
++		c := strings.TrimSpace(inbox.ConnectionID)
++		connID = &c
++	}
++
++	tag, err := db.Exec(ctx, `
++		INSERT INTO webhook_inbox (
++			id, provider, connection_id, provider_event_id, event_type, payload_json,
++			signature_verified, status, attempt_count, received_at
++		)
++		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
++		ON CONFLICT (provider, provider_event_id) DO NOTHING
++	`, inbox.ID, inbox.Provider, connID, inbox.ProviderEventID, inbox.EventType, inbox.PayloadJSON,
++		inbox.SignatureVerified, inbox.Status, inbox.AttemptCount, inbox.ReceivedAt)
++	if err != nil {
++		return nil, false, fmt.Errorf("insert webhook inbox: %w", err)
++	}
++
++	if tag.RowsAffected() == 0 {
++		// Duplicate event! Fetch existing record from webhook_inbox
++		var existing WebhookInbox
++		var cid sql.NullString
++		var procAt sql.NullTime
++
++		err := db.QueryRow(ctx, `
++			SELECT id, provider, connection_id, provider_event_id, event_type, payload_json,
++			       signature_verified, status, attempt_count, received_at, processed_at
++			FROM webhook_inbox
++			WHERE provider = $1 AND provider_event_id = $2
++		`, inbox.Provider, inbox.ProviderEventID).Scan(
++			&existing.ID,
++			&existing.Provider,
++			&cid,
++			&existing.ProviderEventID,
++			&existing.EventType,
++			&existing.PayloadJSON,
++			&existing.SignatureVerified,
++			&existing.Status,
++			&existing.AttemptCount,
++			&existing.ReceivedAt,
++			&procAt,
++		)
++		if err != nil {
++			return nil, false, fmt.Errorf("fetch duplicate webhook inbox entry: %w", err)
++		}
++		if cid.Valid {
++			existing.ConnectionID = cid.String
++		}
++		if procAt.Valid {
++			existing.ProcessedAt = &procAt.Time
++		}
++		return &existing, true, nil
++	}
++
++	return &inbox, false, nil
++}
+diff --git a/internal/payments/service.go b/internal/payments/service.go
+new file mode 100644
+index 0000000..e6e4dd9
+--- /dev/null
++++ b/internal/payments/service.go
+@@ -0,0 +1,205 @@
++package payments
++
++import (
++	"context"
++	"fmt"
++	"strings"
++	"time"
++
++	"github.com/google/uuid"
++	"github.com/jackc/pgx/v5"
++
++	pkgEvents "github.com/matjeroapps/core/packages/events"
++	"github.com/matjeroapps/core/packages/outbox"
++)
++
++type Service struct {
++	repo        Repository
++	outboxStore outbox.Store
++}
++
++func NewService(repo Repository) Service {
++	return Service{
++		repo:        repo,
++		outboxStore: outbox.NewStore(),
++	}
++}
++
++func (s Service) InitializePayment(ctx context.Context, params InitializePaymentParams) (*Payment, error) {
++	if strings.TrimSpace(params.OrderID) == "" {
++		return nil, fmt.Errorf("%w: order_id is required", ErrInvalidInput)
++	}
++	if params.AmountMinor < 0 {
++		return nil, fmt.Errorf("%w: amount_minor must be non-negative", ErrInvalidInput)
++	}
++	if strings.TrimSpace(params.Currency) == "" {
++		return nil, fmt.Errorf("%w: currency is required", ErrInvalidInput)
++	}
++	if strings.TrimSpace(params.PaymentMethod) == "" {
++		return nil, fmt.Errorf("%w: payment_method is required", ErrInvalidInput)
++	}
++
++	now := time.Now().UTC()
++	paymentID := uuid.NewString()
++	initialStatus := StatusCreated
++
++	payment := Payment{
++		ID:            paymentID,
++		OrderID:       strings.TrimSpace(params.OrderID),
++		AmountMinor:   params.AmountMinor,
++		Currency:      strings.ToUpper(strings.TrimSpace(params.Currency)),
++		PaymentMethod: strings.TrimSpace(params.PaymentMethod),
++		Status:        initialStatus,
++		CreatedAt:     now,
++		UpdatedAt:     now,
++	}
++
++	var attempt *PaymentAttempt
++	if strings.TrimSpace(params.Provider) != "" {
++		attempt = &PaymentAttempt{
++			ID:                uuid.NewString(),
++			PaymentID:         paymentID,
++			Provider:          strings.TrimSpace(params.Provider),
++			ProviderReference: strings.TrimSpace(params.ProviderReference),
++			Status:            string(initialStatus),
++			CreatedAt:         now,
++			UpdatedAt:         now,
++		}
++	}
++
++	err := s.repo.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
++		return s.repo.CreatePaymentTx(ctx, tx, payment, attempt)
++	})
++	if err != nil {
++		return nil, err
++	}
++
++	if attempt != nil {
++		payment.Attempts = []PaymentAttempt{*attempt}
++	}
++	return &payment, nil
++}
++
++func (s Service) UpdatePaymentStatus(ctx context.Context, params UpdateStatusParams) (*Payment, error) {
++	if strings.TrimSpace(params.PaymentID) == "" {
++		return nil, fmt.Errorf("%w: payment_id is required", ErrInvalidInput)
++	}
++	if !params.NewStatus.Valid() {
++		return nil, fmt.Errorf("%w: invalid target status '%s'", ErrInvalidStatus, params.NewStatus)
++	}
++
++	now := time.Now().UTC()
++
++	var (
++		updatedPayment *Payment
++		attempt        *PaymentAttempt
++	)
++
++	if strings.TrimSpace(params.Provider) != "" {
++		attempt = &PaymentAttempt{
++			ID:                uuid.NewString(),
++			PaymentID:         strings.TrimSpace(params.PaymentID),
++			Provider:          strings.TrimSpace(params.Provider),
++			ProviderReference: strings.TrimSpace(params.ProviderReference),
++			Status:            string(params.NewStatus),
++			ErrorMessage:      strings.TrimSpace(params.ErrorMessage),
++			CreatedAt:         now,
++			UpdatedAt:         now,
++		}
++	}
++
++	err := s.repo.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
++		var err error
++		updatedPayment, _, err = s.repo.UpdatePaymentStatusTx(
++			ctx, tx, params.PaymentID, params.NewStatus, attempt, now,
++		)
++		if err != nil {
++			return err
++		}
++
++		if params.NewStatus == StatusCaptured {
++			outboxPayload := pkgEvents.PaymentCapturedPayload{
++				PaymentID:         updatedPayment.ID,
++				OrderID:           updatedPayment.OrderID,
++				AmountMinor:       updatedPayment.AmountMinor,
++				Currency:          updatedPayment.Currency,
++				PaymentMethod:     updatedPayment.PaymentMethod,
++				Provider:          params.Provider,
++				ProviderReference: params.ProviderReference,
++				CapturedAt:        now,
++			}
++			eventEnv, err := pkgEvents.NewPaymentCapturedEvent(outboxPayload, params.CorrelationID, params.CausationID)
++			if err != nil {
++				return fmt.Errorf("build payment captured event: %w", err)
++			}
++			if err := s.outboxStore.Enqueue(ctx, tx, eventEnv); err != nil {
++				return fmt.Errorf("enqueue outbox payment captured event: %w", err)
++			}
++		} else if params.NewStatus == StatusFailed {
++			outboxPayload := pkgEvents.PaymentFailedPayload{
++				PaymentID:     updatedPayment.ID,
++				OrderID:       updatedPayment.OrderID,
++				AmountMinor:   updatedPayment.AmountMinor,
++				Currency:      updatedPayment.Currency,
++				PaymentMethod: updatedPayment.PaymentMethod,
++				Provider:      params.Provider,
++				ErrorMessage:  params.ErrorMessage,
++				FailedAt:      now,
++			}
++			eventEnv, err := pkgEvents.NewPaymentFailedEvent(outboxPayload, params.CorrelationID, params.CausationID)
++			if err != nil {
++				return fmt.Errorf("build payment failed event: %w", err)
++			}
++			if err := s.outboxStore.Enqueue(ctx, tx, eventEnv); err != nil {
++				return fmt.Errorf("enqueue outbox payment failed event: %w", err)
++			}
++		}
++
++		return nil
++	})
++	if err != nil {
++		return nil, err
++	}
++
++	fullPayment, err := s.repo.GetPaymentByID(ctx, nil, updatedPayment.ID)
++	if err != nil {
++		return updatedPayment, nil
++	}
++	return fullPayment, nil
++}
++
++func (s Service) GetPayment(ctx context.Context, paymentID string) (*Payment, error) {
++	return s.repo.GetPaymentByID(ctx, nil, paymentID)
++}
++
++func (s Service) GetPaymentByOrder(ctx context.Context, orderID string) (*Payment, error) {
++	return s.repo.GetPaymentByOrderID(ctx, nil, orderID)
++}
++
++func (s Service) PersistWebhookInbox(ctx context.Context, params PersistWebhookInboxParams) (*WebhookInbox, bool, error) {
++	if strings.TrimSpace(params.Provider) == "" || strings.TrimSpace(params.ProviderEventID) == "" {
++		return nil, false, fmt.Errorf("%w: provider and provider_event_id are required", ErrInvalidInput)
++	}
++	if strings.TrimSpace(params.EventType) == "" {
++		return nil, false, fmt.Errorf("%w: event_type is required", ErrInvalidInput)
++	}
++	if len(params.PayloadJSON) == 0 {
++		return nil, false, fmt.Errorf("%w: payload_json is required", ErrInvalidInput)
++	}
++
++	now := time.Now().UTC()
++	inbox := WebhookInbox{
++		ID:                uuid.NewString(),
++		Provider:          strings.TrimSpace(params.Provider),
++		ConnectionID:      strings.TrimSpace(params.ConnectionID),
++		ProviderEventID:   strings.TrimSpace(params.ProviderEventID),
++		EventType:         strings.TrimSpace(params.EventType),
++		PayloadJSON:       params.PayloadJSON,
++		SignatureVerified: params.SignatureVerified,
++		Status:            "PENDING",
++		AttemptCount:      0,
++		ReceivedAt:        now,
++	}
++
++	return s.repo.PersistWebhookInbox(ctx, nil, inbox)
++}
+diff --git a/internal/payments/state_machine.go b/internal/payments/state_machine.go
+new file mode 100644
+index 0000000..e919376
+--- /dev/null
++++ b/internal/payments/state_machine.go
+@@ -0,0 +1,83 @@
++package payments
++
++import (
++	"errors"
++	"fmt"
++)
++
++type Status string
++
++const (
++	StatusCreated    Status = "CREATED"
++	StatusPending    Status = "PENDING"
++	StatusAuthorized Status = "AUTHORIZED"
++	StatusCaptured   Status = "CAPTURED"
++	StatusFailed     Status = "FAILED"
++	StatusCancelled  Status = "CANCELLED"
++	StatusRefunded   Status = "REFUNDED"
++)
++
++var (
++	ErrInvalidStatus     = errors.New("invalid payment status")
++	ErrInvalidTransition = errors.New("invalid payment status transition")
++	ErrPaymentNotFound   = errors.New("payment not found")
++	ErrOrderNotFound     = errors.New("order not found")
++	ErrInvalidInput      = errors.New("invalid input parameter")
++)
++
++func (s Status) Valid() bool {
++	switch s {
++	case StatusCreated, StatusPending, StatusAuthorized, StatusCaptured,
++		StatusFailed, StatusCancelled, StatusRefunded:
++		return true
++	default:
++		return false
++	}
++}
++
++func (s Status) IsTerminal() bool {
++	switch s {
++	case StatusFailed, StatusCancelled, StatusRefunded:
++		return true
++	default:
++		return false
++	}
++}
++
++func CanTransition(from, to Status) bool {
++	if !from.Valid() || !to.Valid() {
++		return false
++	}
++
++	if from == to {
++		return true
++	}
++
++	switch from {
++	case StatusCreated:
++		return to == StatusPending || to == StatusAuthorized || to == StatusCaptured || to == StatusFailed || to == StatusCancelled
++	case StatusPending:
++		return to == StatusAuthorized || to == StatusCaptured || to == StatusFailed || to == StatusCancelled
++	case StatusAuthorized:
++		return to == StatusCaptured || to == StatusFailed || to == StatusCancelled
++	case StatusCaptured:
++		return to == StatusRefunded
++	case StatusFailed, StatusCancelled, StatusRefunded:
++		return false
++	default:
++		return false
++	}
++}
++
++func ValidateTransition(from, to Status) error {
++	if !from.Valid() {
++		return fmt.Errorf("%w: current status '%s'", ErrInvalidStatus, from)
++	}
++	if !to.Valid() {
++		return fmt.Errorf("%w: target status '%s'", ErrInvalidStatus, to)
++	}
++	if !CanTransition(from, to) {
++		return fmt.Errorf("%w: cannot transition payment from '%s' to '%s'", ErrInvalidTransition, from, to)
++	}
++	return nil
++}
+diff --git a/internal/payments/state_machine_test.go b/internal/payments/state_machine_test.go
+new file mode 100644
+index 0000000..10fcc98
+--- /dev/null
++++ b/internal/payments/state_machine_test.go
+@@ -0,0 +1,104 @@
++package payments_test
++
++import (
++	"errors"
++	"testing"
++
++	"github.com/matjeroapps/core/internal/payments"
++)
++
++func TestStateMachine_ValidStatuses(t *testing.T) {
++	validStatuses := []payments.Status{
++		payments.StatusCreated,
++		payments.StatusPending,
++		payments.StatusAuthorized,
++		payments.StatusCaptured,
++		payments.StatusFailed,
++		payments.StatusCancelled,
++		payments.StatusRefunded,
++	}
++
++	for _, st := range validStatuses {
++		if !st.Valid() {
++			t.Errorf("expected status %s to be valid", st)
++		}
++	}
++
++	invalidStatuses := []payments.Status{
++		"UNKNOWN",
++		"pending",
++		"captured",
++		"",
++	}
++
++	for _, st := range invalidStatuses {
++		if st.Valid() {
++			t.Errorf("expected status %s to be invalid", st)
++		}
++	}
++}
++
++func TestStateMachine_CanTransition(t *testing.T) {
++	tests := []struct {
++		name     string
++		from     payments.Status
++		to       payments.Status
++		expected bool
++	}{
++		// Valid transitions from CREATED
++		{"CREATED to PENDING", payments.StatusCreated, payments.StatusPending, true},
++		{"CREATED to AUTHORIZED", payments.StatusCreated, payments.StatusAuthorized, true},
++		{"CREATED to CAPTURED", payments.StatusCreated, payments.StatusCaptured, true},
++		{"CREATED to FAILED", payments.StatusCreated, payments.StatusFailed, true},
++		{"CREATED to CANCELLED", payments.StatusCreated, payments.StatusCancelled, true},
++
++		// Valid transitions from PENDING
++		{"PENDING to AUTHORIZED", payments.StatusPending, payments.StatusAuthorized, true},
++		{"PENDING to CAPTURED", payments.StatusPending, payments.StatusCaptured, true},
++		{"PENDING to FAILED", payments.StatusPending, payments.StatusFailed, true},
++		{"PENDING to CANCELLED", payments.StatusPending, payments.StatusCancelled, true},
++
++		// Valid transitions from AUTHORIZED
++		{"AUTHORIZED to CAPTURED", payments.StatusAuthorized, payments.StatusCaptured, true},
++		{"AUTHORIZED to FAILED", payments.StatusAuthorized, payments.StatusFailed, true},
++		{"AUTHORIZED to CANCELLED", payments.StatusAuthorized, payments.StatusCancelled, true},
++
++		// Valid transitions from CAPTURED
++		{"CAPTURED to REFUNDED", payments.StatusCaptured, payments.StatusRefunded, true},
++
++		// Self transitions
++		{"CAPTURED to CAPTURED", payments.StatusCaptured, payments.StatusCaptured, true},
++		{"PENDING to PENDING", payments.StatusPending, payments.StatusPending, true},
++
++		// Invalid transitions from terminal states
++		{"FAILED to CAPTURED (Blocked)", payments.StatusFailed, payments.StatusCaptured, false},
++		{"FAILED to AUTHORIZED (Blocked)", payments.StatusFailed, payments.StatusAuthorized, false},
++		{"FAILED to PENDING (Blocked)", payments.StatusFailed, payments.StatusPending, false},
++		{"CANCELLED to CAPTURED (Blocked)", payments.StatusCancelled, payments.StatusCaptured, false},
++		{"REFUNDED to CAPTURED (Blocked)", payments.StatusRefunded, payments.StatusCaptured, false},
++
++		// Invalid backward transitions
++		{"CAPTURED to AUTHORIZED (Blocked)", payments.StatusCaptured, payments.StatusAuthorized, false},
++		{"CAPTURED to PENDING (Blocked)", payments.StatusCaptured, payments.StatusPending, false},
++	}
++
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			got := payments.CanTransition(tt.from, tt.to)
++			if got != tt.expected {
++				t.Errorf("CanTransition(%s, %s) = %v; want %v", tt.from, tt.to, got, tt.expected)
++			}
++
++			err := payments.ValidateTransition(tt.from, tt.to)
++			if tt.expected && err != nil {
++				t.Errorf("ValidateTransition(%s, %s) returned error: %v", tt.from, tt.to, err)
++			}
++			if !tt.expected && err == nil {
++				t.Errorf("ValidateTransition(%s, %s) expected error, got nil", tt.from, tt.to)
++			}
++			if !tt.expected && err != nil && !errors.Is(err, payments.ErrInvalidTransition) {
++				t.Errorf("ValidateTransition(%s, %s) error %v does not wrap ErrInvalidTransition", tt.from, tt.to, err)
++			}
++		})
++	}
++}
+diff --git a/migrations/000019_create_payments_schema.down.sql b/migrations/000019_create_payments_schema.down.sql
+new file mode 100644
+index 0000000..d39a1f9
+--- /dev/null
++++ b/migrations/000019_create_payments_schema.down.sql
+@@ -0,0 +1,3 @@
++DROP TABLE IF EXISTS webhook_inbox;
++DROP TABLE IF EXISTS payment_attempts;
++DROP TABLE IF EXISTS payments;
+diff --git a/migrations/000019_create_payments_schema.up.sql b/migrations/000019_create_payments_schema.up.sql
+new file mode 100644
+index 0000000..f918c2a
+--- /dev/null
++++ b/migrations/000019_create_payments_schema.up.sql
+@@ -0,0 +1,55 @@
++-- Phase 7: Payments Aggregate, Payment Attempts, and Webhook Inbox Schema
++
++CREATE TABLE payments (
++    id UUID PRIMARY KEY,
++    order_id UUID NOT NULL REFERENCES orders (id) ON DELETE RESTRICT,
++    amount_minor BIGINT NOT NULL CHECK (amount_minor >= 0),
++    currency CHAR(3) NOT NULL REFERENCES currencies (code),
++    payment_method TEXT NOT NULL,
++    status TEXT NOT NULL,
++    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
++    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
++    CONSTRAINT payments_status_check
++        CHECK (status IN (
++            'CREATED',
++            'PENDING',
++            'AUTHORIZED',
++            'CAPTURED',
++            'FAILED',
++            'CANCELLED',
++            'REFUNDED'
++        ))
++);
++
++CREATE INDEX payments_order_id_idx ON payments (order_id);
++CREATE INDEX payments_status_idx ON payments (status);
++
++CREATE TABLE payment_attempts (
++    id UUID PRIMARY KEY,
++    payment_id UUID NOT NULL REFERENCES payments (id) ON DELETE CASCADE,
++    provider TEXT NOT NULL,
++    provider_reference TEXT,
++    status TEXT NOT NULL,
++    error_message TEXT,
++    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
++    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
++);
++
++CREATE INDEX payment_attempts_payment_id_idx ON payment_attempts (payment_id);
++
++CREATE TABLE webhook_inbox (
++    id UUID PRIMARY KEY,
++    provider TEXT NOT NULL,
++    connection_id TEXT,
++    provider_event_id TEXT NOT NULL,
++    event_type TEXT NOT NULL,
++    payload_json JSONB NOT NULL,
++    signature_verified BOOLEAN NOT NULL DEFAULT FALSE,
++    status TEXT NOT NULL DEFAULT 'PENDING',
++    attempt_count INT NOT NULL DEFAULT 0,
++    received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
++    processed_at TIMESTAMPTZ,
++    CONSTRAINT webhook_inbox_provider_event_uidx UNIQUE (provider, provider_event_id)
++);
++
++CREATE INDEX webhook_inbox_status_idx ON webhook_inbox (status, received_at);
+diff --git a/packages/events/payments.go b/packages/events/payments.go
+new file mode 100644
+index 0000000..69cb661
+--- /dev/null
++++ b/packages/events/payments.go
+@@ -0,0 +1,95 @@
++package events
++
++import (
++	"fmt"
++	"time"
++
++	"github.com/google/uuid"
++)
++
++const (
++	EventTypePaymentCaptured = "payments.payment.captured.v1"
++	EventTypePaymentFailed   = "payments.payment.failed.v1"
++)
++
++type PaymentCapturedPayload struct {
++	PaymentID         string    `json:"payment_id"`
++	OrderID           string    `json:"order_id"`
++	AmountMinor       int64     `json:"amount_minor"`
++	Currency          string    `json:"currency"`
++	PaymentMethod     string    `json:"payment_method"`
++	Provider          string    `json:"provider,omitempty"`
++	ProviderReference string    `json:"provider_reference,omitempty"`
++	CapturedAt        time.Time `json:"captured_at"`
++}
++
++type PaymentFailedPayload struct {
++	PaymentID     string    `json:"payment_id"`
++	OrderID       string    `json:"order_id"`
++	AmountMinor   int64     `json:"amount_minor"`
++	Currency      string    `json:"currency"`
++	PaymentMethod string    `json:"payment_method"`
++	Provider      string    `json:"provider,omitempty"`
++	ErrorMessage  string    `json:"error_message,omitempty"`
++	FailedAt      time.Time `json:"failed_at"`
++}
++
++func NewPaymentCapturedEvent(payload PaymentCapturedPayload, correlationID, causationID string) (EventEnvelope, error) {
++	if payload.PaymentID == "" || payload.OrderID == "" {
++		return EventEnvelope{}, fmt.Errorf("invalid payment captured payload")
++	}
++
++	payloadMap, err := payloadToMap(payload)
++	if err != nil {
++		return EventEnvelope{}, err
++	}
++
++	envelope := EventEnvelope{
++		EventID:          uuid.NewString(),
++		EventType:        EventTypePaymentCaptured,
++		SchemaVersion:    1,
++		AggregateType:    "payment",
++		AggregateID:      payload.PaymentID,
++		AggregateVersion: 1,
++		CorrelationID:    correlationID,
++		CausationID:      causationID,
++		OccurredAt:       payload.CapturedAt,
++		Payload:          payloadMap,
++	}
++
++	if err := envelope.Validate(); err != nil {
++		return EventEnvelope{}, fmt.Errorf("validate payment captured event: %w", err)
++	}
++
++	return envelope, nil
++}
++
++func NewPaymentFailedEvent(payload PaymentFailedPayload, correlationID, causationID string) (EventEnvelope, error) {
++	if payload.PaymentID == "" || payload.OrderID == "" {
++		return EventEnvelope{}, fmt.Errorf("invalid payment failed payload")
++	}
++
++	payloadMap, err := payloadToMap(payload)
++	if err != nil {
++		return EventEnvelope{}, err
++	}
++
++	envelope := EventEnvelope{
++		EventID:          uuid.NewString(),
++		EventType:        EventTypePaymentFailed,
++		SchemaVersion:    1,
++		AggregateType:    "payment",
++		AggregateID:      payload.PaymentID,
++		AggregateVersion: 1,
++		CorrelationID:    correlationID,
++		CausationID:      causationID,
++		OccurredAt:       payload.FailedAt,
++		Payload:          payloadMap,
++	}
++
++	if err := envelope.Validate(); err != nil {
++		return EventEnvelope{}, fmt.Errorf("validate payment failed event: %w", err)
++	}
++
++	return envelope, nil
++}
+diff --git a/packages/events/payments_test.go b/packages/events/payments_test.go
+new file mode 100644
+index 0000000..5311c8e
+--- /dev/null
++++ b/packages/events/payments_test.go
+@@ -0,0 +1,69 @@
++package events_test
++
++import (
++	"testing"
++	"time"
++
++	"github.com/matjeroapps/core/packages/events"
++)
++
++func TestNewPaymentCapturedEvent(t *testing.T) {
++	now := time.Now().UTC()
++	payload := events.PaymentCapturedPayload{
++		PaymentID:         "pay-123",
++		OrderID:           "ord-456",
++		AmountMinor:       1000,
++		Currency:          "SAR",
++		PaymentMethod:     "card",
++		Provider:          "tap",
++		ProviderReference: "chg_789",
++		CapturedAt:        now,
++	}
++
++	env, err := events.NewPaymentCapturedEvent(payload, "corr-1", "caus-1")
++	if err != nil {
++		t.Fatalf("expected no error, got: %v", err)
++	}
++
++	if env.EventType != events.EventTypePaymentCaptured {
++		t.Errorf("expected event type %s, got %s", events.EventTypePaymentCaptured, env.EventType)
++	}
++	if env.AggregateID != "pay-123" {
++		t.Errorf("expected aggregate id pay-123, got %s", env.AggregateID)
++	}
++
++	// Test invalid payload
++	_, err = events.NewPaymentCapturedEvent(events.PaymentCapturedPayload{}, "corr-1", "caus-1")
++	if err == nil {
++		t.Errorf("expected error for empty payload")
++	}
++}
++
++func TestNewPaymentFailedEvent(t *testing.T) {
++	now := time.Now().UTC()
++	payload := events.PaymentFailedPayload{
++		PaymentID:     "pay-123",
++		OrderID:       "ord-456",
++		AmountMinor:   1000,
++		Currency:      "SAR",
++		PaymentMethod: "card",
++		Provider:      "tap",
++		ErrorMessage:  "card_declined",
++		FailedAt:      now,
++	}
++
++	env, err := events.NewPaymentFailedEvent(payload, "corr-1", "caus-1")
++	if err != nil {
++		t.Fatalf("expected no error, got: %v", err)
++	}
++
++	if env.EventType != events.EventTypePaymentFailed {
++		t.Errorf("expected event type %s, got %s", events.EventTypePaymentFailed, env.EventType)
++	}
++
++	// Test invalid payload
++	_, err = events.NewPaymentFailedEvent(events.PaymentFailedPayload{}, "corr-1", "caus-1")
++	if err == nil {
++		t.Errorf("expected error for empty payload")
++	}
++}
+diff --git a/packages/outbox/outbox.go b/packages/outbox/outbox.go
+index 2974b1d..0697680 100644
+--- a/packages/outbox/outbox.go
++++ b/packages/outbox/outbox.go
+@@ -291,6 +291,10 @@ func ResolveRoutingKey(eventType string) (exchange string, routingKey string, er
+ 		return "shipping.events", "shipment.created", nil
+ 	case "shipping.shipment.status_changed.v1":
+ 		return "shipping.events", "shipment.status_changed", nil
++	case "payments.payment.captured.v1":
++		return "payments.events", "payment.captured", nil
++	case "payments.payment.failed.v1":
++		return "payments.events", "payment.failed", nil
+ 	default:
+ 		return "", "", fmt.Errorf("unknown routing for event_type: %s", eventType)
+ 	}

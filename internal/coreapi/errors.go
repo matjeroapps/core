@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/matjeroapps/core/internal/payments"
 	"github.com/matjeroapps/core/internal/shipping"
 	"github.com/matjeroapps/core/internal/suppliers"
 	"github.com/matjeroapps/core/modules/commerce"
@@ -40,6 +41,7 @@ const (
 	CodePriceChanged              = "price_changed"
 	CodeListingUnavailable        = "listing_unavailable"
 	CodeInvalidShipmentTransition = "invalid_shipment_transition"
+	CodeInvalidPaymentTransition  = "invalid_payment_transition"
 	CodeInternalError             = "internal_error"
 )
 
@@ -54,7 +56,7 @@ func statusFor(code string) int {
 		return http.StatusUnauthorized
 	case CodeForbidden:
 		return http.StatusForbidden
-	case CodeConflict, CodeMarketMismatch, CodeInsufficientInventory, CodeCheckoutExpired, CodeIdempotencyConflict, CodeInvalidOrderTransition, CodeInvalidShipmentTransition, CodePriceChanged, CodeListingUnavailable:
+	case CodeConflict, CodeMarketMismatch, CodeInsufficientInventory, CodeCheckoutExpired, CodeIdempotencyConflict, CodeInvalidOrderTransition, CodeInvalidShipmentTransition, CodeInvalidPaymentTransition, CodePriceChanged, CodeListingUnavailable:
 		return http.StatusConflict
 	case CodeUnavailable, CodePreviewUnavailable:
 		return http.StatusServiceUnavailable
@@ -140,6 +142,8 @@ func codeFor(err error) string {
 		errors.Is(err, storefront.ErrCatalogNotFound),
 		errors.Is(err, shipping.ErrShipmentNotFound),
 		errors.Is(err, shipping.ErrOrderNotFound),
+		errors.Is(err, payments.ErrPaymentNotFound),
+		errors.Is(err, payments.ErrOrderNotFound),
 		errors.Is(err, suppliers.ErrNotFound):
 		return CodeNotFound
 	case errors.Is(err, storefront.ErrStoreNotFound),
@@ -155,6 +159,8 @@ func codeFor(err error) string {
 		errors.Is(err, themes.ErrInvalidInput),
 		errors.Is(err, shipping.ErrInvalidInput),
 		errors.Is(err, shipping.ErrInvalidStatus),
+		errors.Is(err, payments.ErrInvalidInput),
+		errors.Is(err, payments.ErrInvalidStatus),
 		errors.Is(err, suppliers.ErrInvalidInput):
 		return CodeValidationError
 	case errors.Is(err, commerce.ErrUnauthorized):
@@ -179,6 +185,8 @@ func codeFor(err error) string {
 		return CodeInvalidOrderTransition
 	case errors.Is(err, shipping.ErrInvalidTransition):
 		return CodeInvalidShipmentTransition
+	case errors.Is(err, payments.ErrInvalidTransition):
+		return CodeInvalidPaymentTransition
 	case errors.Is(err, commerce.ErrPriceChanged):
 		return CodePriceChanged
 	case errors.Is(err, commerce.ErrListingUnavailable):

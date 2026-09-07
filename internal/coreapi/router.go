@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/matjeroapps/core/internal/payments"
 	"github.com/matjeroapps/core/internal/serviceauth"
 	"github.com/matjeroapps/core/internal/shipping"
 	"github.com/matjeroapps/core/modules/commerce"
@@ -68,6 +69,15 @@ type ShippingService interface {
 	ListShipmentsForOrder(ctx context.Context, orderID string) ([]shipping.Shipment, error)
 }
 
+// PaymentService manages payment lifecycle and webhook inbox.
+type PaymentService interface {
+	InitializePayment(ctx context.Context, params payments.InitializePaymentParams) (*payments.Payment, error)
+	UpdatePaymentStatus(ctx context.Context, params payments.UpdateStatusParams) (*payments.Payment, error)
+	GetPayment(ctx context.Context, paymentID string) (*payments.Payment, error)
+	GetPaymentByOrder(ctx context.Context, orderID string) (*payments.Payment, error)
+	PersistWebhookInbox(ctx context.Context, params payments.PersistWebhookInboxParams) (*payments.WebhookInbox, bool, error)
+}
+
 // Dependencies wires the internal API. Every field is a Core-owned capability;
 // no actor ever constructs these directly.
 type Dependencies struct {
@@ -79,6 +89,7 @@ type Dependencies struct {
 	Revisions RevisionReader
 	Themes    themes.Service
 	Shipping  ShippingService
+	Payments  PaymentService
 }
 
 // NewRouter registers the internal API under /internal/v1.
@@ -264,6 +275,14 @@ func NewRouter(deps Dependencies) chi.Router {
 			r.Post("/orders/{orderID}/shipments", server.handleCreateOrderShipment)
 			r.Patch("/shipments/{shipmentID}/status", server.handleUpdateShipmentStatus)
 			r.Get("/shipments/{shipmentID}", server.handleGetShipment)
+		})
+
+		// Payment capabilities.
+		r.Group(func(r chi.Router) {
+			r.Use(requireCallers(serviceauth.CallerSeller, serviceauth.CallerAdmin))
+			r.Post("/orders/{orderID}/payments", server.handleInitializePayment)
+			r.Patch("/payments/{paymentID}/status", server.handleUpdatePaymentStatus)
+			r.Post("/webhooks/payments/inbox", server.handlePersistWebhookInbox)
 		})
 	})
 
