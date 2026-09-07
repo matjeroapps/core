@@ -1084,5 +1084,17 @@ func internalRoutes() []openapi.RouteSpec {
 			Parameters: []openapi.ParameterSpec{pathParam("id", "Journal entry identifier")},
 			Responses:  readResponses("Journal entry", JournalEntryResponse{}),
 		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/balances/accounts/{accountID}", OperationID: "internalGetAccountBalance",
+			Summary: "Get account balance projection", Tags: []string{"Balance Projection"},
+			Parameters: []openapi.ParameterSpec{pathParam("accountID", "Account identifier")},
+			Responses:  readResponses("Account balance projection", AccountBalanceResponse{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/balances/accounts", OperationID: "internalListAccountBalances",
+			Summary: "List account balance projections", Tags: []string{"Balance Projection"},
+			Parameters: pageParams,
+			Responses:  readResponses("Account balance projection collection", CollectionResponse[AccountBalanceResponse]{}),
+		},
 	}
 }

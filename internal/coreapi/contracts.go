@@ -487,3 +487,12 @@ type JournalEntryResponse struct {
 	CreatedAt     time.Time             `json:"created_at"`
 	Lines         []JournalLineResponse `json:"lines"`
 }
+
+type AccountBalanceResponse struct {
+	AccountID        string    `json:"account_id"`
+	Currency         string    `json:"currency"`
+	DebitTotalMinor  int64     `json:"debit_total_minor"`
+	CreditTotalMinor int64     `json:"credit_total_minor"`
+	BalanceMinor     int64     `json:"balance_minor"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
