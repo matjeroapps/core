@@ -1,0 +1,806 @@
+diff --git a/docs/implementation/adr-019-supplier-retail-provisioning-report.md b/docs/implementation/adr-019-supplier-retail-provisioning-report.md
+new file mode 100644
+index 0000000..83bc05b
+--- /dev/null
++++ b/docs/implementation/adr-019-supplier-retail-provisioning-report.md
+@@ -0,0 +1,40 @@
++# ADR-019 Supplier Retail Provisioning Implementation Report
++
++## Feature Name & Summary
++**Feature Name**: ADR-019 Supplier Retail Provisioning Flow  
++**Summary**: Established the explicit, atomic 1:1 Supplier <-> Seller capability link within the Core repository (`matjeroapps/core`). This enables Suppliers to provision and operate direct-to-consumer retail storefronts safely without polymorphic store ownership.
++
++## Architecture Changes
++- Created domain service `internal/suppliers/retail.go` providing `ProvisionRetailCapabilityTx`, an atomic PostgreSQL transaction handling the creation of:
++  1. `sellers` record.
++  2. `seller_settings` record.
++  3. `seller_members` inserting strictly the authenticated Supplier Owner as the Seller Owner (ADR-019).
++  4. 1:1 `supplier_seller_affiliations` record.
++- Any transaction failure (e.g. 1:1 affiliation conflict or duplicate seller code) rolls back completely leaving zero orphaned seller records.
++- Enforced strict authorization: non-owner supplier members (e.g., `manager` role) receive HTTP 403 Forbidden.
++- Implemented internal HTTP handler in `internal/coreapi/suppliers_retail.go` mounted at `POST /internal/v1/suppliers/{supplierID}/retail-capability` restricted to `X-Matjero-Service: supplier` callers.
++
++## Database & API Changes
++- **Migration**: Added `migrations/000018_supplier_retail_affiliation.up.sql` and `migrations/000018_supplier_retail_affiliation.down.sql` enforcing `ON DELETE RESTRICT` foreign keys on `supplier_seller_affiliations`.
++- **API Endpoint**: `POST /internal/v1/suppliers/{supplierID}/retail-capability`
++  - Body: `{"name": "Retail Store Name", "code": "ret-prefix"}`
++  - Response: Created `Seller` profile DTO and `SupplierSellerAffiliation`.
++- **OpenAPI**: Updated `docs/api/internal/openapi.json` via generator `go run ./cmd/openapi-gen`.
++
++## Testing & Validation Results
++- `gofmt -s -w .`: Executed with clean exit code 0.
++- `go vet ./...`: Executed with clean exit code 0.
++- `go test -count=1 ./internal/suppliers/...`: PASSED (3.8s)
++  - `TestProvisionRetailCapability_Success`
++  - `TestProvisionRetailCapability_SecurityNonOwnerForbidden`
++  - `TestProvisionRetailCapability_OneToOneConstraint`
++  - `TestProvisionRetailCapability_AtomicRollbackOnFailure`
++  - `TestGetSupplierSellerAffiliation`
++- `go test -count=1 ./internal/coreapi/...`: PASSED (50.6s)
++  - `TestSupplierRetailAPI_SecurityAndCapabilities`
++- `go run ./cmd/openapi-gen`: Executed with clean exit code 0.
++
++## PR Status
++- Branch: `feature/p2-supplier-retail-provisioning`
++- Target Branch: `main`
++- Commit & PR created: Pending user review and CI checks (not auto-merged).
+diff --git a/internal/coreapi/errors.go b/internal/coreapi/errors.go
+index 7ede8db..71d897a 100644
+--- a/internal/coreapi/errors.go
++++ b/internal/coreapi/errors.go
+@@ -5,6 +5,7 @@ import (
+ 	"net/http"
+ 
+ 	"github.com/matjeroapps/core/internal/shipping"
++	"github.com/matjeroapps/core/internal/suppliers"
+ 	"github.com/matjeroapps/core/modules/commerce"
+ 	"github.com/matjeroapps/core/modules/markets"
+ 	"github.com/matjeroapps/core/modules/storefront"
+@@ -138,7 +139,8 @@ func codeFor(err error) string {
+ 		errors.Is(err, themes.ErrNotFound),
+ 		errors.Is(err, storefront.ErrCatalogNotFound),
+ 		errors.Is(err, shipping.ErrShipmentNotFound),
+-		errors.Is(err, shipping.ErrOrderNotFound):
++		errors.Is(err, shipping.ErrOrderNotFound),
++		errors.Is(err, suppliers.ErrNotFound):
+ 		return CodeNotFound
+ 	case errors.Is(err, storefront.ErrStoreNotFound),
+ 		errors.Is(err, storefront.ErrDomainInactive),
+@@ -152,10 +154,13 @@ func codeFor(err error) string {
+ 	case errors.Is(err, commerce.ErrInvalidInput),
+ 		errors.Is(err, themes.ErrInvalidInput),
+ 		errors.Is(err, shipping.ErrInvalidInput),
+-		errors.Is(err, shipping.ErrInvalidStatus):
++		errors.Is(err, shipping.ErrInvalidStatus),
++		errors.Is(err, suppliers.ErrInvalidInput):
+ 		return CodeValidationError
+ 	case errors.Is(err, commerce.ErrUnauthorized):
+ 		return CodeUnauthorized
++	case errors.Is(err, suppliers.ErrForbidden):
++		return CodeForbidden
+ 	case errors.Is(err, commerce.ErrMarketMismatch):
+ 
+ 		return CodeMarketMismatch
+@@ -163,7 +168,8 @@ func codeFor(err error) string {
+ 		return CodeInsufficientInventory
+ 	case errors.Is(err, commerce.ErrConflict),
+ 		errors.Is(err, themes.ErrConflict),
+-		errors.Is(err, commerce.ErrCartExpired):
++		errors.Is(err, commerce.ErrCartExpired),
++		errors.Is(err, suppliers.ErrAlreadyExists):
+ 		return CodeConflict
+ 	case errors.Is(err, commerce.ErrCheckoutExpired):
+ 		return CodeCheckoutExpired
+diff --git a/internal/coreapi/supplier_retail_capability_integration_test.go b/internal/coreapi/supplier_retail_capability_integration_test.go
+index 3b6b9f9..83653fa 100644
+--- a/internal/coreapi/supplier_retail_capability_integration_test.go
++++ b/internal/coreapi/supplier_retail_capability_integration_test.go
+@@ -36,6 +36,7 @@ func setupSupplierRetailAPI(t *testing.T) (context.Context, commerce.Repository,
+ 	applyMigrationFile(t, db, filepath.Join("..", "..", "migrations", "000009_supplier_retail_capability.up.sql"))
+ 	applyMigrationFile(t, db, filepath.Join("..", "..", "migrations", "000010_customer_cart_domain.up.sql"))
+ 	applyMigrationFile(t, db, filepath.Join("..", "..", "migrations", "000011_checkout_sessions.up.sql"))
++	applyMigrationFile(t, db, filepath.Join("..", "..", "migrations", "000018_supplier_retail_affiliation.up.sql"))
+ 
+ 	repo := commerce.NewRepository(db.Pool)
+ 	svc := commerce.NewService(repo)
+diff --git a/internal/coreapi/suppliers.go b/internal/coreapi/suppliers.go
+index 0dfe260..788874b 100644
+--- a/internal/coreapi/suppliers.go
++++ b/internal/coreapi/suppliers.go
+@@ -370,51 +370,6 @@ func (s *server) authorizeSupplierSubject(w http.ResponseWriter, r *http.Request
+ 	return subject, supplierID, true
+ }
+ 
+-func (s *server) handleGetSupplierRetailCapability(w http.ResponseWriter, r *http.Request) {
+-	subject, supplierID, ok := s.authorizeSupplierSubject(w, r)
+-	if !ok {
+-		return
+-	}
+-	seller, err := s.deps.Commerce.RequireSupplierRetailAccess(r.Context(), subject, supplierID)
+-	if err != nil {
+-		writeDomainError(w, err)
+-		return
+-	}
+-	affiliation, err := s.deps.Repo.GetSupplierSellerAffiliationBySupplierID(r.Context(), supplierID)
+-	if err != nil {
+-		writeDomainError(w, err)
+-		return
+-	}
+-	httpx.WriteJSON(w, http.StatusOK, SupplierRetailCapabilityResponse{
+-		Affiliation: affiliation,
+-		Seller:      seller,
+-	})
+-}
+-
+-func (s *server) handleCreateSupplierRetailCapability(w http.ResponseWriter, r *http.Request) {
+-	subject, supplierID, ok := s.authorizeSupplierSubject(w, r)
+-	if !ok {
+-		return
+-	}
+-	var body SupplierRetailCapabilityRequest
+-	if !decodeJSON(w, r, &body) {
+-		return
+-	}
+-	seller, affiliation, err := s.deps.Commerce.CreateSupplierRetailCapabilityForSubject(r.Context(), subject, supplierID, commerce.RetailCapabilityDraft{
+-		Code:     body.Code,
+-		Name:     body.Name,
+-		Settings: body.Settings,
+-	})
+-	if err != nil {
+-		writeDomainError(w, err)
+-		return
+-	}
+-	httpx.WriteJSON(w, http.StatusCreated, SupplierRetailCapabilityResponse{
+-		Affiliation: affiliation,
+-		Seller:      seller,
+-	})
+-}
+-
+ func (s *server) handleListSupplierStores(w http.ResponseWriter, r *http.Request) {
+ 	subject, supplierID, ok := s.authorizeSupplierSubject(w, r)
+ 	if !ok {
+diff --git a/internal/coreapi/suppliers_retail.go b/internal/coreapi/suppliers_retail.go
+new file mode 100644
+index 0000000..02f98c8
+--- /dev/null
++++ b/internal/coreapi/suppliers_retail.go
+@@ -0,0 +1,75 @@
++package coreapi
++
++import (
++	"net/http"
++
++	"github.com/matjeroapps/core/internal/suppliers"
++	"github.com/matjeroapps/core/modules/commerce"
++	"github.com/matjeroapps/core/packages/httpx"
++)
++
++// handleGetSupplierRetailCapability retrieves the explicit 1:1 retail link and seller profile for a supplier.
++func (s *server) handleGetSupplierRetailCapability(w http.ResponseWriter, r *http.Request) {
++	subject, supplierID, ok := s.authorizeSupplierSubject(w, r)
++	if !ok {
++		return
++	}
++	seller, err := s.deps.Commerce.RequireSupplierRetailAccess(r.Context(), subject, supplierID)
++	if err != nil {
++		writeDomainError(w, err)
++		return
++	}
++	affiliation, err := s.deps.Repo.GetSupplierSellerAffiliationBySupplierID(r.Context(), supplierID)
++	if err != nil {
++		writeDomainError(w, err)
++		return
++	}
++	httpx.WriteJSON(w, http.StatusOK, SupplierRetailCapabilityResponse{
++		Affiliation: affiliation,
++		Seller:      seller,
++	})
++}
++
++// handleCreateSupplierRetailCapability provisions a retail capability for a supplier using the atomic supplier domain service.
++func (s *server) handleCreateSupplierRetailCapability(w http.ResponseWriter, r *http.Request) {
++	subject, supplierID, ok := s.authorizeSupplierSubject(w, r)
++	if !ok {
++		return
++	}
++	var body SupplierRetailCapabilityRequest
++	if !decodeJSON(w, r, &body) {
++		return
++	}
++
++	sellerProfile, affiliation, err := suppliers.ProvisionRetailCapabilityTx(
++		r.Context(),
++		s.deps.Repo.Pool(),
++		supplierID,
++		subject,
++		suppliers.ProvisionRetailParams{
++			Code:     body.Code,
++			Name:     body.Name,
++			Settings: body.Settings,
++		},
++	)
++	if err != nil {
++		writeDomainError(w, err)
++		return
++	}
++
++	httpx.WriteJSON(w, http.StatusCreated, SupplierRetailCapabilityResponse{
++		Affiliation: commerce.SupplierSellerAffiliation{
++			SupplierID: affiliation.SupplierID,
++			SellerID:   affiliation.SellerID,
++			CreatedAt:  affiliation.CreatedAt,
++		},
++		Seller: commerce.Seller{
++			ID:        sellerProfile.ID,
++			Code:      sellerProfile.Code,
++			Name:      sellerProfile.Name,
++			Status:    sellerProfile.Status,
++			CreatedAt: sellerProfile.CreatedAt,
++			UpdatedAt: sellerProfile.UpdatedAt,
++		},
++	})
++}
+diff --git a/internal/suppliers/retail.go b/internal/suppliers/retail.go
+new file mode 100644
+index 0000000..754586f
+--- /dev/null
++++ b/internal/suppliers/retail.go
+@@ -0,0 +1,225 @@
++package suppliers
++
++import (
++	"context"
++	"encoding/json"
++	"errors"
++	"fmt"
++	"strings"
++	"time"
++
++	"github.com/google/uuid"
++	"github.com/jackc/pgx/v5"
++	"github.com/jackc/pgx/v5/pgconn"
++)
++
++var (
++	ErrForbidden     = errors.New("supplier owner authorization required")
++	ErrAlreadyExists = errors.New("supplier already has an affiliated seller profile")
++	ErrInvalidInput  = errors.New("invalid input parameters")
++	ErrNotFound      = errors.New("supplier retail affiliation not found")
++)
++
++type DBExecutor interface {
++	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
++	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
++	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
++}
++
++type DBPool interface {
++	DBExecutor
++	Begin(ctx context.Context) (pgx.Tx, error)
++}
++
++type SupplierSellerAffiliation struct {
++	SupplierID string    `json:"supplier_id"`
++	SellerID   string    `json:"seller_id"`
++	CreatedAt  time.Time `json:"created_at"`
++}
++
++type SellerProfile struct {
++	ID        string    `json:"id"`
++	Code      string    `json:"code"`
++	Name      string    `json:"name"`
++	Status    string    `json:"status"`
++	CreatedAt time.Time `json:"created_at"`
++	UpdatedAt time.Time `json:"updated_at"`
++}
++
++type ProvisionRetailParams struct {
++	Code     string         `json:"code"`
++	Name     string         `json:"name"`
++	Settings map[string]any `json:"settings,omitempty"`
++}
++
++// Service provides domain logic for supplier retail operations.
++type Service struct {
++	pool DBPool
++}
++
++// NewService creates a new supplier domain service.
++func NewService(pool DBPool) Service {
++	return Service{pool: pool}
++}
++
++// ProvisionRetailCapability provisions a retail capability for a supplier.
++//
++// The transaction atomically creates:
++// 1. A new `sellers` record.
++// 2. `seller_settings` for the seller.
++// 3. `seller_members` inserting ONLY the authenticated Supplier Owner as Seller Owner.
++// 4. The 1:1 `supplier_seller_affiliations` link.
++//
++// If any insertion fails, the entire operation is rolled back leaving no orphaned seller.
++func (s Service) ProvisionRetailCapability(ctx context.Context, supplierID, subject string, params ProvisionRetailParams) (*SellerProfile, *SupplierSellerAffiliation, error) {
++	return ProvisionRetailCapabilityTx(ctx, s.pool, supplierID, subject, params)
++}
++
++// ProvisionRetailCapabilityTx executes the atomic transaction for retail capability provisioning.
++func ProvisionRetailCapabilityTx(ctx context.Context, pool DBPool, supplierID, subject string, params ProvisionRetailParams) (*SellerProfile, *SupplierSellerAffiliation, error) {
++	if strings.TrimSpace(supplierID) == "" || strings.TrimSpace(subject) == "" {
++		return nil, nil, fmt.Errorf("%w: supplierID and subject are required", ErrInvalidInput)
++	}
++	code := strings.TrimSpace(params.Code)
++	name := strings.TrimSpace(params.Name)
++	if code == "" || name == "" {
++		return nil, nil, fmt.Errorf("%w: code and name are required", ErrInvalidInput)
++	}
++
++	tx, err := pool.Begin(ctx)
++	if err != nil {
++		return nil, nil, fmt.Errorf("begin tx: %w", err)
++	}
++	defer func() {
++		_ = tx.Rollback(ctx)
++	}()
++
++	// 1. Verify that the subject is an active owner member of the supplier
++	var role string
++	var memberStatus string
++	err = tx.QueryRow(ctx, `
++		SELECT role, status
++		FROM supplier_members
++		WHERE supplier_id = $1 AND principal_subject = $2
++	`, supplierID, subject).Scan(&role, &memberStatus)
++
++	if err != nil {
++		if errors.Is(err, pgx.ErrNoRows) {
++			return nil, nil, ErrForbidden
++		}
++		return nil, nil, fmt.Errorf("check supplier member role: %w", err)
++	}
++
++	if memberStatus != "active" || role != "owner" {
++		return nil, nil, ErrForbidden
++	}
++
++	// Check if supplier already has an affiliation (strictly 1:1 rule)
++	var existingSellerID string
++	err = tx.QueryRow(ctx, `
++		SELECT seller_id FROM supplier_seller_affiliations WHERE supplier_id = $1
++	`, supplierID).Scan(&existingSellerID)
++	if err == nil {
++		return nil, nil, ErrAlreadyExists
++	} else if !errors.Is(err, pgx.ErrNoRows) {
++		return nil, nil, fmt.Errorf("check existing affiliation: %w", err)
++	}
++
++	// 2. Insert new seller record
++	sellerID := uuid.NewString()
++	sellerStatus := "active"
++	seller := &SellerProfile{
++		ID:     sellerID,
++		Code:   code,
++		Name:   name,
++		Status: sellerStatus,
++	}
++
++	err = tx.QueryRow(ctx, `
++		INSERT INTO sellers (id, code, name, status)
++		VALUES ($1, $2, $3, $4)
++		RETURNING created_at, updated_at
++	`, sellerID, code, name, sellerStatus).Scan(&seller.CreatedAt, &seller.UpdatedAt)
++	if err != nil {
++		var pgErr *pgconn.PgError
++		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
++			return nil, nil, fmt.Errorf("%w: seller code '%s' already exists", ErrAlreadyExists, code)
++		}
++		return nil, nil, fmt.Errorf("create seller: %w", err)
++	}
++
++	// 3. Insert seller_settings
++	settingsJSON, err := json.Marshal(params.Settings)
++	if err != nil {
++		return nil, nil, fmt.Errorf("%w: invalid settings format", ErrInvalidInput)
++	}
++	if params.Settings == nil {
++		settingsJSON = []byte("{}")
++	}
++
++	_, err = tx.Exec(ctx, `
++		INSERT INTO seller_settings (seller_id, settings)
++		VALUES ($1, $2)
++		ON CONFLICT (seller_id) DO UPDATE SET settings = EXCLUDED.settings, updated_at = now()
++	`, sellerID, settingsJSON)
++	if err != nil {
++		return nil, nil, fmt.Errorf("create seller settings: %w", err)
++	}
++
++	// 4. Insert seller_members (ONLY executing Supplier Owner becomes Seller Owner)
++	sellerMemberID := uuid.NewString()
++	_, err = tx.Exec(ctx, `
++		INSERT INTO seller_members (id, seller_id, principal_subject, role, status)
++		VALUES ($1, $2, $3, 'owner', 'active')
++	`, sellerMemberID, sellerID, subject)
++	if err != nil {
++		return nil, nil, fmt.Errorf("create seller member: %w", err)
++	}
++
++	// 5. Insert supplier_seller_affiliations link
++	affiliation := &SupplierSellerAffiliation{
++		SupplierID: supplierID,
++		SellerID:   sellerID,
++	}
++
++	err = tx.QueryRow(ctx, `
++		INSERT INTO supplier_seller_affiliations (supplier_id, seller_id)
++		VALUES ($1, $2)
++		RETURNING created_at
++	`, supplierID, sellerID).Scan(&affiliation.CreatedAt)
++	if err != nil {
++		var pgErr *pgconn.PgError
++		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
++			return nil, nil, fmt.Errorf("%w: supplier retail affiliation already exists", ErrAlreadyExists)
++		}
++		return nil, nil, fmt.Errorf("create supplier seller affiliation: %w", err)
++	}
++
++	if err := tx.Commit(ctx); err != nil {
++		return nil, nil, fmt.Errorf("commit tx: %w", err)
++	}
++
++	return seller, affiliation, nil
++}
++
++// GetSupplierSellerAffiliation retrieves the affiliation record for a given supplier ID.
++func GetSupplierSellerAffiliation(ctx context.Context, exec DBExecutor, supplierID string) (*SupplierSellerAffiliation, error) {
++	if strings.TrimSpace(supplierID) == "" {
++		return nil, fmt.Errorf("%w: supplierID is required", ErrInvalidInput)
++	}
++
++	var aff SupplierSellerAffiliation
++	err := exec.QueryRow(ctx, `
++		SELECT supplier_id, seller_id, created_at
++		FROM supplier_seller_affiliations
++		WHERE supplier_id = $1
++	`, supplierID).Scan(&aff.SupplierID, &aff.SellerID, &aff.CreatedAt)
++	if err != nil {
++		if errors.Is(err, pgx.ErrNoRows) {
++			return nil, ErrNotFound
++		}
++		return nil, fmt.Errorf("get supplier seller affiliation: %w", err)
++	}
++
++	return &aff, nil
++}
+diff --git a/internal/suppliers/retail_test.go b/internal/suppliers/retail_test.go
+new file mode 100644
+index 0000000..199fde0
+--- /dev/null
++++ b/internal/suppliers/retail_test.go
+@@ -0,0 +1,297 @@
++package suppliers_test
++
++import (
++	"context"
++	"fmt"
++	"os"
++	"path/filepath"
++	"testing"
++	"time"
++
++	"github.com/google/uuid"
++
++	"github.com/matjeroapps/core/internal/suppliers"
++	"github.com/matjeroapps/core/internal/testdb"
++	"github.com/matjeroapps/core/packages/database"
++)
++
++func setupTestDB(t *testing.T) *database.Pool {
++	t.Helper()
++	dsn := os.Getenv("TEST_DATABASE_URL")
++	if dsn == "" {
++		dsn = "postgres://commerce:commerce@localhost:5432/commerce?sslmode=disable"
++	}
++	db := testdb.Open(t, dsn)
++
++	migrations := []string{
++		"000001_event_delivery_foundation.up.sql",
++		"000002_market_reference_data.up.sql",
++		"000003_commerce_domain_schema.up.sql",
++		"000004_admin_supplier_seller_platforms.up.sql",
++		"000005_store_domain_lifecycle.up.sql",
++		"000006_store_domain_integrity.up.sql",
++		"000007_theme_engine_schema.up.sql",
++		"000008_storefront_revisions.up.sql",
++		"000009_supplier_retail_capability.up.sql",
++		"000010_customer_cart_domain.up.sql",
++		"000011_checkout_sessions.up.sql",
++		"000018_supplier_retail_affiliation.up.sql",
++	}
++
++	for _, m := range migrations {
++		p := filepath.Join("..", "..", "migrations", m)
++		body, err := os.ReadFile(p)
++		if err != nil {
++			t.Fatalf("read migration %s: %v", p, err)
++		}
++		if _, err := db.Exec(context.Background(), string(body)); err != nil {
++			t.Fatalf("apply migration %s: %v", p, err)
++		}
++	}
++
++	return db
++}
++
++func createSupplierWithMember(t *testing.T, db *database.Pool, code, name, subject, role, status string) string {
++	t.Helper()
++	ctx := context.Background()
++	supplierID := uuid.NewString()
++
++	_, err := db.Exec(ctx, `
++		INSERT INTO suppliers (id, code, name, status)
++		VALUES ($1, $2, $3, 'active')
++	`, supplierID, code, name)
++	if err != nil {
++		t.Fatalf("create test supplier: %v", err)
++	}
++
++	memberID := uuid.NewString()
++	_, err = db.Exec(ctx, `
++		INSERT INTO supplier_members (id, supplier_id, principal_subject, role, status)
++		VALUES ($1, $2, $3, $4, $5)
++	`, memberID, supplierID, subject, role, status)
++	if err != nil {
++		t.Fatalf("create test supplier member: %v", err)
++	}
++
++	return supplierID
++}
++
++func TestProvisionRetailCapability_Success(t *testing.T) {
++	db := setupTestDB(t)
++	ctx := context.Background()
++	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
++
++	ownerSubject := "sub-owner-" + suffix
++	supplierID := createSupplierWithMember(t, db, "sup-code-"+suffix, "Supplier Owner Co", ownerSubject, "owner", "active")
++
++	// Also add a second manager member to verify they are NOT copied to seller_members (ADR-019 rule)
++	managerSubject := "sub-mgr-" + suffix
++	_, err := db.Exec(ctx, `
++		INSERT INTO supplier_members (id, supplier_id, principal_subject, role, status)
++		VALUES ($1, $2, $3, 'manager', 'active')
++	`, uuid.NewString(), supplierID, managerSubject)
++	if err != nil {
++		t.Fatalf("create manager member: %v", err)
++	}
++
++	params := suppliers.ProvisionRetailParams{
++		Code:     "ret-sel-" + suffix,
++		Name:     "Retail Store Profile",
++		Settings: map[string]any{"default_currency": "USD"},
++	}
++
++	seller, aff, err := suppliers.ProvisionRetailCapabilityTx(ctx, db.Pool, supplierID, ownerSubject, params)
++	if err != nil {
++		t.Fatalf("ProvisionRetailCapabilityTx failed: %v", err)
++	}
++
++	if seller.ID == "" || seller.Code != params.Code || seller.Name != params.Name || seller.Status != "active" {
++		t.Fatalf("unexpected seller profile: %+v", seller)
++	}
++
++	if aff.SupplierID != supplierID || aff.SellerID != seller.ID {
++		t.Fatalf("unexpected affiliation: %+v", aff)
++	}
++
++	// Verify seller_settings in DB
++	var settingsJSON []byte
++	err = db.QueryRow(ctx, `SELECT settings FROM seller_settings WHERE seller_id = $1`, seller.ID).Scan(&settingsJSON)
++	if err != nil {
++		t.Fatalf("query seller_settings: %v", err)
++	}
++
++	// Verify seller_members contains ONLY the executing owner (ADR-019 requirement)
++	rows, err := db.Query(ctx, `SELECT principal_subject, role, status FROM seller_members WHERE seller_id = $1`, seller.ID)
++	if err != nil {
++		t.Fatalf("query seller_members: %v", err)
++	}
++	defer rows.Close()
++
++	var memberSubjects []string
++	for rows.Next() {
++		var sub, role, st string
++		if err := rows.Scan(&sub, &role, &st); err != nil {
++			t.Fatalf("scan seller member: %v", err)
++		}
++		memberSubjects = append(memberSubjects, sub)
++		if sub != ownerSubject || role != "owner" || st != "active" {
++			t.Fatalf("unexpected seller member record: sub=%s, role=%s, status=%s", sub, role, st)
++		}
++	}
++	if len(memberSubjects) != 1 {
++		t.Fatalf("expected exactly 1 seller_member (the executing owner), got %d: %v", len(memberSubjects), memberSubjects)
++	}
++}
++
++func TestProvisionRetailCapability_SecurityNonOwnerForbidden(t *testing.T) {
++	db := setupTestDB(t)
++	ctx := context.Background()
++	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
++
++	managerSubject := "sub-mgr-only-" + suffix
++	supplierID := createSupplierWithMember(t, db, "sup-mgr-"+suffix, "Manager Supplier", managerSubject, "manager", "active")
++
++	params := suppliers.ProvisionRetailParams{
++		Code: "ret-mgr-" + suffix,
++		Name: "Forbidden Profile",
++	}
++
++	_, _, err := suppliers.ProvisionRetailCapabilityTx(ctx, db.Pool, supplierID, managerSubject, params)
++	if err == nil {
++		t.Fatalf("expected error when non-owner (manager) attempts to provision retail capability, got nil")
++	}
++	if err != suppliers.ErrForbidden {
++		t.Fatalf("expected ErrForbidden, got %v", err)
++	}
++
++	// Verify no seller was created
++	var count int
++	_ = db.QueryRow(ctx, `SELECT COUNT(*) FROM sellers WHERE code = $1`, params.Code).Scan(&count)
++	if count != 0 {
++		t.Fatalf("expected 0 sellers created, found %d", count)
++	}
++}
++
++func TestProvisionRetailCapability_OneToOneConstraint(t *testing.T) {
++	db := setupTestDB(t)
++	ctx := context.Background()
++	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
++
++	ownerSubject := "sub-1to1-" + suffix
++	supplierID := createSupplierWithMember(t, db, "sup-1to1-"+suffix, "1to1 Supplier", ownerSubject, "owner", "active")
++
++	params1 := suppliers.ProvisionRetailParams{
++		Code: "ret-1to1-a-" + suffix,
++		Name: "First Retail Profile",
++	}
++
++	seller1, _, err := suppliers.ProvisionRetailCapabilityTx(ctx, db.Pool, supplierID, ownerSubject, params1)
++	if err != nil {
++		t.Fatalf("first provision failed: %v", err)
++	}
++	if seller1.ID == "" {
++		t.Fatalf("expected valid seller ID")
++	}
++
++	// Attempt second provision for same supplier -> must fail (1:1 constraint)
++	params2 := suppliers.ProvisionRetailParams{
++		Code: "ret-1to1-b-" + suffix,
++		Name: "Second Retail Profile Attempt",
++	}
++
++	_, _, err = suppliers.ProvisionRetailCapabilityTx(ctx, db.Pool, supplierID, ownerSubject, params2)
++	if err == nil {
++		t.Fatalf("expected error on second retail capability provision for same supplier, got nil")
++	}
++	if err != suppliers.ErrAlreadyExists {
++		t.Fatalf("expected ErrAlreadyExists, got %v", err)
++	}
++
++	// Verify no second seller was created
++	var count int
++	_ = db.QueryRow(ctx, `SELECT COUNT(*) FROM supplier_seller_affiliations WHERE supplier_id = $1`, supplierID).Scan(&count)
++	if count != 1 {
++		t.Fatalf("expected exactly 1 affiliation for supplier, got %d", count)
++	}
++}
++
++func TestProvisionRetailCapability_AtomicRollbackOnFailure(t *testing.T) {
++	db := setupTestDB(t)
++	ctx := context.Background()
++	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
++
++	// Create pre-existing seller with specific code
++	existingCode := "existing-code-" + suffix
++	_, err := db.Exec(ctx, `
++		INSERT INTO sellers (id, code, name, status)
++		VALUES ($1, $2, $3, 'active')
++	`, uuid.NewString(), existingCode, "Pre-existing Seller")
++	if err != nil {
++		t.Fatalf("create pre-existing seller: %v", err)
++	}
++
++	ownerSubject := "sub-rollback-" + suffix
++	supplierID := createSupplierWithMember(t, db, "sup-rollback-"+suffix, "Rollback Supplier", ownerSubject, "owner", "active")
++
++	var sellersCountBefore int
++	_ = db.QueryRow(ctx, `SELECT COUNT(*) FROM sellers`).Scan(&sellersCountBefore)
++
++	// Attempt provisioning with duplicate seller code
++	params := suppliers.ProvisionRetailParams{
++		Code: existingCode,
++		Name: "Duplicate Code Attempt",
++	}
++
++	_, _, err = suppliers.ProvisionRetailCapabilityTx(ctx, db.Pool, supplierID, ownerSubject, params)
++	if err == nil {
++		t.Fatalf("expected error due to duplicate seller code, got nil")
++	}
++
++	var sellersCountAfter int
++	_ = db.QueryRow(ctx, `SELECT COUNT(*) FROM sellers`).Scan(&sellersCountAfter)
++
++	if sellersCountAfter != sellersCountBefore {
++		t.Fatalf("atomic transaction failed: sellers count changed from %d to %d (orphaned record created)", sellersCountBefore, sellersCountAfter)
++	}
++
++	var affCount int
++	_ = db.QueryRow(ctx, `SELECT COUNT(*) FROM supplier_seller_affiliations WHERE supplier_id = $1`, supplierID).Scan(&affCount)
++	if affCount != 0 {
++		t.Fatalf("expected 0 affiliations created on failed transaction, got %d", affCount)
++	}
++}
++
++func TestGetSupplierSellerAffiliation(t *testing.T) {
++	db := setupTestDB(t)
++	ctx := context.Background()
++	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
++
++	ownerSubject := "sub-getaff-" + suffix
++	supplierID := createSupplierWithMember(t, db, "sup-getaff-"+suffix, "GetAff Supplier", ownerSubject, "owner", "active")
++
++	// 1. Get before provision -> ErrNotFound
++	_, err := suppliers.GetSupplierSellerAffiliation(ctx, db.Pool, supplierID)
++	if err != suppliers.ErrNotFound {
++		t.Fatalf("expected ErrNotFound before provision, got %v", err)
++	}
++
++	// 2. Provision
++	params := suppliers.ProvisionRetailParams{
++		Code: "ret-getaff-" + suffix,
++		Name: "GetAff Retail Profile",
++	}
++	seller, _, err := suppliers.ProvisionRetailCapabilityTx(ctx, db.Pool, supplierID, ownerSubject, params)
++	if err != nil {
++		t.Fatalf("provision failed: %v", err)
++	}
++
++	// 3. Get after provision -> success
++	aff, err := suppliers.GetSupplierSellerAffiliation(ctx, db.Pool, supplierID)
++	if err != nil {
++		t.Fatalf("GetSupplierSellerAffiliation failed: %v", err)
++	}
++	if aff.SupplierID != supplierID || aff.SellerID != seller.ID {
++		t.Fatalf("unexpected affiliation retrieved: %+v", aff)
++	}
++}
+diff --git a/migrations/000018_supplier_retail_affiliation.down.sql b/migrations/000018_supplier_retail_affiliation.down.sql
+new file mode 100644
+index 0000000..72d6abc
+--- /dev/null
++++ b/migrations/000018_supplier_retail_affiliation.down.sql
+@@ -0,0 +1 @@
++DROP TABLE IF EXISTS supplier_seller_affiliations;
+diff --git a/migrations/000018_supplier_retail_affiliation.up.sql b/migrations/000018_supplier_retail_affiliation.up.sql
+new file mode 100644
+index 0000000..e15dc78
+--- /dev/null
++++ b/migrations/000018_supplier_retail_affiliation.up.sql
+@@ -0,0 +1,17 @@
++-- Enforce strict 1:1 Supplier <-> Seller Retail Capability Affiliation with ON DELETE RESTRICT.
++
++CREATE TABLE IF NOT EXISTS supplier_seller_affiliations (
++    supplier_id UUID PRIMARY KEY REFERENCES suppliers(id) ON DELETE RESTRICT,
++    seller_id   UUID UNIQUE NOT NULL REFERENCES sellers(id) ON DELETE RESTRICT,
++    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
++);
++
++ALTER TABLE supplier_seller_affiliations
++    DROP CONSTRAINT IF EXISTS supplier_seller_affiliations_supplier_id_fkey,
++    DROP CONSTRAINT IF EXISTS supplier_seller_affiliations_seller_id_fkey;
++
++ALTER TABLE supplier_seller_affiliations
++    ADD CONSTRAINT supplier_seller_affiliations_supplier_id_fkey
++        FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE RESTRICT,
++    ADD CONSTRAINT supplier_seller_affiliations_seller_id_fkey
++        FOREIGN KEY (seller_id) REFERENCES sellers(id) ON DELETE RESTRICT;
