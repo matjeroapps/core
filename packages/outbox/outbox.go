@@ -287,6 +287,10 @@ func ResolveRoutingKey(eventType string) (exchange string, routingKey string, er
 		return "commerce.events", "order.created", nil
 	case "commerce.order.status_changed.v1":
 		return "commerce.events", "order.status_changed", nil
+	case "shipping.shipment.created.v1":
+		return "shipping.events", "shipment.created", nil
+	case "shipping.shipment.status_changed.v1":
+		return "shipping.events", "shipment.status_changed", nil
 	default:
 		return "", "", fmt.Errorf("unknown routing for event_type: %s", eventType)
 	}

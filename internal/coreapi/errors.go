@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/matjeroapps/core/internal/shipping"
 	"github.com/matjeroapps/core/modules/commerce"
 	"github.com/matjeroapps/core/modules/markets"
 	"github.com/matjeroapps/core/modules/storefront"
@@ -19,25 +20,26 @@ import (
 // closed: adding a code is a contract change, and no code may ever carry SQL
 // text, a stack trace, an internal table name, or a secret value.
 const (
-	CodeNotFound               = "not_found"
-	CodeInvalidArgument        = "invalid_argument"
-	CodeValidationError        = "validation_error"
-	CodeUnauthorized           = "unauthorized"
-	CodeForbidden              = "forbidden"
-	CodeConflict               = "conflict"
-	CodeMarketMismatch         = "market_mismatch"
-	CodeInsufficientInventory  = "insufficient_inventory"
-	CodeSchemaMismatch         = "schema_mismatch"
-	CodeUnsafeContent          = "unsafe_content"
-	CodePreviewUnavailable     = "preview_unavailable"
-	CodeStorefrontUnavailable  = "storefront_unavailable"
-	CodeUnavailable            = "unavailable"
-	CodeCheckoutExpired        = "checkout_expired"
-	CodeIdempotencyConflict    = "idempotency_conflict"
-	CodeInvalidOrderTransition = "invalid_order_transition"
-	CodePriceChanged           = "price_changed"
-	CodeListingUnavailable     = "listing_unavailable"
-	CodeInternalError          = "internal_error"
+	CodeNotFound                  = "not_found"
+	CodeInvalidArgument           = "invalid_argument"
+	CodeValidationError           = "validation_error"
+	CodeUnauthorized              = "unauthorized"
+	CodeForbidden                 = "forbidden"
+	CodeConflict                  = "conflict"
+	CodeMarketMismatch            = "market_mismatch"
+	CodeInsufficientInventory     = "insufficient_inventory"
+	CodeSchemaMismatch            = "schema_mismatch"
+	CodeUnsafeContent             = "unsafe_content"
+	CodePreviewUnavailable        = "preview_unavailable"
+	CodeStorefrontUnavailable     = "storefront_unavailable"
+	CodeUnavailable               = "unavailable"
+	CodeCheckoutExpired           = "checkout_expired"
+	CodeIdempotencyConflict       = "idempotency_conflict"
+	CodeInvalidOrderTransition    = "invalid_order_transition"
+	CodePriceChanged              = "price_changed"
+	CodeListingUnavailable        = "listing_unavailable"
+	CodeInvalidShipmentTransition = "invalid_shipment_transition"
+	CodeInternalError             = "internal_error"
 )
 
 // statusFor maps an internal error code onto its canonical HTTP status.
@@ -51,7 +53,7 @@ func statusFor(code string) int {
 		return http.StatusUnauthorized
 	case CodeForbidden:
 		return http.StatusForbidden
-	case CodeConflict, CodeMarketMismatch, CodeInsufficientInventory, CodeCheckoutExpired, CodeIdempotencyConflict, CodeInvalidOrderTransition, CodePriceChanged, CodeListingUnavailable:
+	case CodeConflict, CodeMarketMismatch, CodeInsufficientInventory, CodeCheckoutExpired, CodeIdempotencyConflict, CodeInvalidOrderTransition, CodeInvalidShipmentTransition, CodePriceChanged, CodeListingUnavailable:
 		return http.StatusConflict
 	case CodeUnavailable, CodePreviewUnavailable:
 		return http.StatusServiceUnavailable
@@ -95,6 +97,8 @@ func messageFor(code string) string {
 		return "checkout request conflicts with the finalized session"
 	case CodeInvalidOrderTransition:
 		return "invalid order transition"
+	case CodeInvalidShipmentTransition:
+		return "invalid shipment transition"
 	case CodePriceChanged:
 		return "price changed"
 	case CodeListingUnavailable:
@@ -132,7 +136,9 @@ func codeFor(err error) string {
 	case errors.Is(err, commerce.ErrNotFound),
 		errors.Is(err, markets.ErrNotFound),
 		errors.Is(err, themes.ErrNotFound),
-		errors.Is(err, storefront.ErrCatalogNotFound):
+		errors.Is(err, storefront.ErrCatalogNotFound),
+		errors.Is(err, shipping.ErrShipmentNotFound),
+		errors.Is(err, shipping.ErrOrderNotFound):
 		return CodeNotFound
 	case errors.Is(err, storefront.ErrStoreNotFound),
 		errors.Is(err, storefront.ErrDomainInactive),
@@ -144,7 +150,9 @@ func codeFor(err error) string {
 	case errors.Is(err, storefront.ErrInvalidQuery):
 		return CodeValidationError
 	case errors.Is(err, commerce.ErrInvalidInput),
-		errors.Is(err, themes.ErrInvalidInput):
+		errors.Is(err, themes.ErrInvalidInput),
+		errors.Is(err, shipping.ErrInvalidInput),
+		errors.Is(err, shipping.ErrInvalidStatus):
 		return CodeValidationError
 	case errors.Is(err, commerce.ErrUnauthorized):
 		return CodeUnauthorized
@@ -163,6 +171,8 @@ func codeFor(err error) string {
 		return CodeIdempotencyConflict
 	case errors.Is(err, commerce.ErrInvalidTransition):
 		return CodeInvalidOrderTransition
+	case errors.Is(err, shipping.ErrInvalidTransition):
+		return CodeInvalidShipmentTransition
 	case errors.Is(err, commerce.ErrPriceChanged):
 		return CodePriceChanged
 	case errors.Is(err, commerce.ErrListingUnavailable):

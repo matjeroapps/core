@@ -315,3 +315,56 @@ type ThemeConfigRequest struct {
 type ThemeUpgradeRequest struct {
 	Version string `json:"version"`
 }
+
+// --- Shipping ---
+
+type CreateShipmentRequest struct {
+	FulfillmentLocationID string                      `json:"fulfillment_location_id"`
+	TrackingNumber        string                      `json:"tracking_number,omitempty"`
+	ShippingCostMinor     int64                       `json:"shipping_cost_minor"`
+	CodAmountMinor        int64                       `json:"cod_amount_minor"`
+	Currency              string                      `json:"currency"`
+	Items                 []CreateShipmentItemRequest `json:"items"`
+}
+
+type CreateShipmentItemRequest struct {
+	OrderItemID string `json:"order_item_id"`
+	Quantity    int64  `json:"quantity"`
+}
+
+type UpdateShipmentStatusRequest struct {
+	Status         string `json:"status"`
+	TrackingNumber string `json:"tracking_number,omitempty"`
+	Notes          string `json:"notes,omitempty"`
+}
+
+type ShipmentItemResponse struct {
+	ID          string    `json:"id"`
+	ShipmentID  string    `json:"shipment_id"`
+	OrderItemID string    `json:"order_item_id"`
+	Quantity    int64     `json:"quantity"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type ShipmentEventResponse struct {
+	ID         string    `json:"id"`
+	ShipmentID string    `json:"shipment_id"`
+	Status     string    `json:"status"`
+	Notes      string    `json:"notes,omitempty"`
+	OccurredAt time.Time `json:"occurred_at"`
+}
+
+type ShipmentResponse struct {
+	ID                    string                  `json:"id"`
+	OrderID               string                  `json:"order_id"`
+	FulfillmentLocationID string                  `json:"fulfillment_location_id"`
+	Status                string                  `json:"status"`
+	TrackingNumber        string                  `json:"tracking_number,omitempty"`
+	ShippingCostMinor     int64                   `json:"shipping_cost_minor"`
+	CodAmountMinor        int64                   `json:"cod_amount_minor"`
+	Currency              string                  `json:"currency"`
+	Items                 []ShipmentItemResponse  `json:"items"`
+	Events                []ShipmentEventResponse `json:"events,omitempty"`
+	CreatedAt             time.Time               `json:"created_at"`
+	UpdatedAt             time.Time               `json:"updated_at"`
+}
