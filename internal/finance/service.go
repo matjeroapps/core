@@ -19,7 +19,10 @@ type Service interface {
 	GetAccount(ctx context.Context, id string) (*Account, error)
 	ListAccounts(ctx context.Context, page commerce.Page) ([]Account, error)
 	PostJournalEntry(ctx context.Context, params PostJournalEntryParams) (*JournalEntry, error)
+	PostJournalEntryTx(ctx context.Context, tx pgx.Tx, params PostJournalEntryParams) (*JournalEntry, error)
 	GetJournalEntry(ctx context.Context, id string) (*JournalEntry, error)
+	GetJournalEntryByReference(ctx context.Context, refType, refID string) (*JournalEntry, error)
+	GetJournalEntryByReferenceTx(ctx context.Context, tx pgx.Tx, refType, refID string) (*JournalEntry, error)
 }
 
 type OutboxStore interface {
@@ -96,6 +99,19 @@ func (s *service) ListAccounts(ctx context.Context, page commerce.Page) ([]Accou
 }
 
 func (s *service) PostJournalEntry(ctx context.Context, params PostJournalEntryParams) (*JournalEntry, error) {
+	var entry *JournalEntry
+	err := s.repo.WithTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var err error
+		entry, err = s.PostJournalEntryTx(ctx, tx, params)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return entry, nil
+}
+
+func (s *service) PostJournalEntryTx(ctx context.Context, tx pgx.Tx, params PostJournalEntryParams) (*JournalEntry, error) {
 	refType := strings.TrimSpace(params.ReferenceType)
 	refID := strings.TrimSpace(params.ReferenceID)
 	if refType == "" || refID == "" {
@@ -144,7 +160,7 @@ func (s *service) PostJournalEntry(ctx context.Context, params PostJournalEntryP
 	}
 
 	// Validate accounts exist, are active, and match currency
-	accountsMap, err := s.repo.GetAccountsByIDs(ctx, nil, accountIDs)
+	accountsMap, err := s.repo.GetAccountsByIDs(ctx, tx, accountIDs)
 	if err != nil {
 		return nil, fmt.Errorf("fetch accounts for validation: %w", err)
 	}
@@ -214,19 +230,11 @@ func (s *service) PostJournalEntry(ctx context.Context, params PostJournalEntryP
 		return nil, fmt.Errorf("create journal entry posted event: %w", err)
 	}
 
-	// Transactional persistence & outbox event enqueueing
-	err = s.repo.WithTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
-		if err := s.repo.PostJournalEntryTx(ctx, tx, entry); err != nil {
-			return err
-		}
-		if err := s.outbox.Enqueue(ctx, tx, event); err != nil {
-			return fmt.Errorf("enqueue journal entry posted event: %w", err)
-		}
-		return nil
-	})
-
-	if err != nil {
+	if err := s.repo.PostJournalEntryTx(ctx, tx, entry); err != nil {
 		return nil, err
+	}
+	if err := s.outbox.Enqueue(ctx, tx, event); err != nil {
+		return nil, fmt.Errorf("enqueue journal entry posted event: %w", err)
 	}
 
 	return &entry, nil
@@ -237,4 +245,22 @@ func (s *service) GetJournalEntry(ctx context.Context, id string) (*JournalEntry
 		return nil, ErrJournalEntryNotFound
 	}
 	return s.repo.GetJournalEntryByID(ctx, nil, id)
+}
+
+func (s *service) GetJournalEntryByReference(ctx context.Context, refType, refID string) (*JournalEntry, error) {
+	refType = strings.TrimSpace(refType)
+	refID = strings.TrimSpace(refID)
+	if refType == "" || refID == "" {
+		return nil, ErrInvalidReference
+	}
+	return s.repo.GetJournalEntryByReference(ctx, nil, refType, refID)
+}
+
+func (s *service) GetJournalEntryByReferenceTx(ctx context.Context, tx pgx.Tx, refType, refID string) (*JournalEntry, error) {
+	refType = strings.TrimSpace(refType)
+	refID = strings.TrimSpace(refID)
+	if refType == "" || refID == "" {
+		return nil, ErrInvalidReference
+	}
+	return s.repo.GetJournalEntryByReference(ctx, tx, refType, refID)
 }
