@@ -295,6 +295,8 @@ func ResolveRoutingKey(eventType string) (exchange string, routingKey string, er
 		return "payments.events", "payment.captured", nil
 	case "payments.payment.failed.v1":
 		return "payments.events", "payment.failed", nil
+	case "ledger.journal_entry.posted.v1":
+		return "ledger.events", "journal_entry.posted", nil
 	default:
 		return "", "", fmt.Errorf("unknown routing for event_type: %s", eventType)
 	}

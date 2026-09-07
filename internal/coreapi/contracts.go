@@ -433,3 +433,57 @@ type WebhookInboxResponse struct {
 	ReceivedAt        time.Time       `json:"received_at"`
 	ProcessedAt       *time.Time      `json:"processed_at,omitempty"`
 }
+
+// --- Ledger ---
+
+type CreateLedgerAccountRequest struct {
+	AccountCode string `json:"account_code"`
+	Name        string `json:"name"`
+	AccountType string `json:"account_type"`
+	Currency    string `json:"currency"`
+}
+
+type LedgerAccountResponse struct {
+	ID          string    `json:"id"`
+	AccountCode string    `json:"account_code"`
+	Name        string    `json:"name"`
+	AccountType string    `json:"account_type"`
+	Currency    string    `json:"currency"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type CreateJournalLineRequest struct {
+	AccountID         string `json:"account_id"`
+	DebitAmountMinor  int64  `json:"debit_amount_minor"`
+	CreditAmountMinor int64  `json:"credit_amount_minor"`
+}
+
+type PostJournalEntryRequest struct {
+	ReferenceType string                     `json:"reference_type"`
+	ReferenceID   string                     `json:"reference_id"`
+	Description   string                     `json:"description,omitempty"`
+	Currency      string                     `json:"currency"`
+	Lines         []CreateJournalLineRequest `json:"lines"`
+}
+
+type JournalLineResponse struct {
+	ID                string    `json:"id"`
+	JournalEntryID    string    `json:"journal_entry_id"`
+	AccountID         string    `json:"account_id"`
+	DebitAmountMinor  int64     `json:"debit_amount_minor"`
+	CreditAmountMinor int64     `json:"credit_amount_minor"`
+	CreatedAt         time.Time `json:"created_at"`
+}
+
+type JournalEntryResponse struct {
+	ID            string                `json:"id"`
+	ReferenceType string                `json:"reference_type"`
+	ReferenceID   string                `json:"reference_id"`
+	Description   string                `json:"description,omitempty"`
+	Currency      string                `json:"currency"`
+	PostedAt      time.Time             `json:"posted_at"`
+	CreatedAt     time.Time             `json:"created_at"`
+	Lines         []JournalLineResponse `json:"lines"`
+}
