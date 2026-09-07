@@ -496,3 +496,21 @@ type AccountBalanceResponse struct {
 	BalanceMinor     int64     `json:"balance_minor"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }
+
+type CalculateSettlementRequest struct {
+	AccountID string `json:"account_id,omitempty"`
+}
+
+type SettlementResponse struct {
+	ID                    string     `json:"id"`
+	SettlementPeriodID    string     `json:"settlement_period_id"`
+	AccountID             string     `json:"account_id"`
+	Currency              string     `json:"currency"`
+	GrossAmountMinor      int64      `json:"gross_amount_minor"`
+	AdjustmentAmountMinor int64      `json:"adjustment_amount_minor"`
+	NetAmountMinor        int64      `json:"net_amount_minor"`
+	Status                string     `json:"status"`
+	CreatedAt             time.Time  `json:"created_at"`
+	CalculatedAt          *time.Time `json:"calculated_at,omitempty"`
+	FinalizedAt           *time.Time `json:"finalized_at,omitempty"`
+}

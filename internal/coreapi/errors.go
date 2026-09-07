@@ -7,6 +7,7 @@ import (
 	"github.com/matjeroapps/core/internal/balance"
 	"github.com/matjeroapps/core/internal/finance"
 	"github.com/matjeroapps/core/internal/payments"
+	"github.com/matjeroapps/core/internal/settlement"
 	"github.com/matjeroapps/core/internal/shipping"
 	"github.com/matjeroapps/core/internal/suppliers"
 	"github.com/matjeroapps/core/modules/commerce"
@@ -151,6 +152,8 @@ func codeFor(err error) string {
 		errors.Is(err, balance.ErrAccountNotFound),
 		errors.Is(err, balance.ErrBalanceNotFound),
 		errors.Is(err, balance.ErrSettlementPeriodNotFound),
+		errors.Is(err, settlement.ErrSettlementNotFound),
+		errors.Is(err, settlement.ErrSettlementPeriodNotFound),
 		errors.Is(err, suppliers.ErrNotFound):
 		return CodeNotFound
 	case errors.Is(err, storefront.ErrStoreNotFound),
@@ -180,6 +183,8 @@ func codeFor(err error) string {
 		errors.Is(err, balance.ErrInvalidSettlementPeriodDates),
 		errors.Is(err, balance.ErrInvalidEventPayload),
 		errors.Is(err, balance.ErrNilEventPayload),
+		errors.Is(err, settlement.ErrInvalidAccountID),
+		errors.Is(err, settlement.ErrInvalidSettlementPeriodID),
 		errors.Is(err, suppliers.ErrInvalidInput):
 		return CodeValidationError
 	case errors.Is(err, commerce.ErrUnauthorized):
@@ -198,6 +203,10 @@ func codeFor(err error) string {
 		errors.Is(err, finance.ErrDuplicatePosting),
 		errors.Is(err, finance.ErrInactiveAccount),
 		errors.Is(err, balance.ErrSettlementPeriodAlreadyClosed),
+		errors.Is(err, settlement.ErrInvalidPeriodState),
+		errors.Is(err, settlement.ErrInvalidSettlementState),
+		errors.Is(err, settlement.ErrFinalizedSettlementImmutable),
+		errors.Is(err, settlement.ErrSettlementAlreadyFinalized),
 		errors.Is(err, suppliers.ErrAlreadyExists):
 		return CodeConflict
 	case errors.Is(err, commerce.ErrCheckoutExpired):

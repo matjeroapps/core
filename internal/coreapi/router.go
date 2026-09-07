@@ -21,6 +21,7 @@ import (
 	"github.com/matjeroapps/core/internal/finance"
 	"github.com/matjeroapps/core/internal/payments"
 	"github.com/matjeroapps/core/internal/serviceauth"
+	"github.com/matjeroapps/core/internal/settlement"
 	"github.com/matjeroapps/core/internal/shipping"
 	"github.com/matjeroapps/core/modules/commerce"
 	"github.com/matjeroapps/core/modules/markets"
@@ -95,20 +96,31 @@ type BalanceService interface {
 	ListAccountBalances(ctx context.Context, page commerce.Page) ([]balance.AccountBalance, error)
 }
 
+// SettlementService manages settlement calculation and snapshots.
+type SettlementService interface {
+	CalculatePeriodSettlements(ctx context.Context, params settlement.CalculateSettlementParams) ([]settlement.Settlement, error)
+	FinalizePeriodSettlements(ctx context.Context, params settlement.FinalizeSettlementParams) ([]settlement.Settlement, error)
+	GetSettlement(ctx context.Context, id string) (*settlement.Settlement, error)
+	GetSettlementByPeriodAndAccount(ctx context.Context, periodID, accountID string) (*settlement.Settlement, error)
+	ListAccountSettlements(ctx context.Context, accountID string, page commerce.Page) ([]settlement.Settlement, error)
+	ListPeriodSettlements(ctx context.Context, periodID string, page commerce.Page) ([]settlement.Settlement, error)
+}
+
 // Dependencies wires the internal API. Every field is a Core-owned capability;
 // no actor ever constructs these directly.
 type Dependencies struct {
-	Commerce  commerce.Service
-	Repo      commerce.Repository
-	Markets   MarketService
-	Catalog   CatalogReader
-	Stores    StoreLocator
-	Revisions RevisionReader
-	Themes    themes.Service
-	Shipping  ShippingService
-	Payments  PaymentService
-	Finance   FinanceService
-	Balance   BalanceService
+	Commerce   commerce.Service
+	Repo       commerce.Repository
+	Markets    MarketService
+	Catalog    CatalogReader
+	Stores     StoreLocator
+	Revisions  RevisionReader
+	Themes     themes.Service
+	Shipping   ShippingService
+	Payments   PaymentService
+	Finance    FinanceService
+	Balance    BalanceService
+	Settlement SettlementService
 }
 
 // NewRouter registers the internal API under /internal/v1.
@@ -319,6 +331,16 @@ func NewRouter(deps Dependencies) chi.Router {
 			r.Use(requireCallers(serviceauth.CallerSeller, serviceauth.CallerAdmin))
 			r.Get("/balances/accounts/{accountID}", server.handleGetAccountBalance)
 			r.Get("/balances/accounts", server.handleListAccountBalances)
+		})
+
+		// Settlement Calculation capabilities.
+		r.Group(func(r chi.Router) {
+			r.Use(requireCallers(serviceauth.CallerSeller, serviceauth.CallerAdmin))
+			r.Post("/settlements/periods/{id}/calculate", server.handleCalculateSettlement)
+			r.Post("/settlements/periods/{id}/finalize", server.handleFinalizeSettlement)
+			r.Get("/settlements/{id}", server.handleGetSettlement)
+			r.Get("/settlements/accounts/{accountID}", server.handleListAccountSettlements)
+			r.Get("/settlements/periods/{id}", server.handleListPeriodSettlements)
 		})
 	})
 
