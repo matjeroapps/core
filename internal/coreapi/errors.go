@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/matjeroapps/core/internal/shipping"
+	"github.com/matjeroapps/core/internal/suppliers"
 	"github.com/matjeroapps/core/modules/commerce"
 	"github.com/matjeroapps/core/modules/markets"
 	"github.com/matjeroapps/core/modules/storefront"
@@ -138,7 +139,8 @@ func codeFor(err error) string {
 		errors.Is(err, themes.ErrNotFound),
 		errors.Is(err, storefront.ErrCatalogNotFound),
 		errors.Is(err, shipping.ErrShipmentNotFound),
-		errors.Is(err, shipping.ErrOrderNotFound):
+		errors.Is(err, shipping.ErrOrderNotFound),
+		errors.Is(err, suppliers.ErrNotFound):
 		return CodeNotFound
 	case errors.Is(err, storefront.ErrStoreNotFound),
 		errors.Is(err, storefront.ErrDomainInactive),
@@ -152,10 +154,13 @@ func codeFor(err error) string {
 	case errors.Is(err, commerce.ErrInvalidInput),
 		errors.Is(err, themes.ErrInvalidInput),
 		errors.Is(err, shipping.ErrInvalidInput),
-		errors.Is(err, shipping.ErrInvalidStatus):
+		errors.Is(err, shipping.ErrInvalidStatus),
+		errors.Is(err, suppliers.ErrInvalidInput):
 		return CodeValidationError
 	case errors.Is(err, commerce.ErrUnauthorized):
 		return CodeUnauthorized
+	case errors.Is(err, suppliers.ErrForbidden):
+		return CodeForbidden
 	case errors.Is(err, commerce.ErrMarketMismatch):
 
 		return CodeMarketMismatch
@@ -163,7 +168,8 @@ func codeFor(err error) string {
 		return CodeInsufficientInventory
 	case errors.Is(err, commerce.ErrConflict),
 		errors.Is(err, themes.ErrConflict),
-		errors.Is(err, commerce.ErrCartExpired):
+		errors.Is(err, commerce.ErrCartExpired),
+		errors.Is(err, suppliers.ErrAlreadyExists):
 		return CodeConflict
 	case errors.Is(err, commerce.ErrCheckoutExpired):
 		return CodeCheckoutExpired

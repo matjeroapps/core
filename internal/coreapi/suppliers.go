@@ -370,51 +370,6 @@ func (s *server) authorizeSupplierSubject(w http.ResponseWriter, r *http.Request
 	return subject, supplierID, true
 }
 
-func (s *server) handleGetSupplierRetailCapability(w http.ResponseWriter, r *http.Request) {
-	subject, supplierID, ok := s.authorizeSupplierSubject(w, r)
-	if !ok {
-		return
-	}
-	seller, err := s.deps.Commerce.RequireSupplierRetailAccess(r.Context(), subject, supplierID)
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
-	affiliation, err := s.deps.Repo.GetSupplierSellerAffiliationBySupplierID(r.Context(), supplierID)
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
-	httpx.WriteJSON(w, http.StatusOK, SupplierRetailCapabilityResponse{
-		Affiliation: affiliation,
-		Seller:      seller,
-	})
-}
-
-func (s *server) handleCreateSupplierRetailCapability(w http.ResponseWriter, r *http.Request) {
-	subject, supplierID, ok := s.authorizeSupplierSubject(w, r)
-	if !ok {
-		return
-	}
-	var body SupplierRetailCapabilityRequest
-	if !decodeJSON(w, r, &body) {
-		return
-	}
-	seller, affiliation, err := s.deps.Commerce.CreateSupplierRetailCapabilityForSubject(r.Context(), subject, supplierID, commerce.RetailCapabilityDraft{
-		Code:     body.Code,
-		Name:     body.Name,
-		Settings: body.Settings,
-	})
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
-	httpx.WriteJSON(w, http.StatusCreated, SupplierRetailCapabilityResponse{
-		Affiliation: affiliation,
-		Seller:      seller,
-	})
-}
-
 func (s *server) handleListSupplierStores(w http.ResponseWriter, r *http.Request) {
 	subject, supplierID, ok := s.authorizeSupplierSubject(w, r)
 	if !ok {
