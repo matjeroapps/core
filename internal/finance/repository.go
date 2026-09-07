@@ -247,6 +247,39 @@ func (r Repository) GetJournalEntryByID(ctx context.Context, exec DBExecutor, id
 	return &entry, nil
 }
 
+func (r Repository) GetJournalEntryByReference(ctx context.Context, exec DBExecutor, refType, refID string) (*JournalEntry, error) {
+	db := r.getExec(exec)
+	var entry JournalEntry
+
+	err := db.QueryRow(ctx, `
+		SELECT id, reference_type, reference_id, description, currency, posted_at, created_at
+		FROM journal_entries
+		WHERE reference_type = $1 AND reference_id = $2
+	`, refType, refID).Scan(
+		&entry.ID,
+		&entry.ReferenceType,
+		&entry.ReferenceID,
+		&entry.Description,
+		&entry.Currency,
+		&entry.PostedAt,
+		&entry.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrJournalEntryNotFound
+		}
+		return nil, fmt.Errorf("get journal entry by reference: %w", err)
+	}
+
+	lines, err := r.ListJournalLinesByEntryID(ctx, db, entry.ID)
+	if err != nil {
+		return nil, err
+	}
+	entry.Lines = lines
+
+	return &entry, nil
+}
+
 func (r Repository) ListJournalLinesByEntryID(ctx context.Context, exec DBExecutor, entryID string) ([]JournalLine, error) {
 	db := r.getExec(exec)
 
