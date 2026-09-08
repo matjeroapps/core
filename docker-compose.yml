@@ -52,7 +52,7 @@ services:
       ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME: commerce
       ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: commerce
       ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE: disable
-      ZITADEL_EXTERNALDOMAIN: localhost
+      ZITADEL_EXTERNAL_DOMAIN: localhost
       ZITADEL_EXTERNALSECURE: false
     depends_on:
       postgres:
