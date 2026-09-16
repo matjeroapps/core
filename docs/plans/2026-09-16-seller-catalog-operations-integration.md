@@ -358,35 +358,37 @@ Seller-owned product lifecycle:
 ```mermaid
 stateDiagram-v2
     [*] --> DRAFT
-    DRAFT --> ACTIVE: first valid listing publish
-    ACTIVE --> ARCHIVED: archive after all listings are archived
+    DRAFT --> ACTIVE: explicit product activation
+    ACTIVE --> ARCHIVED: archive product (all listings UNPUBLISHED/ARCHIVED & reference checks pass)
 ```
 
 - `DRAFT`: seller-owned product facts may be edited; no listing for it is publicly visible.
-- `ACTIVE`: product facts are eligible to support published listings. This is not itself storefront publication.
+- `ACTIVE`: product facts are activated and eligible to support listings. Product lifecycle is exactly `DRAFT -> ACTIVE -> ARCHIVED`, independent of Listing publication.
 - `ARCHIVED`: terminal for seller operations; no new variants, SKUs, listings, or media references may be added.
 - Supplier-backed products follow the existing supplier-controlled `active`/`inactive` product and supplier-product eligibility; a seller cannot transition or archive them.
-- There is no ordinary hard-delete product endpoint. A seller-owned product may be archived only when none of its listings is `PUBLISHED` or `UNPUBLISHED` and no order, cart, inventory, media-reference, or other protected reference makes deletion unsafe. Historical and referenced products remain retained. Physical cleanup, if ever required, is a separate retention project.
+- Product archive behavior: Core rejects Product archival while any Store Listing associated with that product is `PUBLISHED`. Core does not silently mutate listings. Each listing must first be independently transitioned to `UNPUBLISHED` (via listing unpublish operation) and then `ARCHIVED` (via listing archive operation) through authorized operations. Once all listings for the product across stores are in `UNPUBLISHED` or `ARCHIVED` states and protected-reference rules (e.g., orders, carts, inventory snapshots, media references) pass, the Product may transition to `ARCHIVED`.
+- Retain archived Product and Listings in the database for historical context and audit; ordinary hard-deletion is never performed. Physical cleanup, if ever required, is a separate retention project.
 
 Listing lifecycle:
 
 ```mermaid
 stateDiagram-v2
     [*] --> DRAFT
-    DRAFT --> PUBLISHED: publish when ready
+    DRAFT --> PUBLISHED: publish when readiness rules pass
+    PUBLISHED --> DRAFT: revert to draft
     PUBLISHED --> UNPUBLISHED: unpublish
-    UNPUBLISHED --> PUBLISHED: republish when ready
+    UNPUBLISHED --> PUBLISHED: republish when readiness rules pass
     DRAFT --> ARCHIVED: abandon draft
     UNPUBLISHED --> ARCHIVED: retire listing
 ```
 
 - `DRAFT`: authorable, never returned by the public storefront.
-- `PUBLISHED`: publicly eligible only while store, product, source, price, media, inventory, and presentation checks continue to pass.
+- `PUBLISHED`: publicly eligible only while store, product, source, price, media, inventory, and presentation readiness checks continue to pass.
 - `UNPUBLISHED`: intentionally hidden but retains merchandising state and may be republished after readiness revalidation.
 - `ARCHIVED`: terminal and hidden; retained for references/audit. It cannot publish again.
-- `PUBLISHED -> ARCHIVED` is deliberately invalid; unpublish first so revision invalidation and intent are explicit.
+- Transition rule: Listing lifecycle is exactly `DRAFT <-> PUBLISHED <-> UNPUBLISHED -> ARCHIVED` with readiness rules. Direct transition `PUBLISHED -> ARCHIVED` is invalid; each listing must first be independently transitioned to `UNPUBLISHED` (or reverted to `DRAFT`) and then `ARCHIVED`.
 
-Persisted/wire values are lowercase. Existing seller-owned `products.status='inactive'` rows map to product `draft`; active seller products remain `active`; `archived` is new. Supplier-owned product eligibility retains its supplier-controlled `active`/`inactive` values and is not rewritten into a seller authoring state. Existing `active`/`inactive` listing rows require a migration mapping with preflight counts: `active -> published`, authoring-time `inactive -> draft`, and previously live `inactive -> unpublished` only where the migration can prove prior publication. Ambiguous rows must be reported and resolved before the constraint is installed; the migration must not guess.
+Persisted/wire values are lowercase. Existing seller-owned `products.status='inactive'` rows map to product `draft`; active seller products remain `active`; `archived` is new. Product activation (`draft -> active`) is explicit and independent of listing publication. Supplier-owned product eligibility retains its supplier-controlled `active`/`inactive` values and is not rewritten into a seller authoring state. Existing `active`/`inactive` listing rows require a migration mapping with preflight counts: `active -> published`, authoring-time `inactive -> draft`, and previously live `inactive -> unpublished` only where the migration can prove prior publication. Ambiguous rows must be reported and resolved before the constraint is installed; the migration must not guess.
 
 ## 8. Immutable Media Library and MinIO Flow
 
@@ -467,10 +469,13 @@ Expired or failed upload intents and their orphan objects are cleaned by the sam
 2. The seller edits translations/categories and creates variants and SKUs.
 3. The seller uploads or reuses store media and attaches references.
 4. The seller creates a store fulfillment location if needed and creates/adjusts inventory snapshots for active SKUs.
-5. The seller sets the listing price and presentation.
-6. `GET /stores/{storeID}/listings/{listingID}/readiness` returns structured blocking codes plus display-safe messages.
-7. `POST /stores/{storeID}/listings/{listingID}/publish` repeats authoritative readiness checks inside a locking transaction, transitions the product from `DRAFT` to `ACTIVE` when necessary, transitions only this listing to `PUBLISHED`, and bumps the storefront revision.
-8. Unpublish transitions only this listing to `UNPUBLISHED` and bumps the revision without deleting authoring state or deactivating the shared product.
+5. Product status transition (`DRAFT -> ACTIVE`) is explicit and independent of listing publication.
+6. The seller sets the listing price and presentation.
+7. `GET /stores/{storeID}/listings/{listingID}/readiness` returns structured blocking codes plus display-safe messages.
+8. `POST /stores/{storeID}/listings/{listingID}/publish` repeats authoritative readiness checks inside a locking transaction, transitions only this listing from `DRAFT` or `UNPUBLISHED` to `PUBLISHED`, and bumps the storefront revision.
+9. Unpublish (`POST /stores/{storeID}/listings/{listingID}/unpublish`) transitions only this listing from `PUBLISHED` to `UNPUBLISHED` and bumps the revision without deleting authoring state or deactivating the shared product.
+10. Listing archival (`POST /stores/{storeID}/listings/{listingID}/archive`) transitions a listing from `UNPUBLISHED` or `DRAFT` to `ARCHIVED`. Listing archival is rejected if the listing is currently `PUBLISHED` (must unpublish first).
+11. Product archival (`POST /stores/{storeID}/products/{productID}/archive`) transitions a product from `ACTIVE` to `ARCHIVED`. Core rejects product archival while any Store Listing for that product is `PUBLISHED`. Core never silently mutates listings. Each listing must first be independently transitioned to `UNPUBLISHED` and then `ARCHIVED` through authorized operations. Once all listings for the product are in `UNPUBLISHED` or `ARCHIVED` states and protected-reference rules pass, the product may transition to `ARCHIVED`. Archived Product and Listings are retained for history and never hard-deleted.
 
 Variants and SKUs remain product resources but are reachable only beneath the store and product that authorize them. IDs from another product or store return `404`.
 
@@ -539,7 +544,8 @@ All routes below are target contracts. Routes already present keep compatible re
 | `POST /internal/v1/stores/{storeID}/status` | seller store status transition through policy | owner |
 | `GET /internal/v1/stores/{storeID}/products` | list store catalog across both sources | owner, manager, staff |
 | `POST /internal/v1/stores/{storeID}/products` | create seller-owned draft product/listing | owner, manager |
-| `POST /internal/v1/stores/{storeID}/products/{productID}/archive` | safely archive eligible seller-owned product | owner, manager |
+| `POST /internal/v1/stores/{storeID}/products/{productID}/status` | explicit product status transition (`draft -> active`) independent of listing publication | owner, manager |
+| `POST /internal/v1/stores/{storeID}/products/{productID}/archive` | archive seller-owned product (rejected while any listing is `PUBLISHED` or protected references remain) | owner, manager |
 | existing nested variant/SKU routes | author seller-owned variants/SKUs | owner, manager |
 | `GET /internal/v1/stores/{storeID}/supplier-offers` | browse eligible supplier offers | owner, manager, staff |
 | `POST /internal/v1/stores/{storeID}/supplier-offers/{offerID}/imports` | idempotently create supplier-backed draft listing | owner, manager |
@@ -550,7 +556,7 @@ All routes below are target contracts. Routes already present keep compatible re
 | `GET /internal/v1/stores/{storeID}/listings/{listingID}/readiness` | structured readiness | owner, manager, staff |
 | `POST /internal/v1/stores/{storeID}/listings/{listingID}/publish` | atomic source-aware publish | owner, manager |
 | `POST /internal/v1/stores/{storeID}/listings/{listingID}/unpublish` | atomic unpublish | owner, manager |
-| `POST /internal/v1/stores/{storeID}/listings/{listingID}/archive` | archive draft/unpublished listing | owner, manager |
+| `POST /internal/v1/stores/{storeID}/listings/{listingID}/archive` | archive draft/unpublished listing (rejected if listing is `PUBLISHED`) | owner, manager |
 | `GET /internal/v1/stores/{storeID}/media` | list ready store assets | owner, manager, staff |
 | `POST /internal/v1/stores/{storeID}/media/uploads` | dedup lookup or presign | owner, manager |
 | `POST /internal/v1/stores/{storeID}/media/uploads/{intentID}/complete` | verify object and create/reuse asset | owner, manager |
@@ -661,7 +667,7 @@ Extend the closed Core-to-Seller error vocabulary and map it consistently:
 | `media_in_use` | 409 | permanent deletion requested while references exist |
 | `publish_not_ready` | 422 | listing readiness failed; response includes structured reasons |
 | `offer_unavailable` | 409 | supplier offer cannot be imported or published |
-| `resource_in_use` | 409 | archive/delete-style request is unsafe because protected references remain |
+| `resource_in_use` | 409 | archive/delete-style request is unsafe because protected references remain or Product archival is attempted while a Store Listing is still PUBLISHED |
 | `service_unavailable` | 503 | Core or object storage is unavailable |
 
 Unexpected Core errors and MinIO details collapse to safe public messages. Logs may include correlation IDs and internal causes, but never service tokens, upload tokens, signed URLs, or object credentials.
@@ -750,11 +756,11 @@ flowchart LR
 
 ### Phase B — Unified catalog, source graphs, and lifecycles
 
-1. Add explicit product and listing status constraints/migration preflight.
+1. Add explicit product (`DRAFT -> ACTIVE -> ARCHIVED`, independent of listing publication) and listing (`DRAFT <-> PUBLISHED <-> UNPUBLISHED -> ARCHIVED` with readiness rules) status constraints/migration preflight.
 2. Add one store catalog projection with `seller_owned` and `supplier_backed` source discriminators.
 3. Preserve reference semantics for supplier facts and seller ownership of listing merchandising.
 4. Add idempotent supplier-offer import and unified listing readiness/publish/unpublish/archive services.
-5. Add safe product archival and prohibit ordinary hard deletion.
+5. Add safe product archival rules: reject product archival while any store listing is `PUBLISHED`; do not silently mutate listings; require each listing to be independently transitioned to `UNPUBLISHED` and then `ARCHIVED`; transition product to `ARCHIVED` once all listings are `UNPUBLISHED` or `ARCHIVED` and protected-reference rules pass; retain archived Product/Listings for history and prohibit ordinary hard deletion.
 6. Add inventory-adjustment fingerprint/idempotency metadata to the existing movement transaction without changing inventory scope.
 7. Add source, lifecycle, retry, and inventory-ownership tests.
 
@@ -833,7 +839,8 @@ Repeat the resource tests with a seller B member in the opposite direction. Also
 - Store `DRAFT`/`ACTIVE`/`INACTIVE` transition table, role authorization, same-state replay, policy default, configured higher limit, invalid config, deactivate/reactivate, and concurrent activation.
 - Proof that any number of draft/inactive stores is allowed and only active stores consume `DefaultMaxActiveStores`.
 - Owner/manager/staff matrix plus inactive membership and cross-seller safe-not-found cases.
-- Separate product `DRAFT`/`ACTIVE`/`ARCHIVED` and listing `DRAFT`/`PUBLISHED`/`UNPUBLISHED`/`ARCHIVED` transitions, including unsafe archive/delete rejection.
+- Separate product lifecycle (`DRAFT -> ACTIVE -> ARCHIVED`, independent of listing publication) and listing lifecycle (`DRAFT <-> PUBLISHED <-> UNPUBLISHED -> ARCHIVED` with readiness rules) transitions.
+- Product archival behavior tests: rejection while any listing is `PUBLISHED`, proof that listings are not silently mutated, requirement that listings be independently transitioned (`PUBLISHED -> UNPUBLISHED -> ARCHIVED`), transition of Product to `ARCHIVED` once all listings are `UNPUBLISHED` or `ARCHIVED` and protected references pass, and retention of archived Product/Listings without hard-deletion.
 - Unified same-store catalog projection contains both source graphs without granting supplier-fact mutation.
 - Per-store checksum dedup, cross-store non-dedup, duplicate completion, expired token, bad token, size/MIME/checksum mismatch, and upload race.
 - Configured upload maximum is enforced consistently by presign and completion.
@@ -896,7 +903,12 @@ Run the existing Core Go tests, Seller Go tests, frontend unit/type checks, Open
 - [ ] One store catalog returns both `seller_owned` and `supplier_backed` rows through a unified contract without merging their ownership graphs.
 - [ ] Seller-owned and supplier-backed source graphs are separately enforced; supplier facts are read-only and the seller remains owner/merchant of retail listing price, presentation, lifecycle, and customer-facing sale.
 - [ ] Supplier import references current supplier product/offer facts, persists seller listing facts, and relies on existing checkout/order snapshots for immutable historical order facts; it does not silently copy a supplier product.
-- [ ] Product lifecycle is separate from listing lifecycle; listings support `DRAFT`, `PUBLISHED`, `UNPUBLISHED`, and `ARCHIVED`, and unsafe product hard deletion is unavailable.
+- [ ] Product lifecycle is exactly `DRAFT -> ACTIVE -> ARCHIVED`, independent of Listing publication.
+- [ ] Listing lifecycle is exactly `DRAFT <-> PUBLISHED <-> UNPUBLISHED -> ARCHIVED` with readiness rules (`PUBLISHED -> ARCHIVED` is invalid; listing must be unpublished first).
+- [ ] Product archival is explicitly rejected while any Store Listing for that product is `PUBLISHED`; Core never silently mutates listings.
+- [ ] Each listing must first be independently transitioned to `UNPUBLISHED` and then `ARCHIVED` through authorized listing operations.
+- [ ] Once all listings for the product across stores are `UNPUBLISHED` or `ARCHIVED` and protected-reference rules pass, Product may transition to `ARCHIVED`.
+- [ ] Archived Product and Listings are retained in the database for history and audit context, and ordinary hard-deletion is never performed.
 - [ ] A seller-owned product can complete translations, variants, SKUs, media, price, inventory, presentation, readiness, publish, storefront visibility, and unpublish.
 - [ ] An eligible supplier offer can be imported idempotently, merchandised per store, published, and made unavailable safely when its source becomes ineligible.
 - [ ] Media bytes are represented by immutable Core-owned store assets with verified SHA-256, per-store deduplication, and reusable product references.
