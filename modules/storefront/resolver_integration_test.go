@@ -66,8 +66,12 @@ func TestStoreResolverIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create store A: %v", err)
 	}
+	sellerB, err := repo.CreateSeller(ctx, "seller-b-"+suffix, "Seller B", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateSeller B: %v", err)
+	}
 	// Store B: active store + active primary platform domain (different tenant).
-	storeB, _, err := repo.CreateStoreWithDomain(ctx, seller.ID, "EG", "b-"+suffix, "Store B", "active", nil, "store-b.matjero.com", "platform", "active", true, timePtr(time.Now()), nil)
+	storeB, _, err := repo.CreateStoreWithDomain(ctx, sellerB.ID, "EG", "b-"+suffix, "Store B", "active", nil, "store-b.matjero.com", "platform", "active", true, timePtr(time.Now()), nil)
 	if err != nil {
 		t.Fatalf("create store B: %v", err)
 	}

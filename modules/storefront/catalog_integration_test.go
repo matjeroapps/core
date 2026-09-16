@@ -178,7 +178,7 @@ func setupCatalogTest(t *testing.T) catalogEnv {
 	// Cross-market product: a store in EG must never see an SA-market listing.
 	// The seller_listings composite FK requires an SA store, so the listing is
 	// created on a dedicated SA store owned by seller A.
-	storeASA, _, err := repo.CreateStoreWithDomain(ctx, seller.ID, "SA", "store-a-sa", "Store A SA", "active", nil, "store-a-sa.matjero.test", "platform", "active", true, nil, nil)
+	storeASA, _, err := repo.CreateStoreWithDomain(ctx, seller.ID, "SA", "store-a-sa", "Store A SA", "active", nil, "store-a-sa.matjero.test", "platform", "active", true, nil, nil, 2)
 	if err != nil {
 		t.Fatalf("create SA store: %v", err)
 	}

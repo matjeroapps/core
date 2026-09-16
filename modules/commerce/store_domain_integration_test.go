@@ -143,13 +143,17 @@ func TestStoreDomainIntegrity(t *testing.T) {
 
 	t.Run("atomic store+domain creation rolls back on conflict", func(t *testing.T) {
 		now := time.Now()
-		storeA, _, err := repo.CreateStoreWithDomain(ctx, seller.ID, "EG", "a-"+suffix, "Store A", "active", nil, "a-"+suffix+".matjero.com", "platform", "active", true, &now, nil)
+		seller2, err := repo.CreateSeller(ctx, "seller2-"+suffix, "Seller 2", "active", nil)
+		if err != nil {
+			t.Fatalf("CreateSeller 2: %v", err)
+		}
+		storeA, _, err := repo.CreateStoreWithDomain(ctx, seller2.ID, "EG", "a-"+suffix, "Store A", "active", nil, "a-"+suffix+".matjero.com", "platform", "active", true, &now, nil)
 		if err != nil {
 			t.Fatalf("seed store A: %v", err)
 		}
 
 		before := countStores(t, db)
-		_, _, err = repo.CreateStoreWithDomain(ctx, seller.ID, "EG", "b-"+suffix, "Store B", "active", nil, "a-"+suffix+".matjero.com", "platform", "active", true, &now, nil)
+		_, _, err = repo.CreateStoreWithDomain(ctx, seller2.ID, "EG", "b-"+suffix, "Store B", "active", nil, "a-"+suffix+".matjero.com", "platform", "active", true, &now, nil)
 		if !errors.Is(err, ErrConflict) {
 			t.Fatalf("expected ErrConflict, got %v", err)
 		}
