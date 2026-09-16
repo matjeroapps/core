@@ -10,7 +10,7 @@
     }
   },
   "info": {
-    "description": "Internal service-to-service API exposing Core-owned business capabilities.\n\nThis API is NOT public. It is intended for a private service network with TLS\noutside trusted local development. It is never exposed through the public\nstorefront domain and has no browser CORS.\n\nEvery request must present a per-caller service credential:\n\n  Authorization: Bearer \u003cservice-token\u003e\n  X-Matjero-Service: seller|admin|supplier\n\nThe token is bound to the caller named in X-Matjero-Service; a valid token\npresented under a different caller name is rejected.\n\nActor APIs forward a minimal verified actor context:\n\n  X-Matjero-Subject: \u003cauthenticated end-user subject\u003e\n  X-Matjero-Storefront-Host: \u003ctrusted normalized storefront host\u003e\n  X-Matjero-Storefront-Preview: \u003csigned theme preview token, storefront bootstrap only\u003e\n\nCore resolves business identity from the subject itself and never trusts a\ncaller-supplied seller, supplier or store identifier as an authorization\ndecision. Actors must strip any client-supplied copy of these headers before\nsetting trusted values.\n\nSuccessful public storefront reads carry the authoritative cache generation of\nthe resolved store:\n\n  X-Matjero-Storefront-Revision: \u003copaque generation\u003e\n\nThe generation is read before the payload, so it is a lower bound on the\npayload's freshness. A caching actor stores each response under the generation\nreturned with it, never under one it probed earlier, and treats the value as\nopaque.\n\nA valid X-Matjero-Storefront-Preview header on GET /internal/v1/storefront/store\nreturns the exact draft theme for the host-resolved store, active installation\nand current draft revision named by the token. Preview bootstrap responses are\nprivate, no-store responses and do not carry X-Matjero-Storefront-Revision.\n\nErrors use a closed vocabulary (not_found, invalid_argument, validation_error,\nunauthorized, forbidden, conflict, market_mismatch, insufficient_inventory,\nschema_mismatch, unsafe_content, preview_unavailable, storefront_unavailable,\nunavailable, internal_error). Error responses never carry SQL text, stack\ntraces, internal table names or secret values.",
+    "description": "Internal service-to-service API exposing Core-owned business capabilities.\n\nThis API is NOT public. It is intended for a private service network with TLS\noutside trusted local development. It is never exposed through the public\nstorefront domain and has no browser CORS.\n\nEvery request must present a per-caller service credential:\n\n  Authorization: Bearer \u003cservice-token\u003e\n  X-Matjero-Service: seller|admin|supplier\n\nThe token is bound to the caller named in X-Matjero-Service; a valid token\npresented under a different caller name is rejected.\n\nActor APIs forward a minimal verified actor context:\n\n  X-Matjero-Subject: \u003cauthenticated end-user subject\u003e\n  X-Matjero-Storefront-Host: \u003ctrusted normalized storefront host\u003e\n  X-Matjero-Storefront-Preview: \u003csigned theme preview token, storefront bootstrap only\u003e\n\nCore resolves business identity from the subject itself and never trusts a\ncaller-supplied seller, supplier or store identifier as an authorization\ndecision. Actors must strip any client-supplied copy of these headers before\nsetting trusted values.\n\nSuccessful public storefront reads carry the authoritative cache generation of\nthe resolved store:\n\n  X-Matjero-Storefront-Revision: \u003copaque generation\u003e\n\nThe generation is read before the payload, so it is a lower bound on the\npayload's freshness. A caching actor stores each response under the generation\nreturned with it, never under one it probed earlier, and treats the value as\nopaque.\n\nA valid X-Matjero-Storefront-Preview header on GET /internal/v1/storefront/store\nreturns the exact draft theme for the host-resolved store, active installation\nand current draft revision named by the token. Preview bootstrap responses are\nprivate, no-store responses and do not carry X-Matjero-Storefront-Revision.\n\nErrors use a closed vocabulary (not_found, invalid_argument, validation_error,\nunauthorized, forbidden, conflict, market_mismatch, insufficient_inventory,\nschema_mismatch, unsafe_content, preview_unavailable, storefront_unavailable,\nunavailable, store_entitlement_exceeded, internal_error). Error responses never carry SQL text, stack\ntraces, internal table names or secret values.",
     "title": "Matjero Core Internal API",
     "version": "1.0.0"
   },
@@ -8631,6 +8631,14 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "active_store_count": {
+                      "format": "int32",
+                      "type": "integer"
+                    },
+                    "active_store_limit": {
+                      "format": "int32",
+                      "type": "integer"
+                    },
                     "items": {
                       "items": {
                         "properties": {
@@ -8677,6 +8685,8 @@
                     }
                   },
                   "required": [
+                    "active_store_count",
+                    "active_store_limit",
                     "items"
                   ],
                   "type": "object"

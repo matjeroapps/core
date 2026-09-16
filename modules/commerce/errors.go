@@ -16,5 +16,7 @@ var (
 	ErrPriceChanged          = errors.New("price changed")
 	ErrListingUnavailable    = errors.New("listing unavailable")
 	ErrUnauthorized          = errors.New("unauthorized")
+	ErrForbidden             = errors.New("forbidden")
+	ErrStoreEntitlementExceeded = errors.New("active-store entitlement limit exceeded")
 	ErrInternalError         = errors.New("internal error")
 )

@@ -23,7 +23,7 @@ func (s Service) CreateSellerProductForSubject(ctx context.Context, subject, sto
 	if err != nil {
 		return SellerProductDetail{}, err
 	}
-	seller, err := s.RequireSellerAccess(ctx, subject, store.SellerID)
+	seller, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID)
 	if err != nil {
 		return SellerProductDetail{}, err
 	}
@@ -329,7 +329,7 @@ func (s Service) UpdateSellerProductForSubject(ctx context.Context, subject, sto
 	if err != nil {
 		return SellerProductDetail{}, err
 	}
-	seller, err := s.RequireSellerAccess(ctx, subject, store.SellerID)
+	seller, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID)
 	if err != nil {
 		return SellerProductDetail{}, err
 	}
@@ -368,7 +368,7 @@ func (s Service) CreateVariantForSubject(ctx context.Context, subject, storeID, 
 	if err != nil {
 		return Variant{}, err
 	}
-	seller, err := s.RequireSellerAccess(ctx, subject, store.SellerID)
+	seller, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID)
 	if err != nil {
 		return Variant{}, err
 	}
@@ -384,7 +384,7 @@ func (s Service) UpdateVariantForSubject(ctx context.Context, subject, storeID, 
 	if err != nil {
 		return Variant{}, err
 	}
-	seller, err := s.RequireSellerAccess(ctx, subject, store.SellerID)
+	seller, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID)
 	if err != nil {
 		return Variant{}, err
 	}
@@ -404,7 +404,7 @@ func (s Service) CreateSKUForSubject(ctx context.Context, subject, storeID, prod
 	if err != nil {
 		return SKU{}, err
 	}
-	seller, err := s.RequireSellerAccess(ctx, subject, store.SellerID)
+	seller, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID)
 	if err != nil {
 		return SKU{}, err
 	}
@@ -427,7 +427,7 @@ func (s Service) UpdateSKUForSubject(ctx context.Context, subject, storeID, prod
 	if err != nil {
 		return SKU{}, err
 	}
-	seller, err := s.RequireSellerAccess(ctx, subject, store.SellerID)
+	seller, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID)
 	if err != nil {
 		return SKU{}, err
 	}
@@ -451,7 +451,7 @@ func (s Service) GenerateMediaUploadPresignedURLForSubject(ctx context.Context, 
 	if err != nil {
 		return MediaUploadResponse{}, err
 	}
-	seller, err := s.RequireSellerAccess(ctx, subject, store.SellerID)
+	seller, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID)
 	if err != nil {
 		return MediaUploadResponse{}, err
 	}
@@ -525,7 +525,7 @@ func (s Service) CompleteMediaUploadForSubject(ctx context.Context, subject, sto
 	if err != nil {
 		return MediaMetadata{}, err
 	}
-	seller, err := s.RequireSellerAccess(ctx, subject, store.SellerID)
+	seller, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID)
 	if err != nil {
 		return MediaMetadata{}, err
 	}
@@ -624,7 +624,7 @@ func (s Service) UpdateMediaMetadataForSubject(ctx context.Context, subject, sto
 	if err != nil {
 		return MediaMetadata{}, err
 	}
-	seller, err := s.RequireSellerAccess(ctx, subject, store.SellerID)
+	seller, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID)
 	if err != nil {
 		return MediaMetadata{}, err
 	}
@@ -648,7 +648,7 @@ func (s Service) DeleteMediaMetadataForSubject(ctx context.Context, subject, sto
 	if err != nil {
 		return err
 	}
-	seller, err := s.RequireSellerAccess(ctx, subject, store.SellerID)
+	seller, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID)
 	if err != nil {
 		return err
 	}
@@ -707,7 +707,7 @@ func (s Service) UpdateListingPresentationForSubject(ctx context.Context, subjec
 	if err != nil {
 		return SellerListingPresentation{}, err
 	}
-	if _, err := s.RequireSellerAccess(ctx, subject, store.SellerID); err != nil {
+	if _, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID); err != nil {
 		return SellerListingPresentation{}, err
 	}
 	listing, err := s.repo.GetSellerListingByID(ctx, listingID)
@@ -882,7 +882,7 @@ func (s Service) PublishSellerProductForSubject(ctx context.Context, subject, st
 	if err != nil {
 		return err
 	}
-	seller, err := s.RequireSellerAccess(ctx, subject, store.SellerID)
+	seller, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID)
 	if err != nil {
 		return err
 	}
@@ -913,7 +913,7 @@ func (s Service) UnpublishSellerProductForSubject(ctx context.Context, subject, 
 	if err != nil {
 		return err
 	}
-	seller, err := s.RequireSellerAccess(ctx, subject, store.SellerID)
+	seller, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID)
 	if err != nil {
 		return err
 	}

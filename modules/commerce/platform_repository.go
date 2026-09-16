@@ -823,8 +823,71 @@ func (r Repository) UpdateSellerProfile(ctx context.Context, sellerID, name, sta
 	})
 }
 
-func (r Repository) UpdateStoreStatus(ctx context.Context, storeID, status string) error {
-	return r.updateStorefrontStatus(ctx, "stores", revisionStoreItself, storeID, status)
+func (r Repository) UpdateStoreStatus(ctx context.Context, storeID, targetStatus string, maxActiveStores ...int) error {
+	if storeID == "" || targetStatus == "" {
+		return ErrInvalidInput
+	}
+	targetStatus = strings.ToLower(strings.TrimSpace(targetStatus))
+	if targetStatus != "draft" && targetStatus != "active" && targetStatus != "inactive" {
+		return fmt.Errorf("%w: invalid store status %q", ErrInvalidInput, targetStatus)
+	}
+
+	maxActive := 1
+	if len(maxActiveStores) > 0 && maxActiveStores[0] > 0 {
+		maxActive = maxActiveStores[0]
+	}
+
+	return r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var currentStatus, sellerID string
+		if err := tx.QueryRow(ctx, `
+			SELECT status, seller_id
+			FROM stores
+			WHERE id = $1
+			FOR UPDATE
+		`, storeID).Scan(&currentStatus, &sellerID); err != nil {
+			return translatePGError(err, "get store for status update")
+		}
+
+		if currentStatus == targetStatus {
+			return nil
+		}
+
+		if targetStatus == "draft" {
+			return fmt.Errorf("%w: store status cannot transition back to draft from %s", ErrInvalidTransition, currentStatus)
+		}
+
+		if targetStatus == "active" {
+			var sellerDummy string
+			if err := tx.QueryRow(ctx, `SELECT id FROM sellers WHERE id = $1 FOR UPDATE`, sellerID).Scan(&sellerDummy); err != nil {
+				return translatePGError(err, "lock seller for store activation")
+			}
+
+			var activeCount int
+			if err := tx.QueryRow(ctx, `
+				SELECT COUNT(*)
+				FROM stores
+				WHERE seller_id = $1
+				  AND status = 'active'
+				  AND id != $2
+			`, sellerID, storeID).Scan(&activeCount); err != nil {
+				return translatePGError(err, "count active stores")
+			}
+
+			if activeCount >= maxActive {
+				return ErrStoreEntitlementExceeded
+			}
+		}
+
+		if _, err := tx.Exec(ctx, `
+			UPDATE stores
+			SET status = $2, updated_at = now()
+			WHERE id = $1
+		`, storeID, targetStatus); err != nil {
+			return translatePGError(err, "update store status")
+		}
+
+		return bumpStorefrontRevisions(ctx, tx, revisionStoreItself, storeID)
+	})
 }
 
 func (r Repository) UpdateStoreProfile(ctx context.Context, storeID, name, status string, settings map[string]any) error {
@@ -1132,6 +1195,50 @@ func (r Repository) ListStoresBySellerID(ctx context.Context, sellerID string, p
 	}
 	defer rows.Close()
 	return scanStores(rows)
+}
+
+func (r Repository) GetSellerMember(ctx context.Context, sellerID, subject string) (SellerMember, error) {
+	if sellerID == "" || subject == "" {
+		return SellerMember{}, ErrInvalidInput
+	}
+
+	var member SellerMember
+	err := r.pool.QueryRow(ctx, `
+		SELECT sm.id, sm.seller_id, sm.principal_subject, sm.role, sm.status, sm.created_at, sm.updated_at
+		FROM seller_members sm
+		WHERE sm.seller_id = $1
+		  AND sm.principal_subject = $2
+		  AND sm.status = 'active'
+		ORDER BY CASE sm.role
+			WHEN 'owner' THEN 0
+			WHEN 'seller_owner' THEN 0
+			WHEN 'manager' THEN 1
+			WHEN 'seller_manager' THEN 1
+			ELSE 2
+		END, sm.created_at ASC
+		LIMIT 1
+	`, sellerID, subject).Scan(&member.ID, &member.SellerID, &member.PrincipalSubject, &member.Role, &member.Status, &member.CreatedAt, &member.UpdatedAt)
+	if err != nil {
+		return SellerMember{}, translatePGError(err, "resolve seller member")
+	}
+	return member, nil
+}
+
+func (r Repository) CountActiveStoresBySellerID(ctx context.Context, sellerID string) (int, error) {
+	if sellerID == "" {
+		return 0, ErrInvalidInput
+	}
+	var count int
+	err := r.pool.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM stores
+		WHERE seller_id = $1
+		  AND status = 'active'
+	`, sellerID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count active stores by seller id: %w", err)
+	}
+	return count, nil
 }
 
 func (r Repository) CreateSupplierRetailCapabilityForSubject(ctx context.Context, subject, supplierID string, draft RetailCapabilityDraft) (Seller, SupplierSellerAffiliation, error) {

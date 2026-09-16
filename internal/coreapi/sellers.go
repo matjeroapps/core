@@ -104,18 +104,22 @@ func (s *server) handleListSellerStores(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	items, err := s.deps.Repo.ListStores(r.Context(), parsePage(r))
+	stores, err := s.deps.Repo.ListStoresBySellerID(r.Context(), sellerID, parsePage(r))
 	if err != nil {
 		writeDomainError(w, err)
 		return
 	}
-	owned := make([]commerce.Store, 0, len(items))
-	for _, item := range items {
-		if item.SellerID == sellerID {
-			owned = append(owned, item)
-		}
+	activeCount, err := s.deps.Repo.CountActiveStoresBySellerID(r.Context(), sellerID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, CollectionResponse[commerce.Store]{Items: owned})
+	limit := s.deps.Commerce.GetActiveStoreLimit()
+	httpx.WriteJSON(w, http.StatusOK, SellerStoresResponse{
+		Items:            stores,
+		ActiveStoreLimit: limit,
+		ActiveStoreCount: activeCount,
+	})
 }
 
 // handleCreateSellerStore creates a store for the authenticated seller. The

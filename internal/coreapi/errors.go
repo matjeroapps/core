@@ -46,6 +46,7 @@ const (
 	CodeListingUnavailable        = "listing_unavailable"
 	CodeInvalidShipmentTransition = "invalid_shipment_transition"
 	CodeInvalidPaymentTransition  = "invalid_payment_transition"
+	CodeStoreEntitlementExceeded  = "store_entitlement_exceeded"
 	CodeInternalError             = "internal_error"
 )
 
@@ -60,7 +61,7 @@ func statusFor(code string) int {
 		return http.StatusUnauthorized
 	case CodeForbidden:
 		return http.StatusForbidden
-	case CodeConflict, CodeMarketMismatch, CodeInsufficientInventory, CodeCheckoutExpired, CodeIdempotencyConflict, CodeInvalidOrderTransition, CodeInvalidShipmentTransition, CodeInvalidPaymentTransition, CodePriceChanged, CodeListingUnavailable:
+	case CodeConflict, CodeMarketMismatch, CodeInsufficientInventory, CodeCheckoutExpired, CodeIdempotencyConflict, CodeInvalidOrderTransition, CodeInvalidShipmentTransition, CodeInvalidPaymentTransition, CodePriceChanged, CodeListingUnavailable, CodeStoreEntitlementExceeded:
 		return http.StatusConflict
 	case CodeUnavailable, CodePreviewUnavailable:
 		return http.StatusServiceUnavailable
@@ -110,6 +111,8 @@ func messageFor(code string) string {
 		return "price changed"
 	case CodeListingUnavailable:
 		return "listing unavailable"
+	case CodeStoreEntitlementExceeded:
+		return "active-store entitlement limit exceeded"
 	case CodeSchemaMismatch:
 
 		return "configuration does not match the theme schema"
@@ -197,8 +200,11 @@ func codeFor(err error) string {
 		return CodeValidationError
 	case errors.Is(err, commerce.ErrUnauthorized):
 		return CodeUnauthorized
-	case errors.Is(err, suppliers.ErrForbidden):
+	case errors.Is(err, suppliers.ErrForbidden),
+		errors.Is(err, commerce.ErrForbidden):
 		return CodeForbidden
+	case errors.Is(err, commerce.ErrStoreEntitlementExceeded):
+		return CodeStoreEntitlementExceeded
 	case errors.Is(err, commerce.ErrMarketMismatch):
 
 		return CodeMarketMismatch

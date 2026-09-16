@@ -81,6 +81,7 @@ func run(ctx context.Context) error {
 	service.OrderConfirmationDuration = cfg.OrderConfirmationDuration
 	service.PlatformDomain = cfg.PlatformDomain
 	service.ReservedSubdomains = cfg.ReservedSubdomains
+	service.StoreEntitlement = commerce.NewStoreEntitlementPolicy(cfg.StoreDefaultMaxActiveStores)
 
 	var s3Storage *commerce.S3Storage
 	if cfg.MediaS3Bucket != "" {
