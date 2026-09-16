@@ -59,7 +59,7 @@ type Config struct {
 	InternalAdminToken    string
 	InternalSupplierToken string
 
-	StoreDefaultMaxActiveStores   int
+	StoreDefaultMaxActiveStores int
 
 	OutboxClaimLeaseDuration      time.Duration
 	OutboxClaimRenewalMargin      time.Duration
@@ -159,18 +159,18 @@ func Load(serviceName string) (Config, error) {
 		OrderConfirmationDuration:   orderConfirmationDuration,
 		StoreDefaultMaxActiveStores: storeDefaultMaxActiveStores,
 		PlatformDomain:              stringEnv("PLATFORM_DOMAIN", "matjero.com"),
-		TrustedForwardedHost:      boolEnv("TRUSTED_FORWARDED_HOST", false),
-		ReservedSubdomains:        stringSliceEnv("RESERVED_SUBDOMAINS", []string{"www", "api", "admin", "app", "cdn", "mail", "seller", "supplier", "static", "assets"}),
-		ThemePreviewSecret:        stringEnv("THEME_PREVIEW_SECRET", ""),
-		MediaS3Endpoint:           stringEnv("MEDIA_S3_ENDPOINT", ""),
-		MediaS3Region:             stringEnv("MEDIA_S3_REGION", "us-east-1"),
-		MediaS3Bucket:             stringEnv("MEDIA_S3_BUCKET", ""),
-		MediaS3AccessKeyID:        stringEnv("MEDIA_S3_ACCESS_KEY_ID", ""),
-		MediaS3SecretAccessKey:    stringEnv("MEDIA_S3_SECRET_ACCESS_KEY", ""),
-		MediaS3ForcePathStyle:     boolEnv("MEDIA_S3_FORCE_PATH_STYLE", false),
-		MediaPublicBaseURL:        stringEnv("MEDIA_PUBLIC_BASE_URL", ""),
-		MediaUploadMaxBytes:       mediaUploadMaxBytes,
-		MediaPresignTTL:           mediaPresignTTL,
+		TrustedForwardedHost:        boolEnv("TRUSTED_FORWARDED_HOST", false),
+		ReservedSubdomains:          stringSliceEnv("RESERVED_SUBDOMAINS", []string{"www", "api", "admin", "app", "cdn", "mail", "seller", "supplier", "static", "assets"}),
+		ThemePreviewSecret:          stringEnv("THEME_PREVIEW_SECRET", ""),
+		MediaS3Endpoint:             stringEnv("MEDIA_S3_ENDPOINT", ""),
+		MediaS3Region:               stringEnv("MEDIA_S3_REGION", "us-east-1"),
+		MediaS3Bucket:               stringEnv("MEDIA_S3_BUCKET", ""),
+		MediaS3AccessKeyID:          stringEnv("MEDIA_S3_ACCESS_KEY_ID", ""),
+		MediaS3SecretAccessKey:      stringEnv("MEDIA_S3_SECRET_ACCESS_KEY", ""),
+		MediaS3ForcePathStyle:       boolEnv("MEDIA_S3_FORCE_PATH_STYLE", false),
+		MediaPublicBaseURL:          stringEnv("MEDIA_PUBLIC_BASE_URL", ""),
+		MediaUploadMaxBytes:         mediaUploadMaxBytes,
+		MediaPresignTTL:             mediaPresignTTL,
 
 		InternalSellerToken:   stringEnv("CORE_INTERNAL_SELLER_TOKEN", ""),
 		InternalAdminToken:    stringEnv("CORE_INTERNAL_ADMIN_TOKEN", ""),

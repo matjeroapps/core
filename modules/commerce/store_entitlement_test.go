@@ -36,10 +36,10 @@ func TestStoreEntitlementPolicy(t *testing.T) {
 
 func TestRoleNormalizationAndPredicates(t *testing.T) {
 	tests := []struct {
-		role     string
-		isOwner  bool
+		role      string
+		isOwner   bool
 		isManager bool
-		isStaff  bool
+		isStaff   bool
 	}{
 		{"owner", true, true, true},
 		{"seller_owner", true, true, true},
