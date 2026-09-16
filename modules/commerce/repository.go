@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -196,14 +197,18 @@ func (r Repository) CreateSellerMember(ctx context.Context, sellerID, principalS
 	return created, err
 }
 
-func (r Repository) CreateStore(ctx context.Context, sellerID, marketCode, code, name, status string, settings map[string]any) (Store, error) {
-	if sellerID == "" || marketCode == "" || code == "" || name == "" || status == "" {
+func (r Repository) CreateStore(ctx context.Context, sellerID, marketCode, code, name, status string, settings map[string]any, maxActiveStores ...int) (Store, error) {
+	if sellerID == "" || marketCode == "" || code == "" || name == "" {
 		return Store{}, ErrInvalidInput
+	}
+	maxActive := 1
+	if len(maxActiveStores) > 0 && maxActiveStores[0] > 0 {
+		maxActive = maxActiveStores[0]
 	}
 
 	var created Store
 	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
-		s, err := createStoreInTx(ctx, tx, sellerID, marketCode, code, name, status, settings)
+		s, err := createStoreInTx(ctx, tx, sellerID, marketCode, code, name, status, settings, maxActive)
 		if err != nil {
 			return err
 		}
@@ -216,7 +221,32 @@ func (r Repository) CreateStore(ctx context.Context, sellerID, marketCode, code,
 // createStoreInTx inserts a store row and its settings within the provided
 // transaction. It is the single store-creation primitive reused by both
 // CreateStore and the atomic CreateStoreWithDomain.
-func createStoreInTx(ctx context.Context, tx pgx.Tx, sellerID, marketCode, code, name, status string, settings map[string]any) (Store, error) {
+func createStoreInTx(ctx context.Context, tx pgx.Tx, sellerID, marketCode, code, name, status string, settings map[string]any, maxActiveStores int) (Store, error) {
+	if status == "" {
+		status = "draft"
+	}
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status != "draft" && status != "active" && status != "inactive" {
+		return Store{}, fmt.Errorf("%w: invalid store status %q", ErrInvalidInput, status)
+	}
+
+	if status == "active" {
+		if maxActiveStores <= 0 {
+			maxActiveStores = 1
+		}
+		var sellerDummy string
+		if err := tx.QueryRow(ctx, `SELECT id FROM sellers WHERE id = $1 FOR UPDATE`, sellerID).Scan(&sellerDummy); err != nil {
+			return Store{}, translatePGError(err, "lock seller for store entitlement")
+		}
+		var activeCount int
+		if err := tx.QueryRow(ctx, `SELECT COUNT(*) FROM stores WHERE seller_id = $1 AND status = 'active'`, sellerID).Scan(&activeCount); err != nil {
+			return Store{}, translatePGError(err, "count active stores")
+		}
+		if activeCount >= maxActiveStores {
+			return Store{}, ErrStoreEntitlementExceeded
+		}
+	}
+
 	id := uuid.NewString()
 	var created Store
 	if err := tx.QueryRow(ctx, `
@@ -294,19 +324,23 @@ func createStoreDomainInTx(ctx context.Context, tx pgx.Tx, storeID, domain, doma
 // entire operation rolls back, leaving no partial Store, StoreSettings, or
 // StoreDomain state. This is the cohesive transaction boundary used when a store
 // is created together with its platform-generated subdomain.
-func (r Repository) CreateStoreWithDomain(ctx context.Context, sellerID, marketCode, code, name, status string, settings map[string]any, domain, domainType, domainStatus string, isPrimary bool, verifiedAt *time.Time, verificationToken *string) (Store, StoreDomain, error) {
-	if sellerID == "" || marketCode == "" || code == "" || name == "" || status == "" || domain == "" || domainStatus == "" {
+func (r Repository) CreateStoreWithDomain(ctx context.Context, sellerID, marketCode, code, name, status string, settings map[string]any, domain, domainType, domainStatus string, isPrimary bool, verifiedAt *time.Time, verificationToken *string, maxActiveStores ...int) (Store, StoreDomain, error) {
+	if sellerID == "" || marketCode == "" || code == "" || name == "" || domain == "" || domainStatus == "" {
 		return Store{}, StoreDomain{}, ErrInvalidInput
 	}
 	normalizedDomain, err := NormalizeDomain(domain)
 	if err != nil {
 		return Store{}, StoreDomain{}, ErrInvalidInput
 	}
+	maxActive := 1
+	if len(maxActiveStores) > 0 && maxActiveStores[0] > 0 {
+		maxActive = maxActiveStores[0]
+	}
 
 	var store Store
 	var storeDomain StoreDomain
 	err = r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
-		s, err := createStoreInTx(ctx, tx, sellerID, marketCode, code, name, status, settings)
+		s, err := createStoreInTx(ctx, tx, sellerID, marketCode, code, name, status, settings, maxActive)
 		if err != nil {
 			return err
 		}

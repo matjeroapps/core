@@ -69,7 +69,7 @@ private, no-store responses and do not carry X-Matjero-Storefront-Revision.
 Errors use a closed vocabulary (not_found, invalid_argument, validation_error,
 unauthorized, forbidden, conflict, market_mismatch, insufficient_inventory,
 schema_mismatch, unsafe_content, preview_unavailable, storefront_unavailable,
-unavailable, internal_error). Error responses never carry SQL text, stack
+unavailable, store_entitlement_exceeded, internal_error). Error responses never carry SQL text, stack
 traces, internal table names or secret values.`
 
 // BuildInternalSpec builds the internal OpenAPI document from the route
@@ -356,7 +356,7 @@ func internalRoutes() []openapi.RouteSpec {
 			Method: http.MethodGet, Path: "/internal/v1/sellers/{sellerID}/stores", OperationID: "internalListSellerStores",
 			Summary: "List stores owned by a seller", Tags: []string{"Sellers"},
 			Parameters: append([]openapi.ParameterSpec{pathParam("sellerID", "Seller identifier")}, pageParams...),
-			Responses:  readResponses("Store collection", CollectionResponse[commerce.Store]{}),
+			Responses:  readResponses("Store collection", SellerStoresResponse{}),
 		},
 		{
 			Method: http.MethodPost, Path: "/internal/v1/sellers/{sellerID}/stores", OperationID: "internalCreateSellerStore",

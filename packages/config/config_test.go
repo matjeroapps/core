@@ -25,6 +25,33 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.ShutdownTimeout != 10*time.Second {
 		t.Errorf("expected ShutdownTimeout 10s, got %v", cfg.ShutdownTimeout)
 	}
+	if cfg.StoreDefaultMaxActiveStores != 1 {
+		t.Errorf("expected StoreDefaultMaxActiveStores 1, got %d", cfg.StoreDefaultMaxActiveStores)
+	}
+}
+
+func TestLoadCustomStoreDefaultMaxActiveStores(t *testing.T) {
+	t.Setenv("STORE_DEFAULT_MAX_ACTIVE_STORES", "3")
+
+	cfg, err := config.Load("test-service")
+	if err != nil {
+		t.Fatalf("expected clean config load, got: %v", err)
+	}
+
+	if cfg.StoreDefaultMaxActiveStores != 3 {
+		t.Errorf("expected StoreDefaultMaxActiveStores 3, got %d", cfg.StoreDefaultMaxActiveStores)
+	}
+}
+
+func TestLoadRejectsInvalidStoreDefaultMaxActiveStores(t *testing.T) {
+	invalidValues := []string{"not-an-int", "0", "-1", "-5"}
+	for _, val := range invalidValues {
+		t.Setenv("STORE_DEFAULT_MAX_ACTIVE_STORES", val)
+		_, err := config.Load("test-service")
+		if err == nil {
+			t.Fatalf("expected error for STORE_DEFAULT_MAX_ACTIVE_STORES=%q, got nil", val)
+		}
+	}
 }
 
 func TestLoadCustomOrderConfirmationDuration(t *testing.T) {

@@ -306,7 +306,7 @@ func TestStorefrontRevisionStoreWritesBumpThatStoreOnly(t *testing.T) {
 	env := setupRevisionTest(t)
 
 	env.expectBump(t, "suspend store A", true, false, func() error {
-		return env.repo.UpdateStoreStatus(env.ctx, env.storeA, "suspended")
+		return env.repo.UpdateStoreStatus(env.ctx, env.storeA, "inactive")
 	})
 	env.expectBump(t, "rename store B", false, true, func() error {
 		return env.repo.UpdateStoreProfile(env.ctx, env.storeB, "Store B Renamed", "active", map[string]any{

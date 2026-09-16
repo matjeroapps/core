@@ -65,6 +65,18 @@ type ProfileUpdateRequest struct {
 	Settings map[string]any `json:"settings"`
 }
 
+// SellerStoresResponse is the owned stores response plus entitlement summary.
+type SellerStoresResponse struct {
+	Items            []commerce.Store `json:"items"`
+	ActiveStoreLimit int              `json:"active_store_limit"`
+	ActiveStoreCount int              `json:"active_store_count"`
+}
+
+// StoreStatusUpdateRequest updates a store's status.
+type StoreStatusUpdateRequest struct {
+	Status string `json:"status"`
+}
+
 // StoreCreateRequest creates a store for the authenticated seller.
 type StoreCreateRequest struct {
 	MarketCode string         `json:"market_code"`

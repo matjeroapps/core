@@ -30,6 +30,10 @@ func Open(t testing.TB, dsn string) *database.Pool {
 	if err != nil {
 		t.Skipf("postgres unavailable: %v", err)
 	}
+	if err := adminPool.Ping(ctx); err != nil {
+		adminPool.Close()
+		t.Skipf("postgres unavailable: %v", err)
+	}
 
 	schema := schemaName(t.Name())
 	quotedSchema := pgx.Identifier{schema}.Sanitize()

@@ -222,7 +222,7 @@ func TestReadinessUsesSellableTopology(t *testing.T) {
 		ids := e.buildCatalog(t)
 		// A location of another store in a different market can never satisfy
 		// this store's seller-owned sellability.
-		otherStore, err := e.repo.CreateStore(ctx, ids.sellerID, "SA", "store-sa-"+e.suffix, "SA Store", "active", nil)
+		otherStore, err := e.repo.CreateStore(ctx, ids.sellerID, "SA", "store-sa-"+e.suffix, "SA Store", "active", nil, 2)
 		if err != nil {
 			t.Fatalf("CreateStore SA: %v", err)
 		}
@@ -538,7 +538,7 @@ func TestUploadIntentAuthorizationEnforcement(t *testing.T) {
 
 	t.Run("wrong store fails", func(t *testing.T) {
 		res := presign(t)
-		otherStore, err := e.repo.CreateStore(ctx, ids.sellerID, "EG", "store-other-"+e.suffix, "Other", "active", nil)
+		otherStore, err := e.repo.CreateStore(ctx, ids.sellerID, "EG", "store-other-"+e.suffix, "Other", "active", nil, 2)
 		if err != nil {
 			t.Fatalf("CreateStore: %v", err)
 		}

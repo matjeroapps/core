@@ -2,6 +2,7 @@ package commerce
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -26,13 +27,87 @@ type Service struct {
 
 	// S3Storage handles S3-compatible media uploads and management.
 	S3Storage *S3Storage
+
+	// StoreEntitlement limits the number of simultaneously active stores per seller.
+	StoreEntitlement StoreEntitlementPolicy
 }
 
 func NewService(repo Repository) Service {
 	return Service{
-		repo:        repo,
-		TXTResolver: DefaultTXTResolver{},
+		repo:             repo,
+		TXTResolver:      DefaultTXTResolver{},
+		StoreEntitlement: NewStoreEntitlementPolicy(1),
 	}
+}
+
+func (s Service) GetActiveStoreLimit() int {
+	return s.StoreEntitlement.EffectiveLimit()
+}
+
+func (s Service) AuthorizeSellerAccess(ctx context.Context, subject, sellerID, requiredRole string) (SellerMember, error) {
+	if sellerID == "" || subject == "" {
+		return SellerMember{}, ErrInvalidInput
+	}
+	member, err := s.repo.GetSellerMember(ctx, sellerID, subject)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			if _, anyErr := s.repo.GetSellerForSubject(ctx, subject); anyErr == nil {
+				return SellerMember{}, ErrNotFound
+			}
+			return SellerMember{}, ErrForbidden
+		}
+		return SellerMember{}, err
+	}
+	if member.Status != "active" {
+		return SellerMember{}, ErrForbidden
+	}
+
+	normRole := NormalizeRole(member.Role)
+	switch requiredRole {
+	case RoleOwner:
+		if normRole != RoleOwner {
+			return SellerMember{}, ErrForbidden
+		}
+	case RoleManager:
+		if normRole != RoleOwner && normRole != RoleManager {
+			return SellerMember{}, ErrForbidden
+		}
+	case RoleStaff:
+		if normRole != RoleOwner && normRole != RoleManager && normRole != RoleStaff {
+			return SellerMember{}, ErrForbidden
+		}
+	}
+	return member, nil
+}
+
+func (s Service) RequireSellerAccess(ctx context.Context, subject, sellerID string) (Seller, error) {
+	if sellerID == "" {
+		return Seller{}, ErrInvalidInput
+	}
+	if _, err := s.AuthorizeSellerAccess(ctx, subject, sellerID, RoleStaff); err != nil {
+		return Seller{}, err
+	}
+	return s.repo.GetSellerByID(ctx, sellerID)
+}
+
+func (s Service) RequireSellerOwnerAccess(ctx context.Context, subject, sellerID string) (Seller, error) {
+	if sellerID == "" {
+		return Seller{}, ErrInvalidInput
+	}
+	if _, err := s.AuthorizeSellerAccess(ctx, subject, sellerID, RoleOwner); err != nil {
+		return Seller{}, err
+	}
+	return s.repo.GetSellerByID(ctx, sellerID)
+}
+
+func (s Service) RequireSellerManagerAccess(ctx context.Context, subject, sellerID string) (Seller, error) {
+	if sellerID == "" {
+		return Seller{}, ErrInvalidInput
+	}
+	if _, err := s.AuthorizeSellerAccess(ctx, subject, sellerID, RoleManager); err != nil {
+		return Seller{}, err
+	}
+	return s.repo.GetSellerByID(ctx, sellerID)
 }
 
 func (s Service) CreateSellerListing(ctx context.Context, storeID, productID string, supplierOfferID *string, marketCode, status string) (SellerListing, error) {
@@ -49,7 +124,7 @@ func (s Service) CreateSellerListing(ctx context.Context, storeID, productID str
 			return SellerListing{}, err
 		}
 		if offer.MarketCode != marketCode {
-			return SellerListing{}, fmt.Errorf("%w: supplier offer market %s does not match %s", ErrMarketMismatch, offer.MarketCode, marketCode)
+			return SellerListing{}, fmt.Errorf("%w: offer market %s does not match %s", ErrMarketMismatch, offer.MarketCode, marketCode)
 		}
 		supplierProduct, err := s.repo.GetSupplierProductByID(ctx, offer.SupplierProductID)
 		if err != nil {
@@ -85,20 +160,6 @@ func (s Service) RequireSupplierAccess(ctx context.Context, subject, supplierID 
 		return Supplier{}, ErrNotFound
 	}
 	return supplier, nil
-}
-
-func (s Service) RequireSellerAccess(ctx context.Context, subject, sellerID string) (Seller, error) {
-	if sellerID == "" {
-		return Seller{}, ErrInvalidInput
-	}
-	seller, err := s.repo.GetSellerForSubject(ctx, subject)
-	if err != nil {
-		return Seller{}, err
-	}
-	if seller.ID != sellerID {
-		return Seller{}, ErrNotFound
-	}
-	return seller, nil
 }
 
 func (s Service) RequireSupplierRetailAccess(ctx context.Context, subject, supplierID string) (Seller, error) {
@@ -146,7 +207,7 @@ func (s Service) CreateSupplierRetailCapabilityForSubject(ctx context.Context, s
 }
 
 func (s Service) CreateStoreForSubject(ctx context.Context, subject, sellerID, marketCode, code, name, status string, settings map[string]any) (Store, error) {
-	if _, err := s.RequireSellerAccess(ctx, subject, sellerID); err != nil {
+	if _, err := s.RequireSellerOwnerAccess(ctx, subject, sellerID); err != nil {
 		return Store{}, err
 	}
 	return s.createStoreForSeller(ctx, sellerID, marketCode, code, name, status, settings)
@@ -160,9 +221,31 @@ func (s Service) CreateSupplierStoreForSubject(ctx context.Context, subject, sup
 	return s.createStoreForSeller(ctx, seller.ID, marketCode, code, name, status, settings)
 }
 
+func (s Service) UpdateStoreStatusForSubject(ctx context.Context, subject, storeID, targetStatus string) (Store, error) {
+	store, err := s.repo.GetStore(ctx, storeID)
+	if err != nil {
+		return Store{}, err
+	}
+	if _, err := s.RequireSellerOwnerAccess(ctx, subject, store.SellerID); err != nil {
+		return Store{}, err
+	}
+	if err := s.repo.UpdateStoreStatus(ctx, storeID, targetStatus, s.StoreEntitlement.EffectiveLimit()); err != nil {
+		return Store{}, err
+	}
+	return s.repo.GetStore(ctx, storeID)
+}
+
+func (s Service) UpdateStoreStatusByAdmin(ctx context.Context, storeID, targetStatus string) (Store, error) {
+	if err := s.repo.UpdateStoreStatus(ctx, storeID, targetStatus, s.StoreEntitlement.EffectiveLimit()); err != nil {
+		return Store{}, err
+	}
+	return s.repo.GetStore(ctx, storeID)
+}
+
 func (s Service) createStoreForSeller(ctx context.Context, sellerID, marketCode, code, name, status string, settings map[string]any) (Store, error) {
+	limit := s.StoreEntitlement.EffectiveLimit()
 	if s.PlatformDomain == "" {
-		return s.repo.CreateStore(ctx, sellerID, marketCode, code, name, status, settings)
+		return s.repo.CreateStore(ctx, sellerID, marketCode, code, name, status, settings, limit)
 	}
 
 	normalizedCode := strings.ToLower(strings.TrimSpace(code))
@@ -178,7 +261,7 @@ func (s Service) createStoreForSeller(ctx context.Context, sellerID, marketCode,
 	}
 
 	now := time.Now()
-	store, _, err := s.repo.CreateStoreWithDomain(ctx, sellerID, marketCode, code, name, status, settings, subdomain, "platform", "active", true, &now, nil)
+	store, _, err := s.repo.CreateStoreWithDomain(ctx, sellerID, marketCode, code, name, status, settings, subdomain, "platform", "active", true, &now, nil, limit)
 	if err != nil {
 		return Store{}, err
 	}

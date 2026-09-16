@@ -59,6 +59,8 @@ type Config struct {
 	InternalAdminToken    string
 	InternalSupplierToken string
 
+	StoreDefaultMaxActiveStores int
+
 	OutboxClaimLeaseDuration      time.Duration
 	OutboxClaimRenewalMargin      time.Duration
 	RabbitMQPublishConfirmTimeout time.Duration
@@ -82,6 +84,13 @@ func Load(serviceName string) (Config, error) {
 	orderConfirmationDuration, err := durationEnv("ORDER_CONFIRMATION_DURATION", 15*time.Minute)
 	if err != nil {
 		return Config{}, err
+	}
+	storeDefaultMaxActiveStores, err := intEnv("STORE_DEFAULT_MAX_ACTIVE_STORES", 1)
+	if err != nil {
+		return Config{}, err
+	}
+	if storeDefaultMaxActiveStores < 1 {
+		return Config{}, fmt.Errorf("STORE_DEFAULT_MAX_ACTIVE_STORES must be at least 1")
 	}
 	outboxClaimLeaseDuration, err := durationEnv("OUTBOX_CLAIM_LEASE_DURATION", 30*time.Second)
 	if err != nil {
@@ -136,31 +145,32 @@ func Load(serviceName string) (Config, error) {
 	}
 
 	cfg := Config{
-		ServiceName:               serviceName,
-		Environment:               stringEnv("APP_ENV", "development"),
-		HTTPAddr:                  stringEnv("HTTP_ADDR", ":8080"),
-		DatabaseURL:               stringEnv("DATABASE_URL", "postgres://commerce:commerce@localhost:5432/commerce?sslmode=disable"),
-		RedisAddr:                 stringEnv("REDIS_ADDR", "localhost:6379"),
-		RabbitMQURL:               stringEnv("RABBITMQ_URL", "amqp://commerce:commerce@localhost:5672/"),
-		ZitadelIssuer:             stringEnv("ZITADEL_ISSUER", "http://localhost:8081"),
-		ZitadelAudience:           stringEnv("ZITADEL_AUDIENCE", serviceName),
-		OpenAPIDocsEnabled:        boolEnv("OPENAPI_DOCS_ENABLED", stringEnv("APP_ENV", "development") != "production"),
-		ShutdownTimeout:           time.Duration(timeoutSeconds) * time.Second,
-		CheckoutSessionLifetime:   checkoutSessionLifetime,
-		OrderConfirmationDuration: orderConfirmationDuration,
-		PlatformDomain:            stringEnv("PLATFORM_DOMAIN", "matjero.com"),
-		TrustedForwardedHost:      boolEnv("TRUSTED_FORWARDED_HOST", false),
-		ReservedSubdomains:        stringSliceEnv("RESERVED_SUBDOMAINS", []string{"www", "api", "admin", "app", "cdn", "mail", "seller", "supplier", "static", "assets"}),
-		ThemePreviewSecret:        stringEnv("THEME_PREVIEW_SECRET", ""),
-		MediaS3Endpoint:           stringEnv("MEDIA_S3_ENDPOINT", ""),
-		MediaS3Region:             stringEnv("MEDIA_S3_REGION", "us-east-1"),
-		MediaS3Bucket:             stringEnv("MEDIA_S3_BUCKET", ""),
-		MediaS3AccessKeyID:        stringEnv("MEDIA_S3_ACCESS_KEY_ID", ""),
-		MediaS3SecretAccessKey:    stringEnv("MEDIA_S3_SECRET_ACCESS_KEY", ""),
-		MediaS3ForcePathStyle:     boolEnv("MEDIA_S3_FORCE_PATH_STYLE", false),
-		MediaPublicBaseURL:        stringEnv("MEDIA_PUBLIC_BASE_URL", ""),
-		MediaUploadMaxBytes:       mediaUploadMaxBytes,
-		MediaPresignTTL:           mediaPresignTTL,
+		ServiceName:                 serviceName,
+		Environment:                 stringEnv("APP_ENV", "development"),
+		HTTPAddr:                    stringEnv("HTTP_ADDR", ":8080"),
+		DatabaseURL:                 stringEnv("DATABASE_URL", "postgres://commerce:commerce@localhost:5432/commerce?sslmode=disable"),
+		RedisAddr:                   stringEnv("REDIS_ADDR", "localhost:6379"),
+		RabbitMQURL:                 stringEnv("RABBITMQ_URL", "amqp://commerce:commerce@localhost:5672/"),
+		ZitadelIssuer:               stringEnv("ZITADEL_ISSUER", "http://localhost:8081"),
+		ZitadelAudience:             stringEnv("ZITADEL_AUDIENCE", serviceName),
+		OpenAPIDocsEnabled:          boolEnv("OPENAPI_DOCS_ENABLED", stringEnv("APP_ENV", "development") != "production"),
+		ShutdownTimeout:             time.Duration(timeoutSeconds) * time.Second,
+		CheckoutSessionLifetime:     checkoutSessionLifetime,
+		OrderConfirmationDuration:   orderConfirmationDuration,
+		StoreDefaultMaxActiveStores: storeDefaultMaxActiveStores,
+		PlatformDomain:              stringEnv("PLATFORM_DOMAIN", "matjero.com"),
+		TrustedForwardedHost:        boolEnv("TRUSTED_FORWARDED_HOST", false),
+		ReservedSubdomains:          stringSliceEnv("RESERVED_SUBDOMAINS", []string{"www", "api", "admin", "app", "cdn", "mail", "seller", "supplier", "static", "assets"}),
+		ThemePreviewSecret:          stringEnv("THEME_PREVIEW_SECRET", ""),
+		MediaS3Endpoint:             stringEnv("MEDIA_S3_ENDPOINT", ""),
+		MediaS3Region:               stringEnv("MEDIA_S3_REGION", "us-east-1"),
+		MediaS3Bucket:               stringEnv("MEDIA_S3_BUCKET", ""),
+		MediaS3AccessKeyID:          stringEnv("MEDIA_S3_ACCESS_KEY_ID", ""),
+		MediaS3SecretAccessKey:      stringEnv("MEDIA_S3_SECRET_ACCESS_KEY", ""),
+		MediaS3ForcePathStyle:       boolEnv("MEDIA_S3_FORCE_PATH_STYLE", false),
+		MediaPublicBaseURL:          stringEnv("MEDIA_PUBLIC_BASE_URL", ""),
+		MediaUploadMaxBytes:         mediaUploadMaxBytes,
+		MediaPresignTTL:             mediaPresignTTL,
 
 		InternalSellerToken:   stringEnv("CORE_INTERNAL_SELLER_TOKEN", ""),
 		InternalAdminToken:    stringEnv("CORE_INTERNAL_ADMIN_TOKEN", ""),

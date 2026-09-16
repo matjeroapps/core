@@ -81,7 +81,7 @@ func TestIntegrationStorefrontRevisionStopsResolvingWhenStoreIsSuspended(t *test
 	if got := env.revision(t, env.domainA); got < 1 {
 		t.Fatalf("revision = %d, want at least 1", got)
 	}
-	if err := env.repo.UpdateStoreStatus(env.ctx, env.storeA.ID, "suspended"); err != nil {
+	if err := env.repo.UpdateStoreStatus(env.ctx, env.storeA.ID, "inactive"); err != nil {
 		t.Fatalf("suspend store A: %v", err)
 	}
 

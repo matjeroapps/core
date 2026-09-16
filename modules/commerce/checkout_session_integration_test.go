@@ -141,7 +141,7 @@ func TestP52CheckoutSessionConstraints(t *testing.T) {
 	if _, _, err := repo.CreateCheckoutSession(ctx, store.ID, token, nil, time.Hour); err != nil {
 		t.Fatal(err)
 	}
-	storeB, _, err := repo.CreateStoreWithDomain(ctx, seller.ID, "EG", "p52-constraint-store-b-"+suffix, "P52 Constraint Store B", "active", nil, "p52-c-b-"+suffix+".test", "platform", "active", true, nil, nil)
+	storeB, _, err := repo.CreateStoreWithDomain(ctx, seller.ID, "EG", "p52-constraint-store-b-"+suffix, "P52 Constraint Store B", "active", nil, "p52-c-b-"+suffix+".test", "platform", "active", true, nil, nil, 2)
 	if err != nil {
 		t.Fatal(err)
 	}

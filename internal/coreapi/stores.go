@@ -39,20 +39,37 @@ func (s *server) handleGetStore(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleUpdateStoreStatus(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
+	caller, ok := serviceauth.CallerFrom(r.Context())
+	if !ok {
+		writeError(w, CodeUnauthorized)
 		return
 	}
-	var body struct {
-		Status string `json:"status"`
-	}
+
+	var body StoreStatusUpdateRequest
 	if !decodeJSON(w, r, &body) {
 		return
 	}
-	if err := s.deps.Repo.UpdateStoreStatus(r.Context(), chi.URLParam(r, "storeID"), body.Status); err != nil {
+
+	storeID := chi.URLParam(r, "storeID")
+	var updated commerce.Store
+	var err error
+
+	if caller == serviceauth.CallerAdmin {
+		updated, err = s.deps.Commerce.UpdateStoreStatusByAdmin(r.Context(), storeID, body.Status)
+	} else {
+		subject := serviceauth.SubjectFrom(r)
+		if subject == "" {
+			writeError(w, CodeInvalidArgument)
+			return
+		}
+		updated, err = s.deps.Commerce.UpdateStoreStatusForSubject(r.Context(), subject, storeID, body.Status)
+	}
+
+	if err != nil {
 		writeDomainError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, StatusResponse{Status: body.Status})
+	httpx.WriteJSON(w, http.StatusOK, StatusResponse{Status: updated.Status})
 }
 
 // handleListSupplierCatalog browses the supplier offers available to a store's
@@ -166,13 +183,8 @@ func (s *server) authorizeStore(w http.ResponseWriter, r *http.Request) (commerc
 		writeError(w, CodeInvalidArgument)
 		return commerce.Store{}, false
 	}
-	sellerID, err := s.deps.Commerce.ResolveSellerIDForSubject(r.Context(), subject)
-	if err != nil {
+	if _, err := s.deps.Commerce.AuthorizeSellerAccess(r.Context(), subject, store.SellerID, commerce.RoleStaff); err != nil {
 		writeDomainError(w, err)
-		return commerce.Store{}, false
-	}
-	if store.SellerID != sellerID {
-		writeError(w, CodeNotFound)
 		return commerce.Store{}, false
 	}
 	return store, true
