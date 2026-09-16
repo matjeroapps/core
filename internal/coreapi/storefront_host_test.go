@@ -148,7 +148,14 @@ func TestIntegrationStorefrontHostDomainSelectionRules(t *testing.T) {
 	})
 
 	t.Run("pending primary domain is ignored", func(t *testing.T) {
-		storePending, _, err := env.repo.CreateStoreWithDomain(ctx, env.sellerA.ID, "EG", "store-pending", "Pending Store", "active", nil, "pending-primary.example.com", "custom", "pending", true, nil, nil)
+		sellerP, err := env.repo.CreateSeller(ctx, "seller-pending", "Pending Seller", "active", nil)
+		if err != nil {
+			t.Fatalf("create pending seller: %v", err)
+		}
+		if _, err := env.repo.CreateSellerMember(ctx, sellerP.ID, subjectA, "owner", "active"); err != nil {
+			t.Fatalf("create pending seller member: %v", err)
+		}
+		storePending, _, err := env.repo.CreateStoreWithDomain(ctx, sellerP.ID, "EG", "store-pending", "Pending Store", "active", nil, "pending-primary.example.com", "custom", "pending", true, nil, nil)
 		if err != nil {
 			t.Fatalf("create pending store: %v", err)
 		}
@@ -163,7 +170,14 @@ func TestIntegrationStorefrontHostDomainSelectionRules(t *testing.T) {
 	})
 
 	t.Run("disabled primary domain is ignored", func(t *testing.T) {
-		storeDisabled, _, err := env.repo.CreateStoreWithDomain(ctx, env.sellerA.ID, "EG", "store-disabled", "Disabled Store", "active", nil, "disabled-primary.example.com", "custom", "disabled", true, nil, nil)
+		sellerD, err := env.repo.CreateSeller(ctx, "seller-disabled", "Disabled Seller", "active", nil)
+		if err != nil {
+			t.Fatalf("create disabled seller: %v", err)
+		}
+		if _, err := env.repo.CreateSellerMember(ctx, sellerD.ID, subjectA, "owner", "active"); err != nil {
+			t.Fatalf("create disabled seller member: %v", err)
+		}
+		storeDisabled, _, err := env.repo.CreateStoreWithDomain(ctx, sellerD.ID, "EG", "store-disabled", "Disabled Store", "active", nil, "disabled-primary.example.com", "custom", "disabled", true, nil, nil)
 		if err != nil {
 			t.Fatalf("create disabled store: %v", err)
 		}
@@ -178,8 +192,15 @@ func TestIntegrationStorefrontHostDomainSelectionRules(t *testing.T) {
 	})
 
 	t.Run("verified but not active primary domain is ignored", func(t *testing.T) {
+		sellerV, err := env.repo.CreateSeller(ctx, "seller-verified", "Verified Seller", "active", nil)
+		if err != nil {
+			t.Fatalf("create verified seller: %v", err)
+		}
+		if _, err := env.repo.CreateSellerMember(ctx, sellerV.ID, subjectA, "owner", "active"); err != nil {
+			t.Fatalf("create verified seller member: %v", err)
+		}
 		now := time.Now()
-		storeVerified, _, err := env.repo.CreateStoreWithDomain(ctx, env.sellerA.ID, "EG", "store-verified", "Verified Store", "active", nil, "verified-primary.example.com", "custom", "verified", true, &now, nil)
+		storeVerified, _, err := env.repo.CreateStoreWithDomain(ctx, sellerV.ID, "EG", "store-verified", "Verified Store", "active", nil, "verified-primary.example.com", "custom", "verified", true, &now, nil)
 		if err != nil {
 			t.Fatalf("create verified store: %v", err)
 		}

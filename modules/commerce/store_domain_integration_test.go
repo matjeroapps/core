@@ -153,7 +153,7 @@ func TestStoreDomainIntegrity(t *testing.T) {
 		}
 
 		before := countStores(t, db)
-		_, _, err = repo.CreateStoreWithDomain(ctx, seller2.ID, "EG", "b-"+suffix, "Store B", "active", nil, "a-"+suffix+".matjero.com", "platform", "active", true, &now, nil)
+		_, _, err = repo.CreateStoreWithDomain(ctx, seller2.ID, "EG", "b-"+suffix, "Store B", "active", nil, "a-"+suffix+".matjero.com", "platform", "active", true, &now, nil, 2)
 		if !errors.Is(err, ErrConflict) {
 			t.Fatalf("expected ErrConflict, got %v", err)
 		}
