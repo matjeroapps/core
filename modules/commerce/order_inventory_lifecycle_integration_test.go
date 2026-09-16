@@ -1269,8 +1269,10 @@ func TestConfirmVsExpirySchedulerWinsUnderLockContention(t *testing.T) {
 
 	var expiryOrder Order
 	var expiryErr error
+	expiryDone := make(chan struct{})
 	go func() {
 		expiryOrder, expiryErr = repo.ExpirePendingOrder(ctx, nil, order.ID)
+		close(expiryDone)
 	}()
 
 	// Wait until Expiry holds Order lock FOR UPDATE
@@ -1308,6 +1310,7 @@ func TestConfirmVsExpirySchedulerWinsUnderLockContention(t *testing.T) {
 	close(continueCh)
 
 	<-sellerDone
+	<-expiryDone
 
 	if expiryErr != nil {
 		t.Fatalf("expected expiry success, got %v", expiryErr)
