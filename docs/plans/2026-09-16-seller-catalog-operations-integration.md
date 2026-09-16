@@ -5,6 +5,7 @@
 **Date:** 2026-09-16
 
 **Owners:** Core, Seller, Platform Infrastructure
+
 **Primary boundary:** Core owns catalog state and invariants; Seller owns authenticated HTTP presentation and the seller-facing web experience.
 
 ## 1. Outcome
@@ -90,13 +91,60 @@ Core is the only component allowed to decide whether a store can activate, an of
 
 No new calls are introduced from Seller to the Core database. No Core Go packages are imported into Seller. Contract DTOs remain separately owned on each side of the HTTP boundary.
 
+### 4.1 Mandatory commerce model
+
+The implementation must preserve this hierarchy:
+
+```mermaid
+flowchart LR
+    Seller -->|owns 1..n| Store
+    Store -->|owns one| Catalog
+    Catalog -->|contains via store listings| Product
+    Catalog -->|contains| Listing
+    Listing -->|merchandises one| Product
+    Store -->|has one published surface| StorefrontConfiguration
+    StorefrontConfiguration --> HostDomainResolution
+```
+
+`Catalog` is the store-scoped operational view formed from listings; it is not a new independently owned product database. These identities are mandatory:
+
+- `Product != Store`: a product describes sellable facts and variants; it does not own tenant settings, domains, or lifecycle.
+- `Product != Listing`: a product is the reusable catalog subject; a listing is one store's merchant decision to sell that product.
+- `Store != Product`: a store owns listings, media assets, configuration, domains, and seller inventory locations; it is never represented by a product record.
+- A product enters a store catalog only through a listing for that store. Product ownership by a seller does not silently place that product in every store owned by the seller.
+- Listing identity, price, presentation, source, publish state, and storefront eligibility are store-specific even when two stores refer to the same product.
+
+The required navigation and API model is therefore `Seller -> Stores -> selected Store -> Catalog -> Products/Listings`. The store switcher changes the selected store context; it does not change or impersonate a seller.
+
+### 4.2 Dependency direction
+
+```mermaid
+flowchart TD
+    SellerWeb[seller/web/seller] --> SellerAPI[Seller API]
+    SellerAPI -->|authenticated HTTP + trusted subject| CoreAPI[Core internal API]
+    CoreAPI --> Commerce[Core commerce services]
+    Commerce --> PostgreSQL[(PostgreSQL)]
+    Commerce --> Outbox[Transactional outbox]
+    Commerce --> MinIO[(MinIO/S3)]
+    Outbox --> Worker[general-worker]
+    Worker --> MinIO
+
+    StorefrontWeb[seller/web/storefront] --> StorefrontAPI[Storefront API]
+    StorefrontAPI --> CoreAPI
+
+    UISDK[ui-sdk] --> SellerWeb
+    UISDK --> StorefrontWeb
+```
+
+Dependencies flow toward Core business capabilities. Seller API does not own catalog persistence, Seller web does not call Core directly, and the canonical storefront does not import authoring code.
+
 ## 5. Store Entitlement and Store Selection
 
 ### 5.1 Core policy
 
 Add a Core `StoreEntitlementPolicy` dependency to the commerce service. Its initial implementation has one configuration value, `DefaultMaxActiveStores`, loaded from `STORE_DEFAULT_MAX_ACTIVE_STORES` with a default of `1`; startup rejects values below `1`.
 
-The policy answers whether a seller may transition a store into `active`. It counts active stores for the seller in the same transaction that locks the seller's store set and changes status. Creation with `status=active` and later activation use this same primitive. Creating additional non-active stores remains possible so a seller can prepare a replacement without bypassing the active-store entitlement.
+The policy answers only whether a seller may transition a store into `ACTIVE`. It counts active stores for the seller in the same transaction that locks the seller's store set and changes status. Creation with `status=active` and later activation use this same primitive. `DRAFT` and `INACTIVE` stores do not consume entitlement capacity: a seller may own any number of them and prepare another store without bypassing the active-store limit.
 
 The design supports multi-store without schema coupling to a pricing plan: raising the configured value permits more simultaneously active stores. A later billing project may provide a different policy implementation, but this phase does not add plan tables or billing calls.
 
@@ -110,7 +158,37 @@ Required behavior:
 - An entitlement denial returns `409 store_entitlement_exceeded` and includes no information about another seller.
 - Supplier-retail stores use the same seller-backed policy because they are persisted as stores owned by the affiliated seller.
 
-### 5.2 Store collection and switcher
+The policy must not limit total store rows, draft stores, inactive stores, products, listings, media, or traffic. `DefaultMaxActiveStores=1` means exactly one simultaneously active store by default, not one lifetime store.
+
+### 5.2 Store lifecycle
+
+The normative business states are `DRAFT`, `ACTIVE`, and `INACTIVE`. To remain compatible with current Core conventions, persisted and wire values are lowercase (`draft`, `active`, `inactive`); the uppercase names below describe the state machine.
+
+```mermaid
+stateDiagram-v2
+    [*] --> DRAFT
+    DRAFT --> ACTIVE: activate + entitlement/store checks
+    DRAFT --> INACTIVE: suspend preparation
+    ACTIVE --> INACTIVE: deactivate
+    INACTIVE --> ACTIVE: reactivate + entitlement/readiness checks
+```
+
+There is no transition back to `DRAFT`, and physical store deletion is outside this plan. Creation defaults to `DRAFT`; a request to create directly as `ACTIVE` is permitted only for an owner and runs the same entitlement, seller-status, and market-validity checks as later activation. Listing publish readiness is separate and is not a store-transition rule.
+
+Authorization and transition rules:
+
+| Transition | Seller owner | Seller manager/staff | Platform admin | Entitlement check |
+|---|---:|---:|---:|---:|
+| create `DRAFT` | yes | no | administrative provisioning only | no |
+| `DRAFT -> ACTIVE` | yes | no | permitted for support, never bypasses policy | yes |
+| `DRAFT -> INACTIVE` | yes | no | yes | no |
+| `ACTIVE -> INACTIVE` | yes | no | yes, including moderation | no |
+| `INACTIVE -> ACTIVE` | yes | no | permitted for support, never bypasses policy | yes |
+| same-state retry | yes when normally authorized | no | yes | no additional slot |
+
+An `INACTIVE` store remains authorable by authorized seller members but is not publicly resolvable. A `DRAFT` store is authorable but cannot publish listings. An `ACTIVE` store may resolve publicly only through a valid active domain and otherwise valid storefront configuration.
+
+### 5.3 Store collection and switcher
 
 `GET /v1/seller/stores` remains the switcher source. Extend its response to include `active_store_limit` and `active_store_count` alongside `items`, so the UI can explain why activation or creation-as-active is unavailable. Core computes these values; Seller does not infer them.
 
@@ -129,6 +207,7 @@ Target Seller page routes are:
 /dashboard/stores/{store_id}/catalog/products/new
 /dashboard/stores/{store_id}/catalog/products/{product_id}
 /dashboard/stores/{store_id}/catalog/supplier-offers
+/dashboard/stores/{store_id}/catalog/listings
 /dashboard/stores/{store_id}/catalog/listings/{listing_id}
 /dashboard/stores/{store_id}/inventory
 /dashboard/stores/{store_id}/media
@@ -166,7 +245,64 @@ All mutations write the authenticated subject and request correlation ID to exis
 
 Use a forward-only migration after the current migration set. Final migration numbering is chosen at implementation time from the repository head.
 
-### 7.1 Media assets
+### 7.1 Product source graphs and unified catalog
+
+The store catalog is one list and one search surface containing both source types. Every catalog row has a `source` discriminator (`seller_owned` or `supplier_backed`) and the same store-scoped listing envelope. Source changes editing rights and readiness rules; it does not split the UI into unrelated catalogs.
+
+Seller-owned source graph:
+
+```mermaid
+flowchart LR
+    Seller --> Store
+    Seller --> SellerProductOwnership[SellerProduct ownership]
+    SellerProductOwnership --> Product
+    Product --> Variant
+    Variant --> SKU
+    Store --> SellerListing
+    SellerListing --> Product
+    SellerListing --> RetailPrice
+    SellerListing --> Presentation
+    Store --> StoreLocation
+    StoreLocation --> InventorySnapshot
+    SKU --> InventorySnapshot
+```
+
+The seller owns and may author product facts through `seller_products`. A store listing selects that product for one store. The same seller-owned product may be deliberately listed in another owned store, but only through a separate listing and store-specific merchandising.
+
+Supplier-backed source graph:
+
+```mermaid
+flowchart LR
+    Supplier --> SupplierProduct
+    SupplierProduct --> Product
+    Product --> Variant
+    Variant --> SKU
+    SupplierProduct --> SupplierOffer
+    SupplierOffer --> SupplierPriceAvailability[Supplier price and availability]
+
+    Seller --> Store
+    Store --> SellerListing
+    SellerListing --> Product
+    SellerListing --> SupplierOffer
+    SellerListing --> RetailPrice
+    SellerListing --> Presentation
+```
+
+The supplier remains owner of supplier product facts, variants, SKUs, offer price, offer availability, and supplier inventory. Those facts are protected and read-only to the seller. The seller remains the merchant for the customer-facing listing: the seller chooses whether to import/publish, owns the retail price and presentation, receives the customer order through its store, and cannot rewrite supplier-owned source facts.
+
+Supplier import uses reference semantics, not a hidden product copy:
+
+| Data | Import behavior | Later source changes |
+|---|---|---|
+| `product_id`, variants, SKUs | referenced from the supplier product graph | current eligible facts are read at authoring/readiness time |
+| `supplier_offer_id`, supplier price/availability/inventory | referenced | eligibility is rechecked at publish and storefront read time |
+| `store_id`, source, market, import identity | persisted on the seller listing | immutable except explicit archival lifecycle |
+| seller retail price, presentation, media references, publish state | created and owned by the seller/store listing | seller-editable under role rules |
+| customer order line title, SKU code, retail price, supplier cost/source linkage | snapshotted by the existing checkout/order flow | historical orders do not drift when catalog facts change |
+
+No supplier product, variant, or SKU is copied into a new seller-owned product during import. If future requirements need a seller-editable fork, that is an explicit copy-product capability outside this integration.
+
+### 7.2 Media assets
 
 Create `store_media_assets`:
 
@@ -200,11 +336,11 @@ Create `product_media_references`:
 
 Enforce one reference for `(store_id, product_id, asset_id)` and at most one primary reference per `(store_id, product_id)`. A constraint trigger or transaction-level validation must prove that the asset and listing/product context belong to the same store. The public storefront projects the reference ID, resolved asset URI, alt text, ordering, and primary flag; it never exposes storage keys or checksums.
 
-Evolve `media_upload_intents` to bind `store_id`, expected SHA-256, expected size, content type, storage key, token digest, expiry, and completion. An intent does not count as a reusable asset until completion verifies the object.
+Evolve `media_upload_intents` to bind `store_id`, a client-generated upload request ID, request fingerprint, expected SHA-256, expected size, content type, storage key, token digest, expiry, and completion. An intent does not count as a reusable asset until completion verifies the object.
 
 Backfill existing product media only when its store ownership is unambiguous from a seller listing. Rows that cannot be mapped safely fail the migration before destructive changes. Create an asset and reference for each legacy row, preserving media IDs used by structured presentation. Delay removal of legacy columns/tables until the new read path and backfill checks pass; no dual-write period extends beyond this integration.
 
-### 7.2 Listing lifecycle
+### 7.3 Product and listing lifecycles
 
 Keep `seller_listings` as the store-specific sellable aggregate for both sources:
 
@@ -215,6 +351,43 @@ Add only the indexes or import-idempotency constraint needed to guarantee one ca
 
 Do not copy supplier products, variants, or SKUs into seller-owned rows during import. Store-specific price, presentation, status, and optional store-media references belong to the listing. Supplier-owned product facts remain read-only to the seller.
 
+Product and listing state are independent. Publishing a listing must not be modeled as making a store itself into a product, and unpublishing one store's listing must not hide another store's listing for the same product.
+
+Seller-owned product lifecycle:
+
+```mermaid
+stateDiagram-v2
+    [*] --> DRAFT
+    DRAFT --> ACTIVE: first valid listing publish
+    ACTIVE --> ARCHIVED: archive after all listings are archived
+```
+
+- `DRAFT`: seller-owned product facts may be edited; no listing for it is publicly visible.
+- `ACTIVE`: product facts are eligible to support published listings. This is not itself storefront publication.
+- `ARCHIVED`: terminal for seller operations; no new variants, SKUs, listings, or media references may be added.
+- Supplier-backed products follow the existing supplier-controlled `active`/`inactive` product and supplier-product eligibility; a seller cannot transition or archive them.
+- There is no ordinary hard-delete product endpoint. A seller-owned product may be archived only when none of its listings is `PUBLISHED` or `UNPUBLISHED` and no order, cart, inventory, media-reference, or other protected reference makes deletion unsafe. Historical and referenced products remain retained. Physical cleanup, if ever required, is a separate retention project.
+
+Listing lifecycle:
+
+```mermaid
+stateDiagram-v2
+    [*] --> DRAFT
+    DRAFT --> PUBLISHED: publish when ready
+    PUBLISHED --> UNPUBLISHED: unpublish
+    UNPUBLISHED --> PUBLISHED: republish when ready
+    DRAFT --> ARCHIVED: abandon draft
+    UNPUBLISHED --> ARCHIVED: retire listing
+```
+
+- `DRAFT`: authorable, never returned by the public storefront.
+- `PUBLISHED`: publicly eligible only while store, product, source, price, media, inventory, and presentation checks continue to pass.
+- `UNPUBLISHED`: intentionally hidden but retains merchandising state and may be republished after readiness revalidation.
+- `ARCHIVED`: terminal and hidden; retained for references/audit. It cannot publish again.
+- `PUBLISHED -> ARCHIVED` is deliberately invalid; unpublish first so revision invalidation and intent are explicit.
+
+Persisted/wire values are lowercase. Existing seller-owned `products.status='inactive'` rows map to product `draft`; active seller products remain `active`; `archived` is new. Supplier-owned product eligibility retains its supplier-controlled `active`/`inactive` values and is not rewritten into a seller authoring state. Existing `active`/`inactive` listing rows require a migration mapping with preflight counts: `active -> published`, authoring-time `inactive -> draft`, and previously live `inactive -> unpublished` only where the migration can prove prior publication. Ambiguous rows must be reported and resolved before the constraint is installed; the migration must not guess.
+
 ## 8. Immutable Media Library and MinIO Flow
 
 ### 8.1 Browse and reuse
@@ -223,12 +396,20 @@ Do not copy supplier products, variants, or SKUs into seller-owned rows during i
 
 Alt text, sort order, and primary selection are properties of the reference and may be edited. Asset checksum, bytes, MIME type, object key, and owning store cannot be edited.
 
+Ownership is explicit at both layers:
+
+- The store owns the immutable binary asset. Even two stores owned by the same seller cannot attach, discover, or deduplicate against each other's asset.
+- The store-specific product/listing context owns each mutable media reference. A reference may point only to an asset with the same `store_id`.
+- Supplier media, if exposed by the supplier catalog, remains supplier-owned source media. Import does not transfer its binary ownership. A seller that needs its own reusable copy must ingest it as a new store asset through the normal verified upload flow; the implementation must not perform an implicit cross-tenant copy.
+- Removing a product/listing reference does not transfer or destroy the underlying store asset.
+
 ### 8.2 Presign
 
 The browser computes SHA-256 and sends:
 
 ```json
 {
+  "client_upload_id": "<client-generated UUID>",
   "filename": "front.webp",
   "content_type": "image/webp",
   "size_bytes": 184321,
@@ -236,10 +417,11 @@ The browser computes SHA-256 and sends:
 }
 ```
 
-Core validates the MIME allowlist, positive size and configured maximum, checksum shape, store permission, and product/listing eligibility. It then checks the per-store checksum index:
+Core validates the MIME allowlist, positive size and configured maximum, checksum shape, and store permission. Product/listing eligibility is checked later when a ready asset is attached as a reference. The authoritative maximum is the existing Core `MEDIA_UPLOAD_MAX_BYTES`/`MediaUploadMaxBytes` configuration, not the current hard-coded 10 MiB service check; Core returns the effective maximum in bootstrap/capability metadata so Seller web can reject oversized files early without becoming authoritative. It then checks the per-store checksum index:
 
 - If a `ready` asset exists, return `200` with `mode: "reuse"` and the asset. No upload URL is issued.
-- If another unexpired intent for the same store and checksum exists, return `409 upload_in_progress` so clients do not race duplicate uploads.
+- If the same client upload request ID and fingerprint already has an unexpired intent, return that intent's identity with a newly presigned PUT and newly rotated completion token; changed input for that request ID returns `409 idempotency_conflict`.
+- If another request ID has an unexpired intent for the same store and checksum, return `409 upload_in_progress` so clients do not race duplicate uploads.
 - Otherwise create an intent and return `201` with `mode: "upload"`, a short-lived presigned PUT URL, opaque completion token, storage key, expiry, and the exact required request headers.
 
 The storage key is generated by Core and includes the store ID plus random material; it never uses the raw filename. The bucket stays private. Normal media delivery uses the configured public/CDN base URL or a separate read policy, not the Seller API.
@@ -250,13 +432,13 @@ The browser PUTs directly to MinIO with the signed content type and checksum hea
 
 Core completion:
 
-1. loads the intent and validates store, subject, expiry, completion token, and single-use state;
+1. loads the intent by path ID and validates store, subject, expiry, completion token, request fingerprint, and single-use state;
 2. performs `HeadObject` and validates existence, size, and content type;
 3. reads the bounded object once from MinIO and computes SHA-256 over the actual bytes; a client-provided metadata value alone is not trusted;
 4. rejects and schedules deletion when the digest or size differs;
-5. in one database transaction, inserts the immutable asset, marks the intent complete, and optionally creates the first product reference;
+5. in one database transaction, inserts the immutable store asset and marks the intent complete;
 6. on a concurrent checksum conflict, reuses the winning store asset and schedules the losing object for deletion; and
-7. returns the asset and reference. Repeating completion returns the same result.
+7. returns the asset. The caller attaches it through the separate media-reference endpoint. Repeating completion with the same intent and completion fingerprint returns the same asset; a changed replay returns `409 idempotency_conflict`.
 
 This one verification read is part of upload ingestion; Core still does not proxy routine storefront media delivery.
 
@@ -287,8 +469,8 @@ Expired or failed upload intents and their orphan objects are cleaned by the sam
 4. The seller creates a store fulfillment location if needed and creates/adjusts inventory snapshots for active SKUs.
 5. The seller sets the listing price and presentation.
 6. `GET /stores/{storeID}/listings/{listingID}/readiness` returns structured blocking codes plus display-safe messages.
-7. `POST /stores/{storeID}/listings/{listingID}/publish` repeats authoritative readiness checks inside a locking transaction, activates product/listing as appropriate, and bumps the storefront revision.
-8. Unpublish deactivates the listing and bumps the revision without deleting authoring state.
+7. `POST /stores/{storeID}/listings/{listingID}/publish` repeats authoritative readiness checks inside a locking transaction, transitions the product from `DRAFT` to `ACTIVE` when necessary, transitions only this listing to `PUBLISHED`, and bumps the storefront revision.
+8. Unpublish transitions only this listing to `UNPUBLISHED` and bumps the revision without deleting authoring state or deactivating the shared product.
 
 Variants and SKUs remain product resources but are reachable only beneath the store and product that authorize them. IDs from another product or store return `404`.
 
@@ -304,6 +486,46 @@ Variants and SKUs remain product resources but are reachable only beneath the st
 
 The unified listing publish contract replaces product-specific publish as the preferred contract. Existing product publish/unpublish endpoints remain as temporary compatibility shims for seller-owned products, delegate to the listing service, are marked deprecated in OpenAPI, and are removed only after Seller web no longer calls them.
 
+### 9.3 Existing inventory scope — preserve, do not redesign
+
+The current inventory model is authoritative for this integration:
+
+```mermaid
+flowchart LR
+    Seller --> Store
+    Store --> StoreLocation[fulfillment_locations.store_id]
+    StoreLocation --> Snapshot[inventory_snapshots]
+    SKU --> Snapshot
+    Snapshot --> Movement[inventory_movements]
+    Snapshot --> Reservation[inventory_reservations]
+```
+
+- Seller ownership is indirect: `Seller -> Store -> seller-owned fulfillment location`.
+- A seller-owned fulfillment location has `store_id` set and `supplier_id`/`supplier_market_id` null. Database ownership checks keep seller and supplier location branches mutually exclusive.
+- An inventory snapshot is scoped by the unique pair `(fulfillment_location_id, sku_id)`; it intentionally has no duplicate seller or store column.
+- The Seller service verifies that the location belongs to the route store and that the SKU belongs to the seller-owned product before creating or adjusting a store snapshot.
+- Adjustments change `on_hand_qty`, increment `version`, never directly mutate `reserved_qty`, refuse reductions below reserved quantity, append an `inventory_movements` audit row, and bump affected storefront revisions.
+- `principal_subject`, `correlation_id`, and `causation_id` on movements are audit/trace data. They are not currently a uniqueness or retry guarantee.
+- Supplier-backed listings consume supplier offer availability and supplier-owned inventory eligibility. Import does not create seller/store inventory snapshots for supplier SKUs and does not grant the seller permission to adjust supplier locations.
+
+This project adds the missing idempotency identity/fingerprint to seller inventory adjustment but does not replace snapshots, locations, reservations, movements, versioning, or source-specific inventory ownership.
+
+### 9.4 Storefront configuration and host resolution
+
+```mermaid
+flowchart LR
+    Store --> StoreSettings[Store settings]
+    Store --> ThemeInstall[Theme installation/configuration]
+    Store --> Domain[Platform/custom store domain]
+    Domain --> HostResolver[Core host resolver]
+    HostResolver --> StorefrontAPI[Storefront API]
+    StoreSettings --> StorefrontReadModel[Core storefront read model]
+    ThemeInstall --> StorefrontReadModel
+    StorefrontReadModel --> StorefrontAPI
+```
+
+`Store -> Storefront configuration -> host/domain resolution` is the only public path. Store settings and the published theme configuration define presentation behavior. Core resolves the trusted storefront host to an active primary platform/custom domain and an `ACTIVE` store; Seller or browser-supplied store IDs do not select a public tenant. Publish/unpublish and published theme changes bump the store's storefront revision. Domain activation/deactivation uses the existing host-resolution safety checks so stale cache generations cannot make an inactive or unknown host public.
+
 ## 10. API Contracts
 
 All routes below are target contracts. Routes already present keep compatible response fields unless this plan explicitly marks them deprecated.
@@ -317,6 +539,7 @@ All routes below are target contracts. Routes already present keep compatible re
 | `POST /internal/v1/stores/{storeID}/status` | seller store status transition through policy | owner |
 | `GET /internal/v1/stores/{storeID}/products` | list store catalog across both sources | owner, manager, staff |
 | `POST /internal/v1/stores/{storeID}/products` | create seller-owned draft product/listing | owner, manager |
+| `POST /internal/v1/stores/{storeID}/products/{productID}/archive` | safely archive eligible seller-owned product | owner, manager |
 | existing nested variant/SKU routes | author seller-owned variants/SKUs | owner, manager |
 | `GET /internal/v1/stores/{storeID}/supplier-offers` | browse eligible supplier offers | owner, manager, staff |
 | `POST /internal/v1/stores/{storeID}/supplier-offers/{offerID}/imports` | idempotently create supplier-backed draft listing | owner, manager |
@@ -327,6 +550,7 @@ All routes below are target contracts. Routes already present keep compatible re
 | `GET /internal/v1/stores/{storeID}/listings/{listingID}/readiness` | structured readiness | owner, manager, staff |
 | `POST /internal/v1/stores/{storeID}/listings/{listingID}/publish` | atomic source-aware publish | owner, manager |
 | `POST /internal/v1/stores/{storeID}/listings/{listingID}/unpublish` | atomic unpublish | owner, manager |
+| `POST /internal/v1/stores/{storeID}/listings/{listingID}/archive` | archive draft/unpublished listing | owner, manager |
 | `GET /internal/v1/stores/{storeID}/media` | list ready store assets | owner, manager, staff |
 | `POST /internal/v1/stores/{storeID}/media/uploads` | dedup lookup or presign | owner, manager |
 | `POST /internal/v1/stores/{storeID}/media/uploads/{intentID}/complete` | verify object and create/reuse asset | owner, manager |
@@ -334,13 +558,13 @@ All routes below are target contracts. Routes already present keep compatible re
 | `POST /internal/v1/stores/{storeID}/products/{productID}/media-references` | attach reusable asset | owner, manager |
 | `PUT /internal/v1/stores/{storeID}/products/{productID}/media-references/{referenceID}` | edit reference metadata | owner, manager |
 | `DELETE /internal/v1/stores/{storeID}/products/{productID}/media-references/{referenceID}` | detach asset | owner, manager |
-| existing store inventory routes | list/snapshot/adjust store inventory | read all; adjust all roles |
+| existing store inventory routes | list/snapshot/adjust existing store/SKU/location inventory; adjustment requires idempotency identity | read all; adjust all roles |
 
 For listing price, presentation, publish, and media reference routes, Core verifies that `{listingID}`, `{productID}`, `{assetID}`, and nested IDs all resolve within `{storeID}`. Body fields cannot override path scope.
 
 ### 10.2 Seller public API boundary
 
-Seller exposes the same resource hierarchy under `/v1/seller` and maps DTOs explicitly. The browser never receives Core service credentials, upload token digests, raw storage errors, storage keys after completion, supplier cost, or internal inventory reservation fields.
+Seller exposes the same resource hierarchy under `/v1/seller` and maps DTOs explicitly. The browser never receives Core service credentials, upload token digests, raw storage errors, storage keys after completion, supplier cost, or internal inventory reservation fields. Seller forwards operation-specific idempotency identities and request fingerprints through its typed Core client; it does not substitute correlation IDs.
 
 Legacy routes are replaced as follows:
 
@@ -400,7 +624,26 @@ or:
 
 The reuse response intentionally omits another product's alt text and ordering because those belong to references.
 
-## 11. Errors and Concurrency
+## 11. Idempotency and Retry Contracts
+
+MatjerHub does not currently have a universal idempotency middleware or an `Idempotency-Key` table. Existing safe-retry behavior is operation-specific and database-backed: stable resource/natural keys, unique constraints, row locks, terminal-state replay, and—for checkout finalization—a persisted request fingerprint that returns the original result for an identical replay and `idempotency_conflict` for changed input. `X-Request-Id` and `X-Correlation-Id` are observability values only and must never be treated as deduplication keys.
+
+This integration follows that existing mechanism rather than introducing a second generic framework:
+
+| Operation | Persistent idempotency identity | Same replay | Changed replay |
+|---|---|---|---|
+| supplier-offer import | unique `(store_id, supplier_offer_id)` plus canonical request fingerprint | return existing listing | `409 idempotency_conflict` if immutable import fields differ |
+| media upload intent | unique `(store_id, client_upload_id)` plus checksum/size/MIME fingerprint | return same intent identity with refreshed presign and rotated completion token | `409 idempotency_conflict` |
+| media completion | upload intent ID plus completion fingerprint; one completed asset result | return the completed asset | `409 idempotency_conflict` |
+| publish | listing ID and target state `PUBLISHED` | return current published listing; do not bump revision or emit work twice | `422 publish_not_ready` when current state/readiness no longer supports publish |
+| unpublish | listing ID and target state `UNPUBLISHED` | return current unpublished listing; do not bump revision twice | invalid terminal transition returns state conflict |
+| inventory adjustment | unique `(inventory_snapshot_id, idempotency_key)` plus fingerprint of delta/reason | return the recorded movement and resulting snapshot | `409 idempotency_conflict` |
+
+The Seller API requires a client-generated idempotency key for upload-intent creation and inventory adjustment, validates its bounded format, and forwards it to Core. Import and publish/unpublish use their stable resource identities and do not require an arbitrary extra key. Core stores fingerprints and response/resource references in the same transaction as the mutation. A process crash before commit is retryable; a crash after commit replays the committed result.
+
+Inventory adjustment adds only idempotency metadata/indexing to the existing movement transaction. It does not use `correlation_id` as the key, and it does not apply the delta twice when a response is lost.
+
+## 12. Errors and Concurrency
 
 Extend the closed Core-to-Seller error vocabulary and map it consistently:
 
@@ -411,12 +654,14 @@ Extend the closed Core-to-Seller error vocabulary and map it consistently:
 | `forbidden` | 403 | authenticated member lacks the operation role |
 | `not_found` | 404 | resource absent or outside the caller's seller/store scope |
 | `conflict` | 409 | general uniqueness or state conflict |
+| `idempotency_conflict` | 409 | a stable retry identity was reused with a different request fingerprint |
 | `store_entitlement_exceeded` | 409 | active-store limit would be exceeded |
 | `upload_in_progress` | 409 | same store/checksum already has a live intent |
 | `checksum_mismatch` | 422 | uploaded bytes do not match the declared digest |
 | `media_in_use` | 409 | permanent deletion requested while references exist |
 | `publish_not_ready` | 422 | listing readiness failed; response includes structured reasons |
 | `offer_unavailable` | 409 | supplier offer cannot be imported or published |
+| `resource_in_use` | 409 | archive/delete-style request is unsafe because protected references remain |
 | `service_unavailable` | 503 | Core or object storage is unavailable |
 
 Unexpected Core errors and MinIO details collapse to safe public messages. Logs may include correlation IDs and internal causes, but never service tokens, upload tokens, signed URLs, or object credentials.
@@ -430,11 +675,13 @@ Use database uniqueness and locks as the final concurrency authority:
 - row locks plus readiness re-evaluation for publish; and
 - asset row lock for attach-versus-delete races.
 
-Endpoints whose retries are expected—supplier import, upload completion, attach, publish, and unpublish—return the existing resulting resource when the requested state already exists. Payload-changing retries against the same idempotency identity return `409`.
+Endpoints whose retries are expected follow the table above. Media attach uses its unique `(store_id, product_id, asset_id)` reference identity and returns the existing reference for an identical retry. Payload-changing retries against the same idempotency identity return `409 idempotency_conflict`.
 
-## 12. Seller Web and Canonical Storefront
+## 13. Seller Web and Canonical Storefront
 
 Implement the seller catalog UI only in `seller/web/seller` and customer rendering only in `seller/web/storefront`.
+
+Frontend implementation must use the UI UX Pro Max workflow for UX decisions and must reuse/extend the existing `ui-sdk` for shared tokens, controls, navigation, accessibility behavior, and responsive patterns. Stitch is explicitly prohibited: do not use Stitch, import Stitch output, or create a Stitch-derived parallel component system. Repository conventions and `ui-sdk` remain the source of truth for production UI code.
 
 Seller web work:
 
@@ -461,7 +708,7 @@ Deprecate the duplicate mock storefront by:
 
 Do not modify `seller-hub`; it remains reserved for external channel connectors.
 
-## 13. Security Requirements
+## 14. Security Requirements
 
 - Keep MinIO private; expose only short-lived PUT capability URLs and public/CDN read URLs intended for storefront use.
 - Presigned URLs are bound to one generated key, content type, checksum, size policy, and short expiry.
@@ -477,74 +724,127 @@ Do not modify `seller-hub`; it remains reserved for external channel connectors.
 - Maintain storefront escaping and structured-presentation validation for all seller-supplied text.
 - Rate-limit presign, completion, import, publish, and inventory adjustment operations at the Seller API boundary.
 
-## 14. Implementation Sequence
+## 15. Implementation Sequence
 
-### Phase A — Core store policy and authorization
+Each phase is independently reviewable and must leave its touched repositories green. The dependency order is intentional:
+
+```mermaid
+flowchart LR
+    A[A: Store model and authorization] --> B[B: Catalog sources and lifecycles]
+    B --> C[C: Store media library]
+    B --> D[D: Core API and storefront projection]
+    C --> D
+    D --> E[E: Seller API boundary]
+    E --> F[F: Seller UI and canonical storefront]
+    F --> G[G: Compose E2E and rollout]
+```
+
+### Phase A — Store model, lifecycle, entitlement, and authorization
 
 1. Add configuration parsing/validation for the default active-store limit.
-2. Add `StoreEntitlementPolicy` and atomic store activation service methods.
-3. Resolve full active seller membership, including role, for catalog operations.
-4. Apply the permission matrix to store and catalog services.
-5. Add errors and Core internal mappings.
+2. Add `StoreEntitlementPolicy` and atomic `DRAFT`/`ACTIVE`/`INACTIVE` transitions.
+3. Prove draft/inactive stores do not consume the active-store entitlement.
+4. Resolve full active seller membership, including role, for catalog operations.
+5. Apply the permission matrix to store services and add safe error mappings.
 6. Add unit and Postgres concurrency tests.
 
-### Phase B — Core media library
+### Phase B — Unified catalog, source graphs, and lifecycles
 
-1. Add migrations for assets, references, upload-intent checksum fields, uniqueness, and deletion work.
+1. Add explicit product and listing status constraints/migration preflight.
+2. Add one store catalog projection with `seller_owned` and `supplier_backed` source discriminators.
+3. Preserve reference semantics for supplier facts and seller ownership of listing merchandising.
+4. Add idempotent supplier-offer import and unified listing readiness/publish/unpublish/archive services.
+5. Add safe product archival and prohibit ordinary hard deletion.
+6. Add inventory-adjustment fingerprint/idempotency metadata to the existing movement transaction without changing inventory scope.
+7. Add source, lifecycle, retry, and inventory-ownership tests.
+
+### Phase C — Core store media library
+
+1. Add migrations for store assets, references, upload-intent request ID/checksum/fingerprint fields, uniqueness, and deletion work.
 2. Add safe legacy media backfill with invariant checks.
 3. Add repository and service methods for list, dedup/presign, complete/verify, attach, update reference, detach, and delete.
-4. Add MinIO get/hash support and outbox-backed deletion worker handling.
-5. Change authoring and storefront projections to resolve media references.
-6. Add migration, repository, service, API contract, race, and failure-retry tests.
+4. Use configured maximum upload size and add bounded MinIO get/hash verification.
+5. Add outbox-backed deletion worker handling and change projections to resolve media references.
+6. Add migration, repository, service, API contract, race, isolation, and failure-retry tests.
 
-### Phase C — Unified listing lifecycle
+### Phase D — Core HTTP contracts and storefront projection
 
-1. Add source-aware listing detail and structured readiness.
-2. Add idempotent supplier-offer import and uniqueness.
-3. Add unified listing price, publish, and unpublish services.
-4. Re-evaluate source-specific readiness inside the publish transaction.
-5. Keep product publish routes as documented compatibility shims.
+1. Expose the target store-scoped Core routes and structured DTOs/errors.
+2. Keep product publish routes as documented seller-owned compatibility shims.
+3. Enforce every nested ID against the route store and add A1/A2/B1 contract tests.
+4. Project only `PUBLISHED`, currently eligible listings and resolved safe media to storefront reads.
+5. Preserve store settings/theme/domain host resolution and revision invalidation.
 6. Regenerate and verify Core OpenAPI.
 
-### Phase D — Seller API boundary
+### Phase E — Seller API boundary
 
 1. Add store-scoped coreclient methods and DTOs.
 2. Add Seller handlers and role middleware for each capability.
-3. Deprecate query/body-scoped legacy routes without widening access.
-4. Map every new Core error to a safe Seller error.
-5. Regenerate Seller OpenAPI and add contract tests comparing method, path, status, and response shape.
+3. Forward operation-specific idempotency identities; never use correlation ID as a key.
+4. Deprecate query/body-scoped legacy routes without widening access.
+5. Map every new Core error to a safe Seller error.
+6. Regenerate Seller OpenAPI and add contract tests comparing method, path, status, and response shape.
 
-### Phase E — Seller web and storefront consolidation
+### Phase F — Seller UI and canonical storefront consolidation
 
-1. Add store bootstrap/switcher and explicit store route layout.
-2. Implement source-aware products, supplier offers/import, listings, variants/SKUs, media, inventory, presentation, readiness, and publish UI.
-3. Make action availability follow role/capability data while preserving API enforcement.
-4. Point live/preview navigation to `seller/web/storefront`.
-5. Remove the embedded mock storefront and its mock data/tests.
-6. Verify canonical storefront media and listing projections.
+1. Use the required UI UX Pro Max workflow for interaction/layout decisions and implement shared primitives with the existing `ui-sdk`.
+2. Do not use Stitch, generated Stitch artifacts, or a parallel design system.
+3. Add store bootstrap/switcher and explicit store route layout.
+4. Implement the unified source-aware catalog, supplier offers/import, listings, variants/SKUs, media, existing inventory operations, presentation, readiness, and lifecycle actions.
+5. Make action availability follow role/capability data while preserving API enforcement.
+6. Point live/preview navigation to `seller/web/storefront`, remove the embedded mock storefront, and verify canonical projections.
 
-### Phase F — Compose E2E and rollout
+### Phase G — Compose E2E and rollout
 
 1. Extend `platform-infra/docker-compose.yml` or add a Compose E2E overlay using the existing services: Postgres, Redis, RabbitMQ, ZITADEL/test issuer, MinIO, Core API, general worker, Seller API/web, Storefront API/web, and a Playwright runner.
-2. Add a deterministic seed/fixture command that creates users/members, two stores, seller and supplier catalog data, and MinIO bucket policy without bypassing Core invariants for the behavior under test.
+2. Add a deterministic seed/fixture command that creates A1, A2, and B1 stores, users/members, seller and supplier catalog data, and MinIO bucket policy without bypassing Core invariants for the behavior under test.
 3. Run migrations and health checks before tests; use service DNS names inside Compose.
 4. Collect service logs and Playwright artifacts on failure and tear the project down with volumes in CI.
 5. Roll out migrations and Core first, then Seller API, then Seller web/storefront. Remove compatibility routes only in a later release after access logs show no callers.
 
 No Kubernetes work is required for this rollout.
 
-## 15. Testing Strategy
+## 16. A1/A2/B1 Isolation Matrix
+
+Define the mandatory test tenants:
+
+- `A1`: seller A, store 1.
+- `A2`: seller A, store 2.
+- `B1`: seller B, store 1.
+
+All test requests are authenticated as a seller A member unless a row says otherwise. An “A2 ID under A1 path” means the caller places a valid A2 resource ID beneath `/stores/A1/...`; this must not work merely because both stores have the same seller. `404` is the safe cross-scope result. Shared supplier product facts may appear independently through eligible offers, but no listing/media/inventory identity crosses stores.
+
+| Capability | Correct A1 scope | A2 resource under A1 scope | B1 resource/switch attempt | Required proof |
+|---|---|---|---|---|
+| products/catalog | list/read A1 catalog products | `404`; A2 product is absent unless separately listed in A1 | `404` | catalog queries always start from route store listings |
+| listings | read/edit A1 listing | `404` | `404` | listing `store_id` equals route store |
+| media library | list/attach A1 asset to A1 context | `404`; no same-seller cross-store reuse or checksum disclosure | `404`; no cross-tenant dedup signal | asset and reference `store_id` both equal route store |
+| supplier import | eligible offer imports into A1 | A1 path cannot create/select A2 listing; explicit A2 path is separately authorized and idempotent | `404` before offer/import detail is disclosed | target store comes only from authorized path |
+| publish/unpublish/archive | transition A1 listing and bump A1 revision | `404`; A2 state/revision unchanged | `404`; B1 state/revision unchanged | lock and transition listing resolved by `(A1, listing_id)` |
+| inventory list/snapshot/adjust | A1 location + A1 SKU/snapshot succeeds under role rules | `404` for A2 location or snapshot; no movement written | `404`; no movement written | verify location store, SKU/product/listing context, and movement snapshot |
+| store switching | A1 to A2 is allowed because both are returned in seller A's owned-store list; navigate to explicit A2 URL and clear A1 cache | selection never reuses A1 resource IDs/cache in A2 | B1 is absent from switcher and direct navigation returns `404` | owned-store response, route, and store-keyed query cache agree |
+
+Repeat the resource tests with a seller B member in the opposite direction. Also run A1/A2 with the same UUID-shaped invalid resource values so not-found behavior does not leak whether a resource exists elsewhere.
+
+## 17. Testing Strategy
 
 ### Core unit and integration
 
-- Policy default, configured higher limit, invalid config, deactivate/reactivate, and concurrent activation.
+- Store `DRAFT`/`ACTIVE`/`INACTIVE` transition table, role authorization, same-state replay, policy default, configured higher limit, invalid config, deactivate/reactivate, and concurrent activation.
+- Proof that any number of draft/inactive stores is allowed and only active stores consume `DefaultMaxActiveStores`.
 - Owner/manager/staff matrix plus inactive membership and cross-seller safe-not-found cases.
+- Separate product `DRAFT`/`ACTIVE`/`ARCHIVED` and listing `DRAFT`/`PUBLISHED`/`UNPUBLISHED`/`ARCHIVED` transitions, including unsafe archive/delete rejection.
+- Unified same-store catalog projection contains both source graphs without granting supplier-fact mutation.
 - Per-store checksum dedup, cross-store non-dedup, duplicate completion, expired token, bad token, size/MIME/checksum mismatch, and upload race.
+- Configured upload maximum is enforced consistently by presign and completion.
 - Reuse of one asset across multiple products in the same store.
 - Detach without object deletion, primary promotion, in-use delete rejection, attach/delete race, deletion retry, and missing-object success.
 - Migration backfill preserves reference IDs used by presentation and fails on ambiguous ownership.
 - Seller-owned draft through publish/unpublish, including concurrent readiness invalidation.
 - Supplier import idempotency, cross-market rejection, offer withdrawal, supplier availability/inventory loss, retail pricing, and publish/unpublish.
+- Supplier import reference semantics and existing order snapshot semantics do not drift historical orders.
+- Inventory remains store-location/SKU scoped; identical adjustment retry is single-apply and changed replay conflicts while correlation ID remains trace-only.
+- Full A1/A2/B1 isolation matrix for products, listings, media, import, publish, inventory, and switching.
 - Storefront projections contain public URL/reference metadata but never checksum, storage key, supplier cost, or internal IDs that are not part of the public contract.
 
 ### Seller API contract
@@ -564,54 +864,72 @@ No Kubernetes work is required for this rollout.
 - Media reuse does not perform a PUT; new upload performs PUT then completion.
 - Role-gated actions, readiness reasons, publish result, and unpublish result.
 - No routes or imports remain for the embedded mock storefront.
+- UI implementation reuses `ui-sdk`, records the UI UX Pro Max workflow, and contains no Stitch artifact/dependency.
 
 ### Compose end to end
 
 The mandatory Compose scenario uses real Core and MinIO, not `cmd/fake-core`:
 
-1. owner signs in and sees store A selected;
+1. seller A owner signs in and sees A1 selected, with A2 available in the switcher and B1 absent;
 2. owner creates seller product, variant, SKU, media upload, price, location, inventory, and presentation;
 3. same asset is reused for a second product without a second MinIO object;
 4. publish makes the first listing visible on the canonical storefront;
-5. switch to store B proves catalog and media isolation;
-6. default entitlement prevents activating store B while store A is active;
+5. switch to A2 proves catalog, listing, media, inventory, and query-cache isolation; direct B1 navigation returns safe not-found;
+6. default entitlement prevents activating A2 while A1 is active, while A2 remains available as draft/inactive;
 7. supplier offer is imported, merchandised, published, and visible;
 8. offer withdrawal removes storefront eligibility;
 9. unpublish removes the seller-owned listing after revision propagation;
-10. referenced asset deletion fails, detaching all references allows queued deletion, and the worker removes the object; and
-11. staff can adjust inventory but cannot import, edit catalog, publish, or delete an asset.
+10. referenced asset deletion fails, detaching all references allows queued deletion, and the worker removes the object;
+11. identical inventory-adjustment replay applies once and a changed replay conflicts; and
+12. staff can adjust inventory but cannot import, edit catalog, publish, archive, or delete an asset.
 
 Run the existing Core Go tests, Seller Go tests, frontend unit/type checks, OpenAPI generation checks, migration up/down verification where supported, and Playwright Compose suite. Tests must not rely on sleep for correctness; wait on health, API state, revision, or worker outcome with bounded polling.
 
-## 16. Acceptance Criteria
+## 18. Acceptance Criteria
 
+- [ ] The implemented domain model is `Seller -> Stores -> selected Store -> Catalog -> Products/Listings`; tests prove `Product != Store`, `Product != Listing`, and `Store != Product`.
 - [ ] A seller can own and switch among multiple stores, and every operational browser/API URL contains the store ID.
-- [ ] Core defaults to one active store per seller and atomically enforces a configurable higher limit.
+- [ ] Store lifecycle is exactly `DRAFT`, `ACTIVE`, `INACTIVE` with the documented transitions and owner/admin authorization.
+- [ ] Core `StoreEntitlementPolicy.DefaultMaxActiveStores` defaults to one, atomically limits only active stores, permits draft/inactive stores, and supports a configured higher active limit.
 - [ ] Store selection never grants access; Core authorizes every request from persisted subject membership and store ownership.
 - [ ] Role permissions match the owner/manager/staff matrix in both Seller API and Core.
+- [ ] One store catalog returns both `seller_owned` and `supplier_backed` rows through a unified contract without merging their ownership graphs.
+- [ ] Seller-owned and supplier-backed source graphs are separately enforced; supplier facts are read-only and the seller remains owner/merchant of retail listing price, presentation, lifecycle, and customer-facing sale.
+- [ ] Supplier import references current supplier product/offer facts, persists seller listing facts, and relies on existing checkout/order snapshots for immutable historical order facts; it does not silently copy a supplier product.
+- [ ] Product lifecycle is separate from listing lifecycle; listings support `DRAFT`, `PUBLISHED`, `UNPUBLISHED`, and `ARCHIVED`, and unsafe product hard deletion is unavailable.
 - [ ] A seller-owned product can complete translations, variants, SKUs, media, price, inventory, presentation, readiness, publish, storefront visibility, and unpublish.
 - [ ] An eligible supplier offer can be imported idempotently, merchandised per store, published, and made unavailable safely when its source becomes ineligible.
 - [ ] Media bytes are represented by immutable Core-owned store assets with verified SHA-256, per-store deduplication, and reusable product references.
 - [ ] Identical bytes in different stores do not share an asset or disclose deduplication information.
+- [ ] Media binary ownership and mutable reference ownership are separately enforced, and only same-store assets can be referenced.
+- [ ] `MEDIA_UPLOAD_MAX_BYTES`/`MediaUploadMaxBytes` is the single configured maximum used during presign and completion; no hard-coded competing limit remains.
 - [ ] Detaching media never deletes an object still referenced elsewhere; permanent deletion is asynchronous, retryable, and blocks new references.
 - [ ] Browser upload is direct to MinIO through a short-lived presigned PUT, while Core verifies actual bytes before accepting the asset.
+- [ ] Import, upload intent/completion, publish/unpublish, and inventory adjustment satisfy the documented operation-specific idempotency contracts; `X-Correlation-Id` remains trace-only.
+- [ ] Inventory retains its existing seller/store-owned location plus SKU snapshot scope, reservation protection, movement audit, and version behavior; supplier inventory remains supplier-owned.
 - [ ] Seller API exposes only store-scoped catalog routes and safe DTOs; compatibility routes are visibly deprecated.
+- [ ] A1/A2/B1 tests pass for products, listings, media, import, publish, inventory, and store switching, including same-seller cross-store isolation.
+- [ ] Storefront access follows `Store -> storefront settings/published theme -> active host/domain resolution`; no browser-selected store ID can choose the public tenant.
 - [ ] `seller/web/storefront` is the only supported customer storefront, and the mock storefront inside `seller/web/seller` is removed.
+- [ ] Seller UI work uses UI UX Pro Max and the existing `ui-sdk`; no Stitch code, artifact, dependency, or parallel design system is introduced.
 - [ ] Publish/unpublish updates the canonical storefront through existing revision semantics.
 - [ ] Compose E2E proves real Postgres/Core/MinIO/Seller/Storefront integration and tenant isolation.
 - [ ] OpenAPI documents, migrations, unit/integration tests, frontend tests, and Compose E2E all pass.
 - [ ] No billing, payments, fulfillment, or Kubernetes implementation is included.
 
-## 17. Completion Evidence
+## 19. Completion Evidence
 
-The implementation report must record:
+The final implementation handoff or change description must record the following evidence. This requirement does not authorize or require a separate implementation-report file:
 
 - migration identifiers and invariant/backfill results;
 - final Core and Seller API route tables and generated OpenAPI paths;
 - configured entitlement default and validation behavior;
 - media checksum verification and object-deletion retry evidence;
 - role/tenant isolation test names;
+- A1/A2/B1 matrix results;
 - seller-owned and supplier-backed lifecycle test names;
+- idempotency replay/conflict test names, including single-apply inventory adjustment;
 - canonical storefront removal/replacement file list;
+- UI UX Pro Max and `ui-sdk` evidence plus confirmation that Stitch was not used;
 - Compose command and passing Playwright scenarios; and
 - explicit confirmation that billing, payments, fulfillment, and Kubernetes were untouched.
