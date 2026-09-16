@@ -105,8 +105,14 @@ func TestIntegrationStorefrontHostDomainSelectionRules(t *testing.T) {
 	env, subjectA, _ := setupStorefrontHostTestEnv(t)
 	ctx := env.ctx
 
-	// Store with active primary custom domain and active secondary platform domain
-	store, _, err := env.repo.CreateStoreWithDomain(ctx, env.sellerA.ID, "EG", "store-rules", "Rules Store", "active", nil, "platform-secondary.matjero.test", "platform", "active", false, nil, nil)
+	sellerRules, err := env.repo.CreateSeller(ctx, "seller-rules", "Rules Seller", "active", nil)
+	if err != nil {
+		t.Fatalf("create rules seller: %v", err)
+	}
+	if _, err := env.repo.CreateSellerMember(ctx, sellerRules.ID, subjectA, "owner", "active"); err != nil {
+		t.Fatalf("create rules seller member: %v", err)
+	}
+	store, _, err := env.repo.CreateStoreWithDomain(ctx, sellerRules.ID, "EG", "store-rules", "Rules Store", "active", nil, "platform-secondary.matjero.test", "platform", "active", false, nil, nil)
 	if err != nil {
 		t.Fatalf("create test store: %v", err)
 	}
@@ -193,8 +199,15 @@ func TestIntegrationStorefrontHostLifecyclePromotion(t *testing.T) {
 	ctx := env.ctx
 
 	// 1. Create store with platform domain active + primary
+	sellerPromo, err := env.repo.CreateSeller(ctx, "seller-promo", "Promo Seller", "active", nil)
+	if err != nil {
+		t.Fatalf("create promo seller: %v", err)
+	}
+	if _, err := env.repo.CreateSellerMember(ctx, sellerPromo.ID, subjectA, "owner", "active"); err != nil {
+		t.Fatalf("create promo seller member: %v", err)
+	}
 	platformDomainStr := "store-promo.matjero.test"
-	store, platformDomain, err := env.repo.CreateStoreWithDomain(ctx, env.sellerA.ID, "EG", "store-promo", "Promo Store", "active", nil, platformDomainStr, "platform", "active", true, nil, nil)
+	store, platformDomain, err := env.repo.CreateStoreWithDomain(ctx, sellerPromo.ID, "EG", "store-promo", "Promo Store", "active", nil, platformDomainStr, "platform", "active", true, nil, nil)
 	if err != nil {
 		t.Fatalf("create store with platform domain: %v", err)
 	}

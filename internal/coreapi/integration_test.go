@@ -146,9 +146,15 @@ func (e *integrationEnv) seed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create seller A: %v", err)
 	}
+	if _, err := e.repo.CreateSellerMember(ctx, sellerA.ID, "subject-of-seller-a", "owner", "active"); err != nil {
+		t.Fatalf("create seller A member: %v", err)
+	}
 	sellerB, err := e.repo.CreateSeller(ctx, "seller-b", "Seller B", "active", nil)
 	if err != nil {
 		t.Fatalf("create seller B: %v", err)
+	}
+	if _, err := e.repo.CreateSellerMember(ctx, sellerB.ID, "subject-of-seller-b", "owner", "active"); err != nil {
+		t.Fatalf("create seller B member: %v", err)
 	}
 	e.sellerA, e.sellerB = sellerA, sellerB
 

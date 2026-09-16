@@ -49,7 +49,7 @@ func TestP51CustomerCartConstraintsAndCanonicalAdd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	storeB, _, err := repo.CreateStoreWithDomain(ctx, seller.ID, "EG", "p51-store-b-"+suffix, "P51 Store B", "active", nil, "p51-b-"+suffix+".test", "platform", "active", true, nil, nil)
+	storeB, _, err := repo.CreateStoreWithDomain(ctx, seller.ID, "EG", "p51-store-b-"+suffix, "P51 Store B", "active", nil, "p51-b-"+suffix+".test", "platform", "active", true, nil, nil, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestP51FulfillmentOwnershipAndCustomerIsolationConstraints(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	storeB, _, err := repo.CreateStoreWithDomain(ctx, seller.ID, "EG", "p51-d-"+suffix, "P51 D", "active", nil, "p51-d-"+suffix+".test", "platform", "active", true, nil, nil)
+	storeB, _, err := repo.CreateStoreWithDomain(ctx, seller.ID, "EG", "p51-d-"+suffix, "P51 D", "active", nil, "p51-d-"+suffix+".test", "platform", "active", true, nil, nil, 2)
 	if err != nil {
 		t.Fatal(err)
 	}

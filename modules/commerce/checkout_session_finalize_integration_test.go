@@ -1763,7 +1763,7 @@ func TestFinalizeCheckoutSellerOwnedSourceIsolation(t *testing.T) {
 		suffix := uuid.NewString()
 		setup := setupSellerCheckoutTest(t, db, repo, ctx, suffix, 10, 1000)
 
-		storeB, err := repo.CreateStore(ctx, setup.Store.SellerID, "EG", "storeb-"+suffix, "Store B", "active", nil)
+		storeB, err := repo.CreateStore(ctx, setup.Store.SellerID, "EG", "storeb-"+suffix, "Store B", "active", nil, 2)
 		if err != nil {
 			t.Fatal(err)
 		}
