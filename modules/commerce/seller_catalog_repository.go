@@ -975,7 +975,13 @@ func (r Repository) AttachProductMediaReference(ctx context.Context, ref Product
 			return nil
 		}
 
-		if ref.IsPrimary {
+		var count int
+		if err := tx.QueryRow(ctx, `SELECT COUNT(*) FROM product_media_references WHERE store_id = $1 AND product_id = $2`, ref.StoreID, ref.ProductID).Scan(&count); err != nil {
+			return err
+		}
+		if count == 0 {
+			ref.IsPrimary = true
+		} else if ref.IsPrimary {
 			if _, err := tx.Exec(ctx, `UPDATE product_media_references SET is_primary = false WHERE store_id = $1 AND product_id = $2`, ref.StoreID, ref.ProductID); err != nil {
 				return translatePGError(err, "clear primary reference")
 			}
