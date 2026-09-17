@@ -89,6 +89,7 @@ func setupIntegration(t *testing.T) integrationEnv {
 		"000019_create_payments_schema",
 		"000020_create_ledger_schema",
 		"000021_create_balance_projection_schema",
+		"000026_seller_catalog_phase_c",
 	} {
 		applyMigrationFile(t, db, filepath.Join("..", "..", "migrations", name+".up.sql"))
 	}
@@ -692,6 +693,7 @@ func TestIntegrationThemePreviewFailsClosedWithoutSecret(t *testing.T) {
 		"000010_customer_cart_domain",
 		"000011_checkout_sessions",
 		"000012_order_aggregate_schema",
+		"000026_seller_catalog_phase_c",
 	} {
 		applyMigrationFile(t, db, filepath.Join("..", "..", "migrations", name+".up.sql"))
 	}

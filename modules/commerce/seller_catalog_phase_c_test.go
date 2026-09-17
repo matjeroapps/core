@@ -200,6 +200,27 @@ func TestCompleteStoreMediaUpload_ChecksumMismatchAndDeletion(t *testing.T) {
 	require.True(t, deletedKeys[presign.StorageKey], "MinIO object should be deleted on checksum mismatch")
 }
 
+func createTestMediaAsset(t *testing.T, ctx context.Context, repo Repository, intentID string, asset StoreMediaAsset) StoreMediaAsset {
+	t.Helper()
+	_, err := repo.CreateMediaUploadIntent(ctx, MediaUploadIntent{
+		ID:               intentID,
+		StoreID:          asset.StoreID,
+		ClientUploadID:   &intentID,
+		OriginalFilename: asset.OriginalFilename,
+		ContentType:      asset.ContentType,
+		ByteSize:         asset.ByteSize,
+		ChecksumSHA256:   asset.ChecksumSHA256,
+		StorageKey:       asset.StorageKey,
+		TokenDigest:      "dummy",
+		ExpiresAt:        time.Now().Add(1 * time.Hour),
+	})
+	require.NoError(t, err)
+
+	created, err := repo.CompleteMediaUploadAndCreateAsset(ctx, intentID, asset)
+	require.NoError(t, err)
+	return created
+}
+
 func TestProductMediaReferences_AttachPrimaryPromotionAndDetach(t *testing.T) {
 	_, service, repo, suffix := setupSellerCatalogTestDB(t)
 	ctx := context.Background()
@@ -214,7 +235,7 @@ func TestProductMediaReferences_AttachPrimaryPromotionAndDetach(t *testing.T) {
 	productID := productDetail.Product.ID
 
 	// Create 2 ready store media assets
-	assetA, err := repo.CompleteMediaUploadAndCreateAsset(ctx, "intent-a-"+suffix, StoreMediaAsset{
+	assetA := createTestMediaAsset(t, ctx, repo, "intent-a-"+suffix, StoreMediaAsset{
 		ID:               "asset-a-" + suffix,
 		StoreID:          storeID,
 		ChecksumSHA256:   "a1b2c3d4e5f60000000000000000000000000000000000000000000000000001",
@@ -225,9 +246,8 @@ func TestProductMediaReferences_AttachPrimaryPromotionAndDetach(t *testing.T) {
 		Status:           "ready",
 		CreatedBySubject: sub,
 	})
-	require.NoError(t, err)
 
-	assetB, err := repo.CompleteMediaUploadAndCreateAsset(ctx, "intent-b-"+suffix, StoreMediaAsset{
+	assetB := createTestMediaAsset(t, ctx, repo, "intent-b-"+suffix, StoreMediaAsset{
 		ID:               "asset-b-" + suffix,
 		StoreID:          storeID,
 		ChecksumSHA256:   "a1b2c3d4e5f60000000000000000000000000000000000000000000000000002",
@@ -238,7 +258,6 @@ func TestProductMediaReferences_AttachPrimaryPromotionAndDetach(t *testing.T) {
 		Status:           "ready",
 		CreatedBySubject: sub,
 	})
-	require.NoError(t, err)
 
 	// 1. Attach Asset A to product (is_primary = false)
 	refA, err := service.AttachProductMediaReference(ctx, sub, storeID, productID, AttachMediaReferenceRequest{
@@ -296,7 +315,7 @@ func TestDeleteStoreMediaAsset_InUseConflictAndAsyncDeletion(t *testing.T) {
 	require.NoError(t, err)
 	productID := productDetail.Product.ID
 
-	asset, err := repo.CompleteMediaUploadAndCreateAsset(ctx, "intent-del-"+suffix, StoreMediaAsset{
+	asset := createTestMediaAsset(t, ctx, repo, "intent-del-"+suffix, StoreMediaAsset{
 		ID:               "asset-del-" + suffix,
 		StoreID:          storeID,
 		ChecksumSHA256:   "a1b2c3d4e5f60000000000000000000000000000000000000000000000000099",
@@ -307,7 +326,6 @@ func TestDeleteStoreMediaAsset_InUseConflictAndAsyncDeletion(t *testing.T) {
 		Status:           "ready",
 		CreatedBySubject: sub,
 	})
-	require.NoError(t, err)
 
 	ref, err := service.AttachProductMediaReference(ctx, sub, storeID, productID, AttachMediaReferenceRequest{
 		AssetID:   asset.ID,
@@ -365,7 +383,7 @@ func TestTenantStoreAuthorization_CrossStoreAccessDenied(t *testing.T) {
 	sub2, _, store2 := createTestStoreAndSubject(t, service, repo, "tenant2-"+suffix)
 
 	// Store 1 asset
-	asset1, err := repo.CompleteMediaUploadAndCreateAsset(ctx, "intent-t1-"+suffix, StoreMediaAsset{
+	asset1 := createTestMediaAsset(t, ctx, repo, "intent-t1-"+suffix, StoreMediaAsset{
 		ID:               "asset-t1-" + suffix,
 		StoreID:          store1,
 		ChecksumSHA256:   "1111111111111111111111111111111111111111111111111111111111111111",
@@ -376,7 +394,6 @@ func TestTenantStoreAuthorization_CrossStoreAccessDenied(t *testing.T) {
 		Status:           "ready",
 		CreatedBySubject: sub1,
 	})
-	require.NoError(t, err)
 
 	// Store 2 product
 	productDetail2, err := service.CreateSellerProductForSubject(ctx, sub2, store2, SellerProductDraft{

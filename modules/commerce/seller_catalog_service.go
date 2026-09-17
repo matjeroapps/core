@@ -511,19 +511,21 @@ func (s Service) PresignStoreMediaUpload(ctx context.Context, subject, storeID s
 	}
 
 	checksum := strings.ToLower(req.ChecksumSHA256)
-	if len(checksum) != 64 {
+	if checksum != "" && len(checksum) != 64 {
 		return PresignMediaUploadResponse{}, fmt.Errorf("%w: invalid checksum format", ErrInvalidInput)
 	}
 
-	readyAsset, err := s.repo.GetReadyStoreMediaAssetByChecksum(ctx, storeID, checksum)
-	if err == nil {
-		if s.S3Storage != nil {
-			readyAsset.URL = s.S3Storage.ResolvePublicURI(readyAsset.StorageKey)
+	if checksum != "" {
+		readyAsset, err := s.repo.GetReadyStoreMediaAssetByChecksum(ctx, storeID, checksum)
+		if err == nil {
+			if s.S3Storage != nil {
+				readyAsset.URL = s.S3Storage.ResolvePublicURI(readyAsset.StorageKey)
+			}
+			return PresignMediaUploadResponse{
+				Mode:  "reuse",
+				Asset: &readyAsset,
+			}, nil
 		}
-		return PresignMediaUploadResponse{
-			Mode:  "reuse",
-			Asset: &readyAsset,
-		}, nil
 	}
 
 	fingerprintStr := fmt.Sprintf("%s|%s|%s|%d|%s", req.ClientUploadID, req.Filename, req.ContentType, req.SizeBytes, checksum)
@@ -570,9 +572,11 @@ func (s Service) PresignStoreMediaUpload(ctx context.Context, subject, storeID s
 		}
 	}
 
-	_, err = s.repo.GetMediaUploadIntentByChecksum(ctx, storeID, checksum)
-	if err == nil {
-		return PresignMediaUploadResponse{}, ErrUploadInProgress
+	if checksum != "" {
+		_, err = s.repo.GetMediaUploadIntentByChecksum(ctx, storeID, checksum)
+		if err == nil {
+			return PresignMediaUploadResponse{}, ErrUploadInProgress
+		}
 	}
 
 	if s.S3Storage == nil {
@@ -864,7 +868,7 @@ func (s Service) GenerateMediaUploadPresignedURLForSubject(ctx context.Context, 
 		Filename:       "product_image.jpg",
 		ContentType:    req.ContentType,
 		SizeBytes:      req.SizeBytes,
-		ChecksumSHA256: lpadHex(uuid.NewString()),
+		ChecksumSHA256: "",
 	})
 	if err != nil {
 		return MediaUploadResponse{}, err
