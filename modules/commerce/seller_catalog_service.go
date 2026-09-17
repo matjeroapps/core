@@ -340,6 +340,9 @@ func (s Service) UpdateSellerProductForSubject(ctx context.Context, subject, sto
 	if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, seller.ID, productID); err != nil {
 		return SellerProductDetail{}, ErrNotFound
 	}
+	if _, err := s.repo.GetSellerListingByStoreAndProduct(ctx, storeID, productID); err != nil {
+		return SellerProductDetail{}, ErrNotFound
+	}
 
 	if slug != "" {
 		if _, err := s.repo.UpdateSellerProduct(ctx, productID, slug); err != nil {
@@ -377,6 +380,9 @@ func (s Service) CreateVariantForSubject(ctx context.Context, subject, storeID, 
 	if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, seller.ID, productID); err != nil {
 		return Variant{}, ErrNotFound
 	}
+	if _, err := s.repo.GetSellerListingByStoreAndProduct(ctx, storeID, productID); err != nil {
+		return Variant{}, ErrNotFound
+	}
 
 	return s.repo.CreateVariant(ctx, productID, code, status)
 }
@@ -391,6 +397,9 @@ func (s Service) UpdateVariantForSubject(ctx context.Context, subject, storeID, 
 		return Variant{}, err
 	}
 	if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, seller.ID, productID); err != nil {
+		return Variant{}, ErrNotFound
+	}
+	if _, err := s.repo.GetSellerListingByStoreAndProduct(ctx, storeID, productID); err != nil {
 		return Variant{}, ErrNotFound
 	}
 	variant, err := s.repo.GetVariantByID(ctx, variantID)
@@ -411,6 +420,9 @@ func (s Service) CreateSKUForSubject(ctx context.Context, subject, storeID, prod
 		return SKU{}, err
 	}
 	if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, seller.ID, productID); err != nil {
+		return SKU{}, ErrNotFound
+	}
+	if _, err := s.repo.GetSellerListingByStoreAndProduct(ctx, storeID, productID); err != nil {
 		return SKU{}, ErrNotFound
 	}
 	variant, err := s.repo.GetVariantByID(ctx, variantID)
@@ -434,6 +446,9 @@ func (s Service) UpdateSKUForSubject(ctx context.Context, subject, storeID, prod
 		return SKU{}, err
 	}
 	if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, seller.ID, productID); err != nil {
+		return SKU{}, ErrNotFound
+	}
+	if _, err := s.repo.GetSellerListingByStoreAndProduct(ctx, storeID, productID); err != nil {
 		return SKU{}, ErrNotFound
 	}
 	variant, err := s.repo.GetVariantByID(ctx, variantID)
@@ -665,7 +680,7 @@ func (s Service) CompleteStoreMediaUpload(ctx context.Context, subject, storeID,
 		return StoreMediaAsset{}, err
 	}
 	if intent.StoreID != storeID {
-		return StoreMediaAsset{}, fmt.Errorf("%w: upload intent belongs to a different store", ErrInvalidInput)
+		return StoreMediaAsset{}, ErrNotFound
 	}
 	if time.Now().After(intent.ExpiresAt) {
 		return StoreMediaAsset{}, fmt.Errorf("%w: upload intent expired", ErrInvalidInput)
@@ -769,6 +784,9 @@ func (s Service) AttachProductMediaReference(ctx context.Context, subject, store
 	if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, seller.ID, productID); err != nil {
 		return ProductMediaReference{}, ErrNotFound
 	}
+	if _, err := s.repo.GetSellerListingByStoreAndProduct(ctx, storeID, productID); err != nil {
+		return ProductMediaReference{}, ErrNotFound
+	}
 
 	ref := ProductMediaReference{
 		StoreID:   storeID,
@@ -801,6 +819,9 @@ func (s Service) UpdateProductMediaReference(ctx context.Context, subject, store
 	if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, seller.ID, productID); err != nil {
 		return ProductMediaReference{}, ErrNotFound
 	}
+	if _, err := s.repo.GetSellerListingByStoreAndProduct(ctx, storeID, productID); err != nil {
+		return ProductMediaReference{}, ErrNotFound
+	}
 
 	ref, err := s.repo.UpdateProductMediaReference(ctx, storeID, productID, referenceID, req.AltText, req.SortOrder, req.IsPrimary)
 	if err != nil {
@@ -824,6 +845,9 @@ func (s Service) DetachProductMediaReference(ctx context.Context, subject, store
 	if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, seller.ID, productID); err != nil {
 		return ErrNotFound
 	}
+	if _, err := s.repo.GetSellerListingByStoreAndProduct(ctx, storeID, productID); err != nil {
+		return ErrNotFound
+	}
 
 	return s.repo.DetachProductMediaReference(ctx, storeID, productID, referenceID)
 }
@@ -835,6 +859,9 @@ func (s Service) ListProductMediaReferences(ctx context.Context, subject, storeI
 	}
 	if _, err := s.RequireSellerAccess(ctx, subject, store.SellerID); err != nil {
 		return nil, err
+	}
+	if _, err := s.repo.GetSellerListingByStoreAndProduct(ctx, storeID, productID); err != nil {
+		return nil, ErrNotFound
 	}
 
 	refs, err := s.repo.ListProductMediaReferences(ctx, storeID, productID)
@@ -1171,6 +1198,9 @@ func (s Service) TransitionProductStatusForSubject(ctx context.Context, subject,
 	if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, seller.ID, productID); err != nil {
 		return Product{}, ErrNotFound
 	}
+	if _, err := s.repo.GetSellerListingByStoreAndProduct(ctx, storeID, productID); err != nil {
+		return Product{}, ErrNotFound
+	}
 	return s.repo.TransitionProductStatus(ctx, productID, targetStatus)
 }
 
@@ -1187,6 +1217,9 @@ func (s Service) ArchiveProductForSubject(ctx context.Context, subject, storeID,
 		return err
 	}
 	if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, seller.ID, productID); err != nil {
+		return ErrNotFound
+	}
+	if _, err := s.repo.GetSellerListingByStoreAndProduct(ctx, storeID, productID); err != nil {
 		return ErrNotFound
 	}
 	return s.repo.ArchiveProduct(ctx, productID)
