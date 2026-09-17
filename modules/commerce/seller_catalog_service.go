@@ -1105,8 +1105,7 @@ func (s Service) CreateInventorySnapshotForSubject(ctx context.Context, subject,
 	if err != nil {
 		return InventorySnapshot{}, err
 	}
-	seller, err := s.RequireSellerAccess(ctx, subject, store.SellerID)
-	if err != nil {
+	if _, err := s.RequireSellerAccess(ctx, subject, store.SellerID); err != nil {
 		return InventorySnapshot{}, err
 	}
 
@@ -1125,7 +1124,7 @@ func (s Service) CreateInventorySnapshotForSubject(ctx context.Context, subject,
 	if err != nil {
 		return InventorySnapshot{}, ErrNotFound
 	}
-	if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, seller.ID, variant.ProductID); err != nil {
+	if _, err := s.repo.GetSellerListingByStoreAndProduct(ctx, storeID, variant.ProductID); err != nil {
 		return InventorySnapshot{}, ErrNotFound
 	}
 
@@ -1137,14 +1136,13 @@ func (s Service) AdjustStoreInventoryForSubject(ctx context.Context, subject, st
 	if err != nil {
 		return InventorySnapshot{}, InventoryMovement{}, err
 	}
-	seller, err := s.RequireSellerAccess(ctx, subject, store.SellerID)
-	if err != nil {
+	if _, err := s.RequireSellerAccess(ctx, subject, store.SellerID); err != nil {
 		return InventorySnapshot{}, InventoryMovement{}, err
 	}
 
 	snap, err := s.repo.GetInventorySnapshot(ctx, snapshotID)
 	if err != nil {
-		return InventorySnapshot{}, InventoryMovement{}, err
+		return InventorySnapshot{}, InventoryMovement{}, ErrNotFound
 	}
 
 	loc, err := s.repo.GetFulfillmentLocationByID(ctx, snap.FulfillmentLocationID)
@@ -1160,7 +1158,7 @@ func (s Service) AdjustStoreInventoryForSubject(ctx context.Context, subject, st
 	if err != nil {
 		return InventorySnapshot{}, InventoryMovement{}, ErrNotFound
 	}
-	if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, seller.ID, variant.ProductID); err != nil {
+	if _, err := s.repo.GetSellerListingByStoreAndProduct(ctx, storeID, variant.ProductID); err != nil {
 		return InventorySnapshot{}, InventoryMovement{}, ErrNotFound
 	}
 
