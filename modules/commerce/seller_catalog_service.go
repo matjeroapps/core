@@ -705,9 +705,13 @@ func (s Service) CompleteStoreMediaUpload(ctx context.Context, subject, storeID,
 	}
 
 	actualChecksum := hex.EncodeToString(h.Sum(nil))
-	if actualChecksum != intent.ChecksumSHA256 {
-		_ = s.S3Storage.DeleteObject(ctx, req.StorageKey)
-		return StoreMediaAsset{}, ErrChecksumMismatch
+	if intent.ChecksumSHA256 != "" {
+		if actualChecksum != intent.ChecksumSHA256 {
+			_ = s.S3Storage.DeleteObject(ctx, req.StorageKey)
+			return StoreMediaAsset{}, ErrChecksumMismatch
+		}
+	} else {
+		intent.ChecksumSHA256 = actualChecksum
 	}
 
 	asset := StoreMediaAsset{

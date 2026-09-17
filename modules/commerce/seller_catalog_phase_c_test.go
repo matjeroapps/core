@@ -26,7 +26,7 @@ func createTestStoreAndSubject(t *testing.T, service Service, repo Repository, n
 	_, err = repo.CreateSellerMember(ctx, seller.ID, subject, "owner", "active")
 	require.NoError(t, err)
 
-	store, err := repo.CreateStore(ctx, seller.ID, "US", "st-"+suffix, "Store "+name, "active", nil)
+	store, err := repo.CreateStore(ctx, seller.ID, "EG", "st-"+suffix, "Store "+name, "active", nil)
 	require.NoError(t, err)
 
 	return subject, seller.ID, store.ID
