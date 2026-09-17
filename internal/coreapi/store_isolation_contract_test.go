@@ -263,6 +263,8 @@ func setupIsolationContractEnv(t *testing.T) isolationTestEnv {
 	}
 	_, sp, err := repo.CreateSupplierProductAtomically(ctx, supplier.ID, commerce.ProductDraft{
 		Slug:         "supplier-prod",
+		Status:       "active",
+		SupplierCode: "SUPP-PROD-1",
 		Translations: []commerce.ProductTranslation{{Locale: "en", Name: "Supplier Prod"}},
 	})
 	if err != nil {

@@ -103,7 +103,7 @@ go test ./...
 ## Files Changed
 
 - `core/modules/commerce/seller_catalog_service.go`: Added store listing association checks to product, variant, SKU, media reference, product status, archive, and inventory snapshot/adjustment service methods; updated upload intent store mismatch to return `ErrNotFound`.
-- `core/internal/coreapi/store_isolation_contract_test.go`: Created contract test suite covering store catalog isolation matrix (A1/A2/B1 stores and sellers, same-seller cross-store isolation, cross-seller isolation, random non-existent resource 404 verification).
+- `core/internal/coreapi/store_isolation_contract_test.go`: Created contract test suite covering store catalog isolation matrix (A1/A2/B1 stores and sellers, same-seller cross-store isolation, cross-seller isolation, random non-existent resource 404 verification). Fixed `ProductDraft` fixture (`Status` and `SupplierCode`) to satisfy live database validations.
 - `core/docs/api/internal/openapi.json`: Regenerated OpenAPI specification document.
 - `core/docs/implementation/seller-catalog-http-contracts-report.md`: Created implementation report.
 
