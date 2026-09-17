@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/matjeroapps/core/packages/money"
 )
 
 var scriptTagRegex = regexp.MustCompile(`(?i)<script|javascript:|on\w+=`)
@@ -831,7 +832,7 @@ func (s Service) CreateInventorySnapshotForSubject(ctx context.Context, subject,
 	return s.repo.CreateInventorySnapshot(ctx, locationID, skuID, onHandQty)
 }
 
-func (s Service) AdjustStoreInventoryForSubject(ctx context.Context, subject, storeID, snapshotID string, quantityDelta int64, reason, correlationID string) (InventorySnapshot, InventoryMovement, error) {
+func (s Service) AdjustStoreInventoryForSubject(ctx context.Context, subject, storeID, snapshotID string, quantityDelta int64, reason, correlationID string, idempotencyKey string) (InventorySnapshot, InventoryMovement, error) {
 	store, err := s.repo.GetStore(ctx, storeID)
 	if err != nil {
 		return InventorySnapshot{}, InventoryMovement{}, err
@@ -868,7 +869,12 @@ func (s Service) AdjustStoreInventoryForSubject(ctx context.Context, subject, st
 		return InventorySnapshot{}, InventoryMovement{}, fmt.Errorf("%w: on_hand_qty cannot drop below reserved_qty (%d)", ErrInvalidInput, snap.ReservedQty)
 	}
 
-	return s.repo.AdjustInventory(ctx, snapshotID, quantityDelta, "adjustment", reason, subject, correlationID, "")
+	fp := ""
+	if idempotencyKey != "" {
+		fp = fmt.Sprintf("delta=%d;reason=%s", quantityDelta, strings.TrimSpace(reason))
+	}
+
+	return s.repo.AdjustInventory(ctx, snapshotID, quantityDelta, "adjustment", reason, subject, correlationID, "", idempotencyKey, fp)
 }
 
 // publishRaceHook, when set, runs between the pre-transaction readiness
@@ -877,7 +883,28 @@ func (s Service) AdjustStoreInventoryForSubject(ctx context.Context, subject, st
 // the final readiness revalidation inside the publish transaction catches it.
 var publishRaceHook func()
 
-func (s Service) PublishSellerProductForSubject(ctx context.Context, subject, storeID, productID string) error {
+func (s Service) TransitionProductStatusForSubject(ctx context.Context, subject, storeID, productID, targetStatus string) (Product, error) {
+	if subject == "" || storeID == "" || productID == "" || targetStatus == "" {
+		return Product{}, ErrInvalidInput
+	}
+	store, err := s.repo.GetStore(ctx, storeID)
+	if err != nil {
+		return Product{}, err
+	}
+	seller, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID)
+	if err != nil {
+		return Product{}, err
+	}
+	if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, seller.ID, productID); err != nil {
+		return Product{}, ErrNotFound
+	}
+	return s.repo.TransitionProductStatus(ctx, productID, targetStatus)
+}
+
+func (s Service) ArchiveProductForSubject(ctx context.Context, subject, storeID, productID string) error {
+	if subject == "" || storeID == "" || productID == "" {
+		return ErrInvalidInput
+	}
 	store, err := s.repo.GetStore(ctx, storeID)
 	if err != nil {
 		return err
@@ -889,39 +916,170 @@ func (s Service) PublishSellerProductForSubject(ctx context.Context, subject, st
 	if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, seller.ID, productID); err != nil {
 		return ErrNotFound
 	}
+	return s.repo.ArchiveProduct(ctx, productID)
+}
 
-	detail, err := s.GetSellerProductDetailForSubject(ctx, subject, storeID, productID)
+func (s Service) ImportSupplierOfferForSubject(ctx context.Context, subject, storeID, supplierOfferID string) (SellerListing, error) {
+	if subject == "" || storeID == "" || supplierOfferID == "" {
+		return SellerListing{}, ErrInvalidInput
+	}
+	store, err := s.repo.GetStore(ctx, storeID)
 	if err != nil {
-		return err
+		return SellerListing{}, err
+	}
+	if _, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID); err != nil {
+		return SellerListing{}, err
+	}
+	return s.repo.ImportSupplierOfferAtomically(ctx, storeID, supplierOfferID, "")
+}
+
+func (s Service) GetSellerListingByIDForSubject(ctx context.Context, subject, storeID, listingID string) (SellerListing, error) {
+	if subject == "" || storeID == "" || listingID == "" {
+		return SellerListing{}, ErrInvalidInput
+	}
+	store, err := s.repo.GetStore(ctx, storeID)
+	if err != nil {
+		return SellerListing{}, err
+	}
+	if _, err := s.RequireSellerAccess(ctx, subject, store.SellerID); err != nil {
+		return SellerListing{}, err
+	}
+	return s.repo.GetSellerListingByStoreAndID(ctx, storeID, listingID)
+}
+
+func (s Service) SetListingPriceForSubject(ctx context.Context, subject, storeID, listingID string, amountMinor int64, currency string) (SellerListingPrice, error) {
+	if subject == "" || storeID == "" || listingID == "" {
+		return SellerListingPrice{}, ErrInvalidInput
+	}
+	store, err := s.repo.GetStore(ctx, storeID)
+	if err != nil {
+		return SellerListingPrice{}, err
+	}
+	if _, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID); err != nil {
+		return SellerListingPrice{}, err
+	}
+	if _, err := s.repo.GetSellerListingByStoreAndID(ctx, storeID, listingID); err != nil {
+		return SellerListingPrice{}, err
+	}
+	priceObj, err := money.New(amountMinor, currency)
+	if err != nil {
+		return SellerListingPrice{}, fmt.Errorf("%w: invalid price amount/currency", ErrInvalidInput)
+	}
+	return s.repo.SetSellerListingPrice(ctx, listingID, priceObj)
+}
+
+func (s Service) GetListingReadinessForSubject(ctx context.Context, subject, storeID, listingID string) (PublishReadiness, error) {
+	if subject == "" || storeID == "" || listingID == "" {
+		return PublishReadiness{}, ErrInvalidInput
+	}
+	store, err := s.repo.GetStore(ctx, storeID)
+	if err != nil {
+		return PublishReadiness{}, err
+	}
+	if _, err := s.RequireSellerAccess(ctx, subject, store.SellerID); err != nil {
+		return PublishReadiness{}, err
+	}
+	listing, err := s.repo.GetSellerListingByStoreAndID(ctx, storeID, listingID)
+	if err != nil {
+		return PublishReadiness{}, err
+	}
+	detail, err := s.GetSellerProductDetailForSubject(ctx, subject, storeID, listing.ProductID)
+	if err != nil {
+		return PublishReadiness{}, err
+	}
+	return detail.PublishReadiness, nil
+}
+
+func (s Service) PublishListingForSubject(ctx context.Context, subject, storeID, listingID string) (SellerListing, error) {
+	if subject == "" || storeID == "" || listingID == "" {
+		return SellerListing{}, ErrInvalidInput
+	}
+	store, err := s.repo.GetStore(ctx, storeID)
+	if err != nil {
+		return SellerListing{}, err
+	}
+	if _, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID); err != nil {
+		return SellerListing{}, err
+	}
+	listing, err := s.repo.GetSellerListingByStoreAndID(ctx, storeID, listingID)
+	if err != nil {
+		return SellerListing{}, err
 	}
 
+	detail, err := s.GetSellerProductDetailForSubject(ctx, subject, storeID, listing.ProductID)
+	if err != nil {
+		return SellerListing{}, err
+	}
 	if !detail.PublishReadiness.IsReady {
-		return fmt.Errorf("%w: publish readiness failed: %s", ErrInvalidInput, strings.Join(detail.PublishReadiness.Reasons, "; "))
+		return SellerListing{}, fmt.Errorf("%w: publish readiness failed: %s", ErrPublishNotReady, strings.Join(detail.PublishReadiness.Reasons, "; "))
 	}
 
 	if publishRaceHook != nil {
 		publishRaceHook()
 	}
 
-	// Final authoritative readiness validation happens inside the publish
-	// transaction while product, listing and SKU rows are locked.
-	return s.repo.PublishSellerProductAtomically(ctx, storeID, productID, store.MarketCode, marketCurrency(store.MarketCode))
+	if err := s.repo.PublishSellerListingAtomically(ctx, storeID, listingID, store.MarketCode, marketCurrency(store.MarketCode)); err != nil {
+		return SellerListing{}, err
+	}
+	return s.repo.GetSellerListingByID(ctx, listingID)
+}
+
+func (s Service) UnpublishListingForSubject(ctx context.Context, subject, storeID, listingID string) (SellerListing, error) {
+	if subject == "" || storeID == "" || listingID == "" {
+		return SellerListing{}, ErrInvalidInput
+	}
+	store, err := s.repo.GetStore(ctx, storeID)
+	if err != nil {
+		return SellerListing{}, err
+	}
+	if _, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID); err != nil {
+		return SellerListing{}, err
+	}
+	if _, err := s.repo.GetSellerListingByStoreAndID(ctx, storeID, listingID); err != nil {
+		return SellerListing{}, err
+	}
+	if err := s.repo.UnpublishSellerListingByListingID(ctx, storeID, listingID); err != nil {
+		return SellerListing{}, err
+	}
+	return s.repo.GetSellerListingByID(ctx, listingID)
+}
+
+func (s Service) ArchiveListingForSubject(ctx context.Context, subject, storeID, listingID string) (SellerListing, error) {
+	if subject == "" || storeID == "" || listingID == "" {
+		return SellerListing{}, ErrInvalidInput
+	}
+	store, err := s.repo.GetStore(ctx, storeID)
+	if err != nil {
+		return SellerListing{}, err
+	}
+	if _, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID); err != nil {
+		return SellerListing{}, err
+	}
+	if _, err := s.repo.GetSellerListingByStoreAndID(ctx, storeID, listingID); err != nil {
+		return SellerListing{}, err
+	}
+	if err := s.repo.ArchiveSellerListing(ctx, storeID, listingID); err != nil {
+		return SellerListing{}, err
+	}
+	return s.repo.GetSellerListingByID(ctx, listingID)
+}
+
+func (s Service) PublishSellerProductForSubject(ctx context.Context, subject, storeID, productID string) error {
+	listing, err := s.repo.GetSellerListingByStoreAndProduct(ctx, storeID, productID)
+	if err != nil {
+		return err
+	}
+	_, err = s.PublishListingForSubject(ctx, subject, storeID, listing.ID)
+	return err
 }
 
 func (s Service) UnpublishSellerProductForSubject(ctx context.Context, subject, storeID, productID string) error {
-	store, err := s.repo.GetStore(ctx, storeID)
+	listing, err := s.repo.GetSellerListingByStoreAndProduct(ctx, storeID, productID)
 	if err != nil {
 		return err
 	}
-	seller, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID)
-	if err != nil {
-		return err
-	}
-	if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, seller.ID, productID); err != nil {
-		return ErrNotFound
-	}
-
-	return s.repo.UnpublishSellerProduct(ctx, storeID, productID)
+	_, err = s.UnpublishListingForSubject(ctx, subject, storeID, listing.ID)
+	return err
 }
 
 func (s Service) ListStoreOrdersForSubject(ctx context.Context, subject, storeID, statusFilter string, limit, offset int) ([]Order, int, error) {

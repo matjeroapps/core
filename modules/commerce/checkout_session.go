@@ -469,7 +469,7 @@ func (r Repository) FinalizeCheckout(ctx context.Context, storeID string, reques
 				return translatePGError(err, "revalidate listing")
 			}
 
-			if slStatus != "active" || slStore_id != storeID || slMarketCode != cart.MarketCode {
+			if (slStatus != "published" && slStatus != "active") || slStore_id != storeID || slMarketCode != cart.MarketCode {
 				return ErrListingUnavailable
 			}
 			if slpAmountMinor != item.ExpectedUnitPriceMinor {

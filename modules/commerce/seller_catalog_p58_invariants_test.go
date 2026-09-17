@@ -316,15 +316,15 @@ func TestPublishRaceAtomicReadiness(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetProductByID: %v", err)
 	}
-	if prod.Status != "inactive" {
-		t.Fatalf("product must remain inactive, got %s", prod.Status)
+	if prod.Status != "draft" && prod.Status != "inactive" {
+		t.Fatalf("product must remain inactive/draft, got %s", prod.Status)
 	}
 	listing, err := e.repo.GetSellerListingByStoreAndProduct(ctx, ids.storeID, ids.productID)
 	if err != nil {
 		t.Fatalf("GetSellerListingByStoreAndProduct: %v", err)
 	}
-	if listing.Status != "inactive" {
-		t.Fatalf("listing must remain inactive, got %s", listing.Status)
+	if listing.Status != "draft" && listing.Status != "inactive" && listing.Status != "unpublished" {
+		t.Fatalf("listing must remain inactive/draft/unpublished, got %s", listing.Status)
 	}
 
 	// Restore the SKU and publish without the invalidation.
@@ -685,14 +685,14 @@ func TestPublishRaceInvalidPresentation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetProductByID: %v", err)
 	}
-	if prod.Status != "inactive" {
-		t.Fatalf("product must remain inactive, got %s", prod.Status)
+	if prod.Status != "draft" && prod.Status != "inactive" {
+		t.Fatalf("product must remain inactive/draft, got %s", prod.Status)
 	}
 	listing, err := e.repo.GetSellerListingByStoreAndProduct(ctx, ids.storeID, ids.productID)
 	if err != nil {
 		t.Fatalf("GetSellerListingByStoreAndProduct: %v", err)
 	}
-	if listing.Status != "inactive" {
-		t.Fatalf("listing must remain inactive, got %s", listing.Status)
+	if listing.Status != "draft" && listing.Status != "inactive" && listing.Status != "unpublished" {
+		t.Fatalf("listing must remain inactive/draft/unpublished, got %s", listing.Status)
 	}
 }

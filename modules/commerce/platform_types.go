@@ -66,5 +66,7 @@ type InventoryMovement struct {
 	PrincipalSubject    string    `json:"principal_subject"`
 	CorrelationID       string    `json:"correlation_id"`
 	CausationID         string    `json:"causation_id"`
+	IdempotencyKey      string    `json:"idempotency_key,omitempty"`
+	RequestFingerprint  string    `json:"request_fingerprint,omitempty"`
 	CreatedAt           time.Time `json:"created_at"`
 }

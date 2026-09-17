@@ -47,6 +47,9 @@ const (
 	CodeInvalidShipmentTransition = "invalid_shipment_transition"
 	CodeInvalidPaymentTransition  = "invalid_payment_transition"
 	CodeStoreEntitlementExceeded  = "store_entitlement_exceeded"
+	CodePublishNotReady           = "publish_not_ready"
+	CodeOfferUnavailable          = "offer_unavailable"
+	CodeResourceInUse             = "resource_in_use"
 	CodeInternalError             = "internal_error"
 )
 
@@ -61,8 +64,10 @@ func statusFor(code string) int {
 		return http.StatusUnauthorized
 	case CodeForbidden:
 		return http.StatusForbidden
-	case CodeConflict, CodeMarketMismatch, CodeInsufficientInventory, CodeCheckoutExpired, CodeIdempotencyConflict, CodeInvalidOrderTransition, CodeInvalidShipmentTransition, CodeInvalidPaymentTransition, CodePriceChanged, CodeListingUnavailable, CodeStoreEntitlementExceeded:
+	case CodeConflict, CodeMarketMismatch, CodeInsufficientInventory, CodeCheckoutExpired, CodeIdempotencyConflict, CodeInvalidOrderTransition, CodeInvalidShipmentTransition, CodeInvalidPaymentTransition, CodePriceChanged, CodeListingUnavailable, CodeStoreEntitlementExceeded, CodeOfferUnavailable, CodeResourceInUse:
 		return http.StatusConflict
+	case CodePublishNotReady:
+		return http.StatusUnprocessableEntity
 	case CodeUnavailable, CodePreviewUnavailable:
 		return http.StatusServiceUnavailable
 	default:
@@ -113,6 +118,12 @@ func messageFor(code string) string {
 		return "listing unavailable"
 	case CodeStoreEntitlementExceeded:
 		return "active-store entitlement limit exceeded"
+	case CodePublishNotReady:
+		return "listing readiness failed"
+	case CodeOfferUnavailable:
+		return "supplier offer unavailable"
+	case CodeResourceInUse:
+		return "resource in use"
 	case CodeSchemaMismatch:
 
 		return "configuration does not match the theme schema"
@@ -242,6 +253,12 @@ func codeFor(err error) string {
 		return CodePriceChanged
 	case errors.Is(err, commerce.ErrListingUnavailable):
 		return CodeListingUnavailable
+	case errors.Is(err, commerce.ErrPublishNotReady):
+		return CodePublishNotReady
+	case errors.Is(err, commerce.ErrOfferUnavailable):
+		return CodeOfferUnavailable
+	case errors.Is(err, commerce.ErrResourceInUse):
+		return CodeResourceInUse
 	case errors.Is(err, commerce.ErrUnavailable):
 		return CodeUnavailable
 	case errors.Is(err, themes.ErrSchemaMismatch):

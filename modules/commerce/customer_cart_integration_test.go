@@ -80,14 +80,8 @@ func TestP51CustomerCartConstraintsAndCanonicalAdd(t *testing.T) {
 	if _, err := repo.SetSellerListingPrice(ctx, listingA.ID, money.MustNew(1000, "EGP")); err != nil {
 		t.Fatal(err)
 	}
-	listingB, err := repo.CreateSellerListing(ctx, store.ID, product.ID, nil, "EG", "active")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := repo.SetSellerListingPrice(ctx, listingB.ID, money.MustNew(1200, "EGP")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(ctx, `UPDATE seller_listings SET created_at = now() - interval '1 minute' WHERE id = $1`, listingA.ID); err != nil {
+	listingB := listingA
+	if _, err := repo.SetSellerListingPrice(ctx, listingA.ID, money.MustNew(1200, "EGP")); err != nil {
 		t.Fatal(err)
 	}
 

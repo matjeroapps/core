@@ -583,7 +583,11 @@ func (s *server) handleAdjustStoreInventory(w http.ResponseWriter, r *http.Reque
 	}
 
 	correlationID := httpx.CorrelationID(r.Context())
-	snap, _, err := s.deps.Commerce.AdjustStoreInventoryForSubject(r.Context(), subject, storeID, snapshotID, req.QuantityDelta, req.Reason, correlationID)
+	idempotencyKey := r.Header.Get("Idempotency-Key")
+	if idempotencyKey == "" {
+		idempotencyKey = r.Header.Get("X-Idempotency-Key")
+	}
+	snap, _, err := s.deps.Commerce.AdjustStoreInventoryForSubject(r.Context(), subject, storeID, snapshotID, req.QuantityDelta, req.Reason, correlationID, idempotencyKey)
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -738,4 +742,181 @@ func (s *server) handleTransitionStoreOrder(w http.ResponseWriter, r *http.Reque
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, toSellerOrderDetail(order))
+}
+
+type ProductStatusUpdateRequest struct {
+	Status string `json:"status"`
+}
+
+func (s *server) handleTransitionStoreProductStatus(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	productID := chi.URLParam(r, "productID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+
+	var req ProductStatusUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, CodeInvalidArgument)
+		return
+	}
+
+	product, err := s.deps.Commerce.TransitionProductStatusForSubject(r.Context(), subject, storeID, productID, req.Status)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, StatusResponse{Status: product.Status})
+}
+
+func (s *server) handleArchiveStoreProduct(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	productID := chi.URLParam(r, "productID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+
+	if err := s.deps.Commerce.ArchiveProductForSubject(r.Context(), subject, storeID, productID); err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, StatusResponse{Status: "archived"})
+}
+
+func (s *server) handleImportSupplierOffer(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	offerID := chi.URLParam(r, "offerID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+
+	listing, err := s.deps.Commerce.ImportSupplierOfferForSubject(r.Context(), subject, storeID, offerID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusCreated, listing)
+}
+
+func (s *server) handleGetStoreListing(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	listingID := chi.URLParam(r, "listingID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+
+	listing, err := s.deps.Commerce.GetSellerListingByIDForSubject(r.Context(), subject, storeID, listingID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, listing)
+}
+
+func (s *server) handleSetStoreListingPrice(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	listingID := chi.URLParam(r, "listingID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+
+	var req PriceUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, CodeInvalidArgument)
+		return
+	}
+
+	price, err := s.deps.Commerce.SetListingPriceForSubject(r.Context(), subject, storeID, listingID, req.AmountMinor, req.Currency)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, price)
+}
+
+func (s *server) handleGetStoreListingReadiness(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	listingID := chi.URLParam(r, "listingID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+
+	readiness, err := s.deps.Commerce.GetListingReadinessForSubject(r.Context(), subject, storeID, listingID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, readiness)
+}
+
+func (s *server) handlePublishStoreListing(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	listingID := chi.URLParam(r, "listingID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+
+	listing, err := s.deps.Commerce.PublishListingForSubject(r.Context(), subject, storeID, listingID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, listing)
+}
+
+func (s *server) handleUnpublishStoreListing(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	listingID := chi.URLParam(r, "listingID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+
+	listing, err := s.deps.Commerce.UnpublishListingForSubject(r.Context(), subject, storeID, listingID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, listing)
+}
+
+func (s *server) handleArchiveStoreListing(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	listingID := chi.URLParam(r, "listingID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+
+	listing, err := s.deps.Commerce.ArchiveListingForSubject(r.Context(), subject, storeID, listingID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, listing)
 }

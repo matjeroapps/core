@@ -66,6 +66,7 @@ func setupP58Contract(t *testing.T) p58ContractEnv {
 		"000014_seller_catalog_authoring",
 		"000015_media_upload_intent",
 		"000016_catalog_invariants",
+		"000025_seller_catalog_phase_b",
 	} {
 		content, err := os.ReadFile(filepath.Join("..", "..", "migrations", name+".up.sql"))
 		if err != nil {

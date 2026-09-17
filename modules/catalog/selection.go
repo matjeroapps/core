@@ -46,7 +46,7 @@ LEFT JOIN supplier_offer_availability soa
     ON soa.supplier_offer_id = so.id
 WHERE sl.store_id = $1
   AND sl.market_code = $2
-  AND sl.status = 'active'
+  AND sl.status IN ('published', 'active')
   AND (
       sl.supplier_offer_id IS NULL
       OR (
