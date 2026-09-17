@@ -150,7 +150,7 @@ func TestPresignStoreMediaUpload_IdempotencyAndFingerprintConflict(t *testing.T)
 	reqMismatch.SizeBytes = 99999
 	_, err = service.PresignStoreMediaUpload(ctx, sub, store, reqMismatch)
 	require.Error(t, err)
-	require.ErrorIs(t, err, ErrInvalidInput)
+	require.ErrorIs(t, err, ErrIdempotencyConflict)
 }
 
 func TestCompleteStoreMediaUpload_ChecksumMismatchAndDeletion(t *testing.T) {
