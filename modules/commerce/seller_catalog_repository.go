@@ -2151,13 +2151,14 @@ func (r Repository) ListOrderTimeline(ctx context.Context, orderID string) ([]Or
 
 func (r Repository) GetMediaUploadIntentByStorageKey(ctx context.Context, storageKey string) (MediaUploadIntent, error) {
 	var intent MediaUploadIntent
+	var productID, clientUpload, fingerprint, checksum, filename sql.NullString
+	var byteSize sql.NullInt64
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, seller_id, store_id, product_id, storage_key, content_type, max_bytes, token_digest,
-		       expires_at, completed_at, created_at
+		SELECT id, seller_id, store_id, product_id, client_upload_id, request_fingerprint, checksum_sha256, byte_size, original_filename, storage_key, content_type, max_bytes, token_digest, expires_at, completed_at, created_at
 		FROM media_upload_intents WHERE storage_key = $1`,
 		storageKey,
 	).Scan(
-		&intent.ID, &intent.SellerID, &intent.StoreID, &intent.ProductID,
+		&intent.ID, &intent.SellerID, &intent.StoreID, &productID, &clientUpload, &fingerprint, &checksum, &byteSize, &filename,
 		&intent.StorageKey, &intent.ContentType, &intent.MaxBytes, &intent.TokenDigest,
 		&intent.ExpiresAt, &intent.CompletedAt, &intent.CreatedAt,
 	)
@@ -2166,6 +2167,24 @@ func (r Repository) GetMediaUploadIntentByStorageKey(ctx context.Context, storag
 			return MediaUploadIntent{}, ErrNotFound
 		}
 		return MediaUploadIntent{}, err
+	}
+	if productID.Valid {
+		intent.ProductID = &productID.String
+	}
+	if clientUpload.Valid {
+		intent.ClientUploadID = &clientUpload.String
+	}
+	if fingerprint.Valid {
+		intent.RequestFingerprint = &fingerprint.String
+	}
+	if checksum.Valid {
+		intent.ChecksumSHA256 = checksum.String
+	}
+	if byteSize.Valid {
+		intent.ByteSize = byteSize.Int64
+	}
+	if filename.Valid {
+		intent.OriginalFilename = filename.String
 	}
 	return intent, nil
 }

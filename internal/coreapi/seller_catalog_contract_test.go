@@ -90,6 +90,9 @@ func setupP58Contract(t *testing.T) p58ContractEnv {
 	storage.MockPresignPutObject = func(ctx context.Context, storageKey, contentType string) (string, error) {
 		return "https://s3.test/matjero-media/" + storageKey, nil
 	}
+	storage.MockGetObject = func(ctx context.Context, storageKey string) (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(bytes.Repeat([]byte("a"), 1024))), nil
+	}
 	service.S3Storage = storage
 
 	themeService := themes.NewService(themes.NewRepository(db.Pool), repo, themes.Options{
