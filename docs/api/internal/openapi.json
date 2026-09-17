@@ -22139,6 +22139,9 @@
                   "filename": {
                     "type": "string"
                   },
+                  "product_id": {
+                    "type": "string"
+                  },
                   "size_bytes": {
                     "format": "int64",
                     "type": "integer"
