@@ -334,6 +334,7 @@ func NewRouter(deps Dependencies) chi.Router {
 		r.Group(func(r chi.Router) {
 			r.Use(requireCallers(serviceauth.CallerSeller, serviceauth.CallerAdmin))
 			r.Post("/orders/{orderID}/shipments", server.handleCreateOrderShipment)
+			r.Get("/orders/{orderID}/shipments", server.handleListOrderShipments)
 			r.Patch("/shipments/{shipmentID}/status", server.handleUpdateShipmentStatus)
 			r.Get("/shipments/{shipmentID}", server.handleGetShipment)
 		})
@@ -342,6 +343,8 @@ func NewRouter(deps Dependencies) chi.Router {
 		r.Group(func(r chi.Router) {
 			r.Use(requireCallers(serviceauth.CallerSeller, serviceauth.CallerAdmin))
 			r.Post("/orders/{orderID}/payments", server.handleInitializePayment)
+			r.Get("/orders/{orderID}/payments", server.handleGetPaymentByOrder)
+			r.Get("/payments/{paymentID}", server.handleGetPayment)
 			r.Patch("/payments/{paymentID}/status", server.handleUpdatePaymentStatus)
 			r.Post("/webhooks/payments/inbox", server.handlePersistWebhookInbox)
 		})
