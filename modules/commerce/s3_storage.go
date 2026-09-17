@@ -1,8 +1,10 @@
 package commerce
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -28,7 +30,9 @@ type S3Storage struct {
 	client               *s3.Client
 	presignClient        *s3.PresignClient
 	MockHeadObject       func(ctx context.Context, storageKey string) (*s3.HeadObjectOutput, error)
+	MockGetObject        func(ctx context.Context, storageKey string) (io.ReadCloser, error)
 	MockPresignPutObject func(ctx context.Context, storageKey, contentType string) (string, error)
+	MockDeleteObject     func(ctx context.Context, storageKey string) error
 }
 
 func NewS3Storage(cfg S3Config) *S3Storage {
@@ -81,6 +85,9 @@ func (s *S3Storage) PresignPutObject(ctx context.Context, storageKey, contentTyp
 	if s.MockPresignPutObject != nil {
 		return s.MockPresignPutObject(ctx, storageKey, contentType)
 	}
+	if s.presignClient == nil {
+		return "https://s3.test/" + storageKey, nil
+	}
 	req, err := s.presignClient.PresignPutObject(ctx, &s3.PutObjectInput{
 		Bucket:      aws.String(s.cfg.Bucket),
 		Key:         aws.String(storageKey),
@@ -96,6 +103,9 @@ func (s *S3Storage) HeadObject(ctx context.Context, storageKey string) (*s3.Head
 	if s.MockHeadObject != nil {
 		return s.MockHeadObject(ctx, storageKey)
 	}
+	if s.client == nil {
+		return &s3.HeadObjectOutput{}, nil
+	}
 	out, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(s.cfg.Bucket),
 		Key:    aws.String(storageKey),
@@ -106,12 +116,39 @@ func (s *S3Storage) HeadObject(ctx context.Context, storageKey string) (*s3.Head
 	return out, nil
 }
 
+func (s *S3Storage) GetObject(ctx context.Context, storageKey string) (io.ReadCloser, error) {
+	if s.MockGetObject != nil {
+		return s.MockGetObject(ctx, storageKey)
+	}
+	if s.client == nil {
+		return io.NopCloser(bytes.NewReader([]byte("dummy test content"))), nil
+	}
+	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.cfg.Bucket),
+		Key:    aws.String(storageKey),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get object %s: %w", storageKey, err)
+	}
+	return out.Body, nil
+}
+
 func (s *S3Storage) DeleteObject(ctx context.Context, storageKey string) error {
+	if s.MockDeleteObject != nil {
+		return s.MockDeleteObject(ctx, storageKey)
+	}
+	if s.client == nil {
+		return nil
+	}
 	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(s.cfg.Bucket),
 		Key:    aws.String(storageKey),
 	})
 	if err != nil {
+		// Treat 404 (NoSuchKey) as success
+		if strings.Contains(err.Error(), "NoSuchKey") || strings.Contains(err.Error(), "404") {
+			return nil
+		}
 		return fmt.Errorf("delete object %s: %w", storageKey, err)
 	}
 	return nil

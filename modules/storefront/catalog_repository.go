@@ -357,9 +357,15 @@ func (r CatalogRepository) Products(ctx context.Context, scope CatalogScope, que
 			vc.variant_count
 		FROM listing l
 		LEFT JOIN LATERAL (
-			SELECT uri, alt_text
-			FROM media_metadata
-			WHERE product_id = l.product_id
+			SELECT sma.storage_key AS uri, pmr.alt_text, pmr.is_primary, pmr.sort_order, pmr.created_at, pmr.id
+			FROM product_media_references pmr
+			JOIN store_media_assets sma ON sma.id = pmr.asset_id AND sma.status = 'ready'
+			WHERE pmr.product_id = l.product_id
+			UNION ALL
+			SELECT COALESCE(mm.uri, mm.storage_key) AS uri, mm.alt_text, mm.is_primary, mm.sort_order, mm.created_at, mm.id
+			FROM media_metadata mm
+			WHERE mm.product_id = l.product_id
+			  AND NOT EXISTS (SELECT 1 FROM product_media_references pmr2 WHERE pmr2.product_id = mm.product_id)
 			ORDER BY is_primary DESC, sort_order ASC, created_at ASC, id ASC
 			LIMIT 1
 		) img ON true
@@ -550,9 +556,15 @@ func projectPublicSections(ctx context.Context, pool *pgxpool.Pool, scope Catalo
 	type publicMedia struct{ uri, alt string }
 	mediaByID := map[string]publicMedia{}
 	mediaRows, err := pool.Query(ctx, `
-		SELECT id, uri, COALESCE(alt_text, '')
-		FROM media_metadata
-		WHERE product_id = $1
+		SELECT pmr.id, sma.storage_key AS uri, COALESCE(pmr.alt_text, '')
+		FROM product_media_references pmr
+		JOIN store_media_assets sma ON sma.id = pmr.asset_id AND sma.status = 'ready'
+		WHERE pmr.product_id = $1
+		UNION ALL
+		SELECT mm.id, COALESCE(mm.uri, mm.storage_key) AS uri, COALESCE(mm.alt_text, '')
+		FROM media_metadata mm
+		WHERE mm.product_id = $1
+		  AND NOT EXISTS (SELECT 1 FROM product_media_references pmr2 WHERE pmr2.id = mm.id)
 	`, productID)
 	if err == nil {
 		for mediaRows.Next() {
@@ -655,9 +667,15 @@ func projectPublicSections(ctx context.Context, pool *pgxpool.Pool, scope Catalo
 
 func (r CatalogRepository) productImages(ctx context.Context, productID string) ([]ProductImage, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT uri, alt_text
-		FROM media_metadata
-		WHERE product_id = $1
+		SELECT sma.storage_key AS uri, pmr.alt_text, pmr.is_primary, pmr.sort_order, pmr.created_at, pmr.id
+		FROM product_media_references pmr
+		JOIN store_media_assets sma ON sma.id = pmr.asset_id AND sma.status = 'ready'
+		WHERE pmr.product_id = $1
+		UNION ALL
+		SELECT COALESCE(mm.uri, mm.storage_key) AS uri, mm.alt_text, mm.is_primary, mm.sort_order, mm.created_at, mm.id
+		FROM media_metadata mm
+		WHERE mm.product_id = $1
+		  AND NOT EXISTS (SELECT 1 FROM product_media_references pmr2 WHERE pmr2.product_id = mm.product_id)
 		ORDER BY is_primary DESC, sort_order ASC, created_at ASC, id ASC
 	`, productID)
 	if err != nil {
@@ -668,7 +686,11 @@ func (r CatalogRepository) productImages(ctx context.Context, productID string) 
 	images := make([]ProductImage, 0, 4)
 	for rows.Next() {
 		var image ProductImage
-		if err := rows.Scan(&image.URI, &image.AltText); err != nil {
+		var isPrimary bool
+		var sortOrder int
+		var createdAt any
+		var id string
+		if err := rows.Scan(&image.URI, &image.AltText, &isPrimary, &sortOrder, &createdAt, &id); err != nil {
 			return nil, readError(err, "scan public product media")
 		}
 		images = append(images, image)

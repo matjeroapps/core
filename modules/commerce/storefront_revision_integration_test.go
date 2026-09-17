@@ -69,7 +69,9 @@ func setupRevisionTest(t *testing.T) *revisionEnv {
 		"000010_customer_cart_domain",
 		"000011_checkout_sessions",
 		"000014_seller_catalog_authoring",
+		"000015_media_upload_intent",
 		"000025_seller_catalog_phase_b",
+		"000026_seller_catalog_phase_c",
 	} {
 		applySQLFile(t, db, filepath.Join("..", "..", "migrations", m+".up.sql"))
 	}

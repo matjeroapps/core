@@ -71,6 +71,7 @@ func setupCatalogTest(t *testing.T) catalogEnv {
 		"000015_media_upload_intent",
 		"000016_catalog_invariants",
 		"000025_seller_catalog_phase_b",
+		"000026_seller_catalog_phase_c",
 	} {
 		applySQLFileStorefront(t, db, filepath.Join("..", "..", "migrations", m+".up.sql"))
 	}

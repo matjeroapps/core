@@ -40,6 +40,7 @@ func setupSellerCatalogTestDB(t *testing.T) (*database.Pool, Service, Repository
 		"000014_seller_catalog_authoring.up.sql",
 		"000015_media_upload_intent.up.sql",
 		"000025_seller_catalog_phase_b.up.sql",
+		"000026_seller_catalog_phase_c.up.sql",
 	}
 
 	for _, m := range migrations {

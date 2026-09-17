@@ -505,7 +505,7 @@ func TestUploadIntentAuthorizationEnforcement(t *testing.T) {
 		if _, err := e.repo.CreateMediaUploadIntent(ctx, MediaUploadIntent{
 			SellerID:    ids.sellerID,
 			StoreID:     ids.storeID,
-			ProductID:   ids.productID,
+			ProductID:   &ids.productID,
 			StorageKey:  storageKey,
 			ContentType: "image/webp",
 			MaxBytes:    1024,

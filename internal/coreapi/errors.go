@@ -50,6 +50,9 @@ const (
 	CodePublishNotReady           = "publish_not_ready"
 	CodeOfferUnavailable          = "offer_unavailable"
 	CodeResourceInUse             = "resource_in_use"
+	CodeUploadInProgress          = "upload_in_progress"
+	CodeChecksumMismatch          = "checksum_mismatch"
+	CodeMediaInUse                = "media_in_use"
 	CodeInternalError             = "internal_error"
 )
 
@@ -64,9 +67,9 @@ func statusFor(code string) int {
 		return http.StatusUnauthorized
 	case CodeForbidden:
 		return http.StatusForbidden
-	case CodeConflict, CodeMarketMismatch, CodeInsufficientInventory, CodeCheckoutExpired, CodeIdempotencyConflict, CodeInvalidOrderTransition, CodeInvalidShipmentTransition, CodeInvalidPaymentTransition, CodePriceChanged, CodeListingUnavailable, CodeStoreEntitlementExceeded, CodeOfferUnavailable, CodeResourceInUse:
+	case CodeConflict, CodeMarketMismatch, CodeInsufficientInventory, CodeCheckoutExpired, CodeIdempotencyConflict, CodeInvalidOrderTransition, CodeInvalidShipmentTransition, CodeInvalidPaymentTransition, CodePriceChanged, CodeListingUnavailable, CodeStoreEntitlementExceeded, CodeOfferUnavailable, CodeResourceInUse, CodeUploadInProgress, CodeMediaInUse:
 		return http.StatusConflict
-	case CodePublishNotReady:
+	case CodePublishNotReady, CodeChecksumMismatch:
 		return http.StatusUnprocessableEntity
 	case CodeUnavailable, CodePreviewUnavailable:
 		return http.StatusServiceUnavailable
@@ -124,6 +127,12 @@ func messageFor(code string) string {
 		return "supplier offer unavailable"
 	case CodeResourceInUse:
 		return "resource in use"
+	case CodeUploadInProgress:
+		return "upload in progress"
+	case CodeChecksumMismatch:
+		return "checksum mismatch"
+	case CodeMediaInUse:
+		return "media in use"
 	case CodeSchemaMismatch:
 
 		return "configuration does not match the theme schema"
@@ -259,6 +268,12 @@ func codeFor(err error) string {
 		return CodeOfferUnavailable
 	case errors.Is(err, commerce.ErrResourceInUse):
 		return CodeResourceInUse
+	case errors.Is(err, commerce.ErrUploadInProgress):
+		return CodeUploadInProgress
+	case errors.Is(err, commerce.ErrChecksumMismatch):
+		return CodeChecksumMismatch
+	case errors.Is(err, commerce.ErrMediaInUse):
+		return CodeMediaInUse
 	case errors.Is(err, commerce.ErrUnavailable):
 		return CodeUnavailable
 	case errors.Is(err, themes.ErrSchemaMismatch):

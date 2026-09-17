@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"strings"
 	"time"
@@ -447,17 +448,44 @@ func (s Service) UpdateSKUForSubject(ctx context.Context, subject, storeID, prod
 	return s.repo.UpdateSKUReplacingActive(ctx, skuID, variantID, code, barcode, status)
 }
 
-func (s Service) GenerateMediaUploadPresignedURLForSubject(ctx context.Context, subject, storeID, productID string, req MediaUploadRequest) (MediaUploadResponse, error) {
+func (s Service) ListStoreMediaAssets(ctx context.Context, subject, storeID, filename, contentType string, limit, offset int) (ListStoreMediaAssetsResponse, error) {
 	store, err := s.repo.GetStore(ctx, storeID)
 	if err != nil {
-		return MediaUploadResponse{}, err
+		return ListStoreMediaAssetsResponse{}, err
+	}
+	if _, err := s.RequireSellerAccess(ctx, subject, store.SellerID); err != nil {
+		return ListStoreMediaAssetsResponse{}, err
+	}
+
+	assets, total, err := s.repo.ListStoreMediaAssets(ctx, storeID, filename, contentType, limit, offset)
+	if err != nil {
+		return ListStoreMediaAssetsResponse{}, err
+	}
+
+	for i := range assets {
+		if s.S3Storage != nil {
+			assets[i].URL = s.S3Storage.ResolvePublicURI(assets[i].StorageKey)
+		} else {
+			assets[i].URL = assets[i].StorageKey
+		}
+	}
+
+	return ListStoreMediaAssetsResponse{
+		Items:  assets,
+		Total:  total,
+		Limit:  limit,
+		Offset: offset,
+	}, nil
+}
+
+func (s Service) PresignStoreMediaUpload(ctx context.Context, subject, storeID string, req PresignMediaUploadRequest) (PresignMediaUploadResponse, error) {
+	store, err := s.repo.GetStore(ctx, storeID)
+	if err != nil {
+		return PresignMediaUploadResponse{}, err
 	}
 	seller, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID)
 	if err != nil {
-		return MediaUploadResponse{}, err
-	}
-	if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, seller.ID, productID); err != nil {
-		return MediaUploadResponse{}, ErrNotFound
+		return PresignMediaUploadResponse{}, err
 	}
 
 	allowedMIME := map[string]string{
@@ -467,184 +495,324 @@ func (s Service) GenerateMediaUploadPresignedURLForSubject(ctx context.Context, 
 	}
 	ext, allowed := allowedMIME[strings.ToLower(req.ContentType)]
 	if !allowed {
-		return MediaUploadResponse{}, fmt.Errorf("%w: invalid image mime type %s", ErrInvalidInput, req.ContentType)
+		return PresignMediaUploadResponse{}, fmt.Errorf("%w: invalid image mime type %s", ErrInvalidInput, req.ContentType)
 	}
 
 	if req.SizeBytes <= 0 {
-		return MediaUploadResponse{}, fmt.Errorf("%w: file size is required", ErrInvalidInput)
+		return PresignMediaUploadResponse{}, fmt.Errorf("%w: file size is required", ErrInvalidInput)
 	}
-	if req.SizeBytes > 10*1024*1024 {
-		return MediaUploadResponse{}, fmt.Errorf("%w: file size exceeds 10MB limit", ErrInvalidInput)
+
+	maxBytes := int64(10 * 1024 * 1024)
+	if s.S3Storage != nil && s.S3Storage.Config().MaxBytes > 0 {
+		maxBytes = s.S3Storage.Config().MaxBytes
+	}
+	if req.SizeBytes > maxBytes {
+		return PresignMediaUploadResponse{}, fmt.Errorf("%w: file size exceeds maximum limit %d", ErrInvalidInput, maxBytes)
+	}
+
+	checksum := strings.ToLower(req.ChecksumSHA256)
+	if checksum != "" && len(checksum) != 64 {
+		return PresignMediaUploadResponse{}, fmt.Errorf("%w: invalid checksum format", ErrInvalidInput)
+	}
+
+	if checksum != "" {
+		readyAsset, err := s.repo.GetReadyStoreMediaAssetByChecksum(ctx, storeID, checksum)
+		if err == nil {
+			if s.S3Storage != nil {
+				readyAsset.URL = s.S3Storage.ResolvePublicURI(readyAsset.StorageKey)
+			}
+			return PresignMediaUploadResponse{
+				Mode:  "reuse",
+				Asset: &readyAsset,
+			}, nil
+		}
+	}
+
+	fingerprintStr := fmt.Sprintf("%s|%s|%s|%d|%s", req.ClientUploadID, req.Filename, req.ContentType, req.SizeBytes, checksum)
+	fingerprintDigestBytes := sha256.Sum256([]byte(fingerprintStr))
+	fingerprint := hex.EncodeToString(fingerprintDigestBytes[:])
+
+	if req.ClientUploadID != "" {
+		existingIntent, err := s.repo.GetMediaUploadIntentByClientUploadID(ctx, storeID, req.ClientUploadID)
+		if err == nil {
+			if existingIntent.RequestFingerprint != nil && *existingIntent.RequestFingerprint != fingerprint {
+				return PresignMediaUploadResponse{}, ErrIdempotencyConflict
+			}
+			if s.S3Storage == nil {
+				return PresignMediaUploadResponse{}, fmt.Errorf("%w: media storage is not configured", ErrInvalidInput)
+			}
+			tokenBytes := make([]byte, 32)
+			if _, err := rand.Read(tokenBytes); err != nil {
+				return PresignMediaUploadResponse{}, fmt.Errorf("failed to generate upload token: %w", err)
+			}
+			rawToken := hex.EncodeToString(tokenBytes)
+			digestBytes := sha256.Sum256([]byte(rawToken))
+			tokenDigest := hex.EncodeToString(digestBytes[:])
+
+			expiresAt := time.Now().Add(s.S3Storage.Config().URLTTL)
+			_ = s.repo.UpdateMediaUploadIntentToken(ctx, existingIntent.ID, tokenDigest, expiresAt)
+
+			uploadURL, err := s.S3Storage.PresignPutObject(ctx, existingIntent.StorageKey, req.ContentType)
+			if err != nil {
+				return PresignMediaUploadResponse{}, err
+			}
+
+			return PresignMediaUploadResponse{
+				Mode:        "upload",
+				IntentID:    existingIntent.ID,
+				UploadURL:   uploadURL,
+				UploadToken: rawToken,
+				StorageKey:  existingIntent.StorageKey,
+				RequiredHeaders: map[string]string{
+					"Content-Type":          req.ContentType,
+					"x-amz-checksum-sha256": checksum,
+				},
+				ExpiresAt: &expiresAt,
+			}, nil
+		}
+	}
+
+	if checksum != "" {
+		_, err = s.repo.GetMediaUploadIntentByChecksum(ctx, storeID, checksum)
+		if err == nil {
+			return PresignMediaUploadResponse{}, ErrUploadInProgress
+		}
+	}
+
+	if s.S3Storage == nil {
+		return PresignMediaUploadResponse{}, fmt.Errorf("%w: media storage is not configured", ErrInvalidInput)
 	}
 
 	randomID := uuid.NewString()
-	storageKey := fmt.Sprintf("products/%s/%s/%s%s", seller.ID, productID, randomID, ext)
-
-	if s.S3Storage == nil {
-		return MediaUploadResponse{}, fmt.Errorf("%w: media storage is not configured", ErrInvalidInput)
-	}
+	storageKey := fmt.Sprintf("stores/%s/media/%s%s", storeID, randomID, ext)
 
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
-		return MediaUploadResponse{}, fmt.Errorf("failed to generate upload token: %w", err)
+		return PresignMediaUploadResponse{}, fmt.Errorf("failed to generate upload token: %w", err)
 	}
 	rawToken := hex.EncodeToString(tokenBytes)
 	digestBytes := sha256.Sum256([]byte(rawToken))
 	tokenDigest := hex.EncodeToString(digestBytes[:])
 
 	ttl := s.S3Storage.Config().URLTTL
+	expiresAt := time.Now().Add(ttl)
+
+	var clientUploadIDPtr, fingerprintPtr, productIDPtr *string
+	if req.ClientUploadID != "" {
+		clientUploadIDPtr = &req.ClientUploadID
+	}
+	if req.ProductID != "" {
+		productIDPtr = &req.ProductID
+	}
+	fingerprintPtr = &fingerprint
+
 	intent, err := s.repo.CreateMediaUploadIntent(ctx, MediaUploadIntent{
-		SellerID:    seller.ID,
-		StoreID:     storeID,
-		ProductID:   productID,
-		StorageKey:  storageKey,
-		ContentType: req.ContentType,
-		MaxBytes:    req.SizeBytes,
-		TokenDigest: tokenDigest,
-		ExpiresAt:   time.Now().Add(ttl),
+		SellerID:           seller.ID,
+		StoreID:            storeID,
+		ProductID:          productIDPtr,
+		ClientUploadID:     clientUploadIDPtr,
+		RequestFingerprint: fingerprintPtr,
+		ChecksumSHA256:     checksum,
+		ByteSize:           req.SizeBytes,
+		OriginalFilename:   req.Filename,
+		StorageKey:         storageKey,
+		ContentType:        req.ContentType,
+		MaxBytes:           maxBytes,
+		TokenDigest:        tokenDigest,
+		ExpiresAt:          expiresAt,
 	})
 	if err != nil {
-		return MediaUploadResponse{}, err
+		return PresignMediaUploadResponse{}, err
 	}
-	_ = intent
 
 	uploadURL, err := s.S3Storage.PresignPutObject(ctx, storageKey, req.ContentType)
 	if err != nil {
-		return MediaUploadResponse{}, err
+		return PresignMediaUploadResponse{}, err
 	}
 
-	return MediaUploadResponse{
+	return PresignMediaUploadResponse{
+		Mode:        "upload",
+		IntentID:    intent.ID,
 		UploadURL:   uploadURL,
-		StorageKey:  storageKey,
 		UploadToken: rawToken,
-		ExpiresAt:   time.Now().Add(s.S3Storage.Config().URLTTL),
+		StorageKey:  storageKey,
+		RequiredHeaders: map[string]string{
+			"Content-Type":          req.ContentType,
+			"x-amz-checksum-sha256": checksum,
+		},
+		ExpiresAt: &expiresAt,
 	}, nil
 }
 
-func (s Service) CompleteMediaUploadForSubject(ctx context.Context, subject, storeID, productID string, req CompleteMediaUploadRequest) (MediaMetadata, error) {
+func (s Service) CompleteStoreMediaUpload(ctx context.Context, subject, storeID, intentID string, req CompleteMediaUploadRequest) (StoreMediaAsset, error) {
 	store, err := s.repo.GetStore(ctx, storeID)
 	if err != nil {
-		return MediaMetadata{}, err
+		return StoreMediaAsset{}, err
+	}
+	_, err = s.RequireSellerManagerAccess(ctx, subject, store.SellerID)
+	if err != nil {
+		return StoreMediaAsset{}, err
+	}
+	if s.S3Storage == nil {
+		return StoreMediaAsset{}, fmt.Errorf("%w: media storage is not configured", ErrInvalidInput)
+	}
+
+	intent, err := s.repo.GetMediaUploadIntentByID(ctx, intentID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return StoreMediaAsset{}, fmt.Errorf("%w: upload intent not found", ErrInvalidInput)
+		}
+		return StoreMediaAsset{}, err
+	}
+	if intent.StoreID != storeID {
+		return StoreMediaAsset{}, fmt.Errorf("%w: upload intent belongs to a different store", ErrInvalidInput)
+	}
+	if time.Now().After(intent.ExpiresAt) {
+		return StoreMediaAsset{}, fmt.Errorf("%w: upload intent expired", ErrInvalidInput)
+	}
+
+	digest := sha256.Sum256([]byte(req.UploadToken))
+	if subtle.ConstantTimeCompare([]byte(hex.EncodeToString(digest[:])), []byte(intent.TokenDigest)) != 1 {
+		return StoreMediaAsset{}, fmt.Errorf("%w: upload token verification failed", ErrInvalidInput)
+	}
+
+	if intent.CompletedAt != nil {
+		asset, err := s.repo.GetReadyStoreMediaAssetByChecksum(ctx, storeID, intent.ChecksumSHA256)
+		if err != nil {
+			return StoreMediaAsset{}, fmt.Errorf("%w: upload already completed", ErrInvalidInput)
+		}
+		asset.URL = s.S3Storage.ResolvePublicURI(asset.StorageKey)
+		return asset, nil
+	}
+
+	head, err := s.S3Storage.HeadObject(ctx, req.StorageKey)
+	if err != nil {
+		return StoreMediaAsset{}, fmt.Errorf("%w: uploaded object does not exist in storage: %v", ErrInvalidInput, err)
+	}
+	if head.ContentLength != nil && *head.ContentLength <= 0 {
+		return StoreMediaAsset{}, fmt.Errorf("%w: uploaded object is empty", ErrInvalidInput)
+	}
+	if head.ContentType != nil && *head.ContentType != "" && intent.ContentType != "" && !strings.EqualFold(*head.ContentType, intent.ContentType) {
+		return StoreMediaAsset{}, fmt.Errorf("%w: content type mismatch %s vs %s", ErrInvalidInput, *head.ContentType, intent.ContentType)
+	}
+	if head.ContentLength != nil && *head.ContentLength > 0 && intent.ByteSize > 0 && *head.ContentLength > intent.ByteSize {
+		return StoreMediaAsset{}, fmt.Errorf("%w: uploaded object size %d exceeds declared limit %d", ErrInvalidInput, *head.ContentLength, intent.ByteSize)
+	}
+	if head.ContentLength != nil && *head.ContentLength > 0 && intent.MaxBytes > 0 && *head.ContentLength > intent.MaxBytes {
+		return StoreMediaAsset{}, fmt.Errorf("%w: uploaded object size %d exceeds limit %d", ErrInvalidInput, *head.ContentLength, intent.MaxBytes)
+	}
+
+	rc, err := s.S3Storage.GetObject(ctx, req.StorageKey)
+	if err != nil {
+		return StoreMediaAsset{}, fmt.Errorf("%w: failed to read object from storage: %v", ErrInvalidInput, err)
+	}
+	defer rc.Close()
+
+	boundedReader := io.LimitReader(rc, intent.MaxBytes+1)
+	h := sha256.New()
+	written, err := io.Copy(h, boundedReader)
+	if err != nil {
+		return StoreMediaAsset{}, fmt.Errorf("%w: failed to calculate object checksum: %v", ErrInvalidInput, err)
+	}
+	if written > intent.MaxBytes {
+		return StoreMediaAsset{}, fmt.Errorf("%w: uploaded object exceeds max size limit", ErrInvalidInput)
+	}
+
+	actualChecksum := hex.EncodeToString(h.Sum(nil))
+	if intent.ChecksumSHA256 != "" {
+		if actualChecksum != intent.ChecksumSHA256 {
+			_ = s.S3Storage.DeleteObject(ctx, req.StorageKey)
+			return StoreMediaAsset{}, ErrChecksumMismatch
+		}
+	} else {
+		intent.ChecksumSHA256 = actualChecksum
+	}
+
+	asset := StoreMediaAsset{
+		StoreID:          storeID,
+		ChecksumSHA256:   actualChecksum,
+		StorageKey:       req.StorageKey,
+		ContentType:      intent.ContentType,
+		ByteSize:         written,
+		OriginalFilename: intent.OriginalFilename,
+		CreatedBySubject: subject,
+	}
+
+	created, err := s.repo.CompleteMediaUploadAndCreateAsset(ctx, intentID, asset)
+	if err != nil {
+		return StoreMediaAsset{}, err
+	}
+	created.URL = s.S3Storage.ResolvePublicURI(created.StorageKey)
+	return created, nil
+}
+
+func (s Service) DeleteStoreMediaAsset(ctx context.Context, subject, storeID, assetID string) error {
+	store, err := s.repo.GetStore(ctx, storeID)
+	if err != nil {
+		return err
+	}
+	if _, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID); err != nil {
+		return err
+	}
+	return s.repo.MarkMediaAssetDeleting(ctx, storeID, assetID, subject)
+}
+
+func (s Service) AttachProductMediaReference(ctx context.Context, subject, storeID, productID string, req AttachMediaReferenceRequest) (ProductMediaReference, error) {
+	store, err := s.repo.GetStore(ctx, storeID)
+	if err != nil {
+		return ProductMediaReference{}, err
 	}
 	seller, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID)
 	if err != nil {
-		return MediaMetadata{}, err
+		return ProductMediaReference{}, err
 	}
 	if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, seller.ID, productID); err != nil {
-		return MediaMetadata{}, ErrNotFound
-	}
-	if s.S3Storage == nil {
-		return MediaMetadata{}, fmt.Errorf("%w: media storage is not configured", ErrInvalidInput)
+		return ProductMediaReference{}, ErrNotFound
 	}
 
-	// The upload intent is the authorization record: it binds the presigned
-	// upload to one seller, store, product, content type, size limit and
-	// token. A storage-key prefix check alone is not authorization.
-	intent, err := s.repo.GetMediaUploadIntentByStorageKey(ctx, req.StorageKey)
+	ref := ProductMediaReference{
+		StoreID:   storeID,
+		ProductID: productID,
+		AssetID:   req.AssetID,
+		AltText:   req.AltText,
+		SortOrder: req.SortOrder,
+		IsPrimary: req.IsPrimary,
+	}
+
+	created, err := s.repo.AttachProductMediaReference(ctx, ref)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			return MediaMetadata{}, fmt.Errorf("%w: upload intent not found for storage key", ErrInvalidInput)
-		}
-		return MediaMetadata{}, err
+		return ProductMediaReference{}, err
 	}
-	if intent.SellerID != seller.ID {
-		return MediaMetadata{}, fmt.Errorf("%w: upload intent belongs to a different seller", ErrInvalidInput)
-	}
-	if intent.StoreID != storeID {
-		return MediaMetadata{}, fmt.Errorf("%w: upload intent belongs to a different store", ErrInvalidInput)
-	}
-	if intent.ProductID != productID {
-		return MediaMetadata{}, fmt.Errorf("%w: upload intent belongs to a different product", ErrInvalidInput)
-	}
-	if time.Now().After(intent.ExpiresAt) {
-		return MediaMetadata{}, fmt.Errorf("%w: upload intent expired", ErrInvalidInput)
-	}
-
-	// Idempotent completion: a completed intent for the same storage key and
-	// product resolves to the media record created by the successful attempt.
-	if intent.CompletedAt != nil {
-		existing, err := s.repo.GetMediaMetadataByStorageKey(ctx, productID, req.StorageKey)
-		if err != nil {
-			return MediaMetadata{}, fmt.Errorf("%w: upload already completed", ErrInvalidInput)
-		}
-		return existing, nil
-	}
-
-	// Verify the upload token: SHA-256 of the raw token, compared in constant
-	// time against the digest persisted at presign time. The raw token is
-	// never logged.
-	digest := sha256.Sum256([]byte(req.UploadToken))
-	if subtle.ConstantTimeCompare([]byte(hex.EncodeToString(digest[:])), []byte(intent.TokenDigest)) != 1 {
-		return MediaMetadata{}, fmt.Errorf("%w: upload token verification failed", ErrInvalidInput)
-	}
-
-	// Verify the actually uploaded object against the intent.
-	head, err := s.S3Storage.HeadObject(ctx, req.StorageKey)
-	if err != nil {
-		return MediaMetadata{}, fmt.Errorf("%w: uploaded object does not exist in storage: %v", ErrInvalidInput, err)
-	}
-	if head.ContentLength == nil || *head.ContentLength <= 0 {
-		return MediaMetadata{}, fmt.Errorf("%w: uploaded object is empty", ErrInvalidInput)
-	}
-	if intent.MaxBytes > 0 && *head.ContentLength > intent.MaxBytes {
-		return MediaMetadata{}, fmt.Errorf("%w: uploaded object size %d exceeds limit %d", ErrInvalidInput, *head.ContentLength, intent.MaxBytes)
-	}
-	if head.ContentType != nil && intent.ContentType != "" && !strings.EqualFold(*head.ContentType, intent.ContentType) {
-		return MediaMetadata{}, fmt.Errorf("%w: uploaded object content type %s does not match %s", ErrInvalidInput, *head.ContentType, intent.ContentType)
-	}
-
-	// The media type comes from the verified S3 metadata, never inferred from
-	// the storage key extension.
-	mediaType := strings.ToLower(intent.ContentType)
-
-	m := MediaMetadata{
-		ProductID:  productID,
-		MediaType:  mediaType,
-		URI:        s.S3Storage.ResolvePublicURI(req.StorageKey),
-		AltText:    req.AltText,
-		SortOrder:  req.SortOrder,
-		StorageKey: &req.StorageKey,
-		IsPrimary:  req.IsPrimary,
-	}
-
-	// Media insert + intent completion are one DB transaction; the storage
-	// upload itself is inherently non-transactional and is verified above.
-	created, err := s.repo.CompleteMediaUpload(ctx, m, intent.ID)
-	if err != nil {
-		if errors.Is(err, ErrConflict) {
-			// A concurrent completion won; return the record it created.
-			return s.repo.GetMediaMetadataByStorageKey(ctx, productID, req.StorageKey)
-		}
-		return MediaMetadata{}, err
+	if created.Asset != nil && s.S3Storage != nil {
+		created.URL = s.S3Storage.ResolvePublicURI(created.Asset.StorageKey)
 	}
 	return created, nil
 }
 
-func (s Service) UpdateMediaMetadataForSubject(ctx context.Context, subject, storeID, productID, mediaID string, altText string, sortOrder int, isPrimary bool) (MediaMetadata, error) {
+func (s Service) UpdateProductMediaReference(ctx context.Context, subject, storeID, productID, referenceID string, req UpdateMediaReferenceRequest) (ProductMediaReference, error) {
 	store, err := s.repo.GetStore(ctx, storeID)
 	if err != nil {
-		return MediaMetadata{}, err
+		return ProductMediaReference{}, err
 	}
 	seller, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID)
 	if err != nil {
-		return MediaMetadata{}, err
+		return ProductMediaReference{}, err
 	}
 	if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, seller.ID, productID); err != nil {
-		return MediaMetadata{}, ErrNotFound
-	}
-	m, err := s.repo.GetMediaMetadataByID(ctx, mediaID)
-	if err != nil || m.ProductID != productID {
-		return MediaMetadata{}, ErrNotFound
+		return ProductMediaReference{}, ErrNotFound
 	}
 
-	m.AltText = altText
-	m.SortOrder = sortOrder
-	m.IsPrimary = isPrimary
-
-	return s.repo.UpdateMediaMetadata(ctx, m)
+	ref, err := s.repo.UpdateProductMediaReference(ctx, storeID, productID, referenceID, req.AltText, req.SortOrder, req.IsPrimary)
+	if err != nil {
+		return ProductMediaReference{}, err
+	}
+	if ref.Asset != nil && s.S3Storage != nil {
+		ref.URL = s.S3Storage.ResolvePublicURI(ref.Asset.StorageKey)
+	}
+	return ref, nil
 }
 
-func (s Service) DeleteMediaMetadataForSubject(ctx context.Context, subject, storeID, productID, mediaID string) error {
+func (s Service) DetachProductMediaReference(ctx context.Context, subject, storeID, productID, referenceID string) error {
 	store, err := s.repo.GetStore(ctx, storeID)
 	if err != nil {
 		return err
@@ -656,35 +824,140 @@ func (s Service) DeleteMediaMetadataForSubject(ctx context.Context, subject, sto
 	if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, seller.ID, productID); err != nil {
 		return ErrNotFound
 	}
-	m, err := s.repo.GetMediaMetadataByID(ctx, mediaID)
-	if err != nil || m.ProductID != productID {
-		return ErrNotFound
+
+	return s.repo.DetachProductMediaReference(ctx, storeID, productID, referenceID)
+}
+
+func (s Service) ListProductMediaReferences(ctx context.Context, subject, storeID, productID string) ([]ProductMediaReference, error) {
+	store, err := s.repo.GetStore(ctx, storeID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.RequireSellerAccess(ctx, subject, store.SellerID); err != nil {
+		return nil, err
 	}
 
-	storageKey := m.StorageKey
-
-	if err := s.repo.DeleteMediaMetadata(ctx, productID, mediaID); err != nil {
-		return err
+	refs, err := s.repo.ListProductMediaReferences(ctx, storeID, productID)
+	if err != nil {
+		return nil, err
 	}
 
-	// Deterministic state after deleting the primary image: the earliest
-	// remaining image becomes primary; if none remain there is no primary.
-	if m.IsPrimary {
-		remaining, err := s.repo.ListMediaByProductID(ctx, productID)
-		if err == nil && len(remaining) > 0 {
-			earliest := remaining[0]
-			earliest.IsPrimary = true
-			if _, err := s.repo.UpdateMediaMetadata(ctx, earliest); err != nil {
-				return err
+	for i := range refs {
+		if refs[i].Asset != nil && s.S3Storage != nil {
+			refs[i].URL = s.S3Storage.ResolvePublicURI(refs[i].Asset.StorageKey)
+		}
+	}
+	return refs, nil
+}
+
+func (s Service) ProcessPendingMediaDeletions(ctx context.Context, batchSize int) (int, error) {
+	if s.S3Storage == nil {
+		return 0, nil
+	}
+	candidates, err := s.repo.GetPendingMediaDeletions(ctx, batchSize)
+	if err != nil {
+		return 0, err
+	}
+
+	processed := 0
+	for _, asset := range candidates {
+		if ctx.Err() != nil {
+			return processed, ctx.Err()
+		}
+		if err := s.S3Storage.DeleteObject(ctx, asset.StorageKey); err == nil {
+			if markErr := s.repo.MarkMediaAssetDeleted(ctx, asset.ID); markErr == nil {
+				processed++
 			}
 		}
 	}
+	return processed, nil
+}
 
-	if storageKey != nil && *storageKey != "" && s.S3Storage != nil {
-		_ = s.S3Storage.DeleteObject(ctx, *storageKey)
+func (s Service) GenerateMediaUploadPresignedURLForSubject(ctx context.Context, subject, storeID, productID string, req MediaUploadRequest) (MediaUploadResponse, error) {
+	resp, err := s.PresignStoreMediaUpload(ctx, subject, storeID, PresignMediaUploadRequest{
+		ProductID:      productID,
+		Filename:       "product_image.jpg",
+		ContentType:    req.ContentType,
+		SizeBytes:      req.SizeBytes,
+		ChecksumSHA256: "",
+	})
+	if err != nil {
+		return MediaUploadResponse{}, err
+	}
+	return MediaUploadResponse{
+		UploadURL:   resp.UploadURL,
+		StorageKey:  resp.StorageKey,
+		UploadToken: resp.UploadToken,
+		ExpiresAt:   *resp.ExpiresAt,
+	}, nil
+}
+
+func (s Service) CompleteMediaUploadForSubject(ctx context.Context, subject, storeID, productID string, req CompleteMediaUploadRequest) (MediaMetadata, error) {
+	intent, err := s.repo.GetMediaUploadIntentByStorageKey(ctx, req.StorageKey)
+	if err != nil {
+		return MediaMetadata{}, err
+	}
+	if intent.ProductID != nil && *intent.ProductID != "" && *intent.ProductID != productID {
+		return MediaMetadata{}, fmt.Errorf("%w: upload intent belongs to a different product", ErrInvalidInput)
 	}
 
-	return nil
+	asset, err := s.CompleteStoreMediaUpload(ctx, subject, storeID, intent.ID, req)
+	if err != nil {
+		return MediaMetadata{}, err
+	}
+
+	ref, err := s.AttachProductMediaReference(ctx, subject, storeID, productID, AttachMediaReferenceRequest{
+		AssetID:   asset.ID,
+		AltText:   req.AltText,
+		SortOrder: req.SortOrder,
+		IsPrimary: req.IsPrimary,
+	})
+	if err != nil {
+		return MediaMetadata{}, err
+	}
+
+	sk := asset.StorageKey
+	return MediaMetadata{
+		ID:         ref.ID,
+		ProductID:  productID,
+		MediaType:  asset.ContentType,
+		URI:        asset.URL,
+		AltText:    ref.AltText,
+		SortOrder:  ref.SortOrder,
+		StorageKey: &sk,
+		IsPrimary:  ref.IsPrimary,
+		CreatedAt:  ref.CreatedAt,
+		UpdatedAt:  ref.UpdatedAt,
+	}, nil
+}
+
+func (s Service) UpdateMediaMetadataForSubject(ctx context.Context, subject, storeID, productID, mediaID string, altText string, sortOrder int, isPrimary bool) (MediaMetadata, error) {
+	ref, err := s.UpdateProductMediaReference(ctx, subject, storeID, productID, mediaID, UpdateMediaReferenceRequest{
+		AltText:   altText,
+		SortOrder: sortOrder,
+		IsPrimary: isPrimary,
+	})
+	if err != nil {
+		return MediaMetadata{}, err
+	}
+	uri := ""
+	if ref.URL != "" {
+		uri = ref.URL
+	}
+	return MediaMetadata{
+		ID:        ref.ID,
+		ProductID: productID,
+		AltText:   ref.AltText,
+		SortOrder: ref.SortOrder,
+		IsPrimary: ref.IsPrimary,
+		URI:       uri,
+		CreatedAt: ref.CreatedAt,
+		UpdatedAt: ref.UpdatedAt,
+	}, nil
+}
+
+func (s Service) DeleteMediaMetadataForSubject(ctx context.Context, subject, storeID, productID, mediaID string) error {
+	return s.DetachProductMediaReference(ctx, subject, storeID, productID, mediaID)
 }
 
 func (s Service) GetListingPresentationForSubject(ctx context.Context, subject, storeID, listingID string) (SellerListingPresentation, error) {

@@ -21,5 +21,8 @@ var (
 	ErrPublishNotReady          = errors.New("publish readiness failed")
 	ErrOfferUnavailable         = errors.New("supplier offer unavailable")
 	ErrResourceInUse            = errors.New("resource in use")
+	ErrUploadInProgress         = errors.New("upload in progress")
+	ErrChecksumMismatch         = errors.New("checksum mismatch")
+	ErrMediaInUse               = errors.New("media in use")
 	ErrInternalError            = errors.New("internal error")
 )

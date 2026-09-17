@@ -56,6 +56,7 @@ func setupP58Storefront(t *testing.T) p58StorefrontEnv {
 		"000015_media_upload_intent",
 		"000016_catalog_invariants",
 		"000025_seller_catalog_phase_b",
+		"000026_seller_catalog_phase_c",
 	} {
 		content, err := os.ReadFile(filepath.Join("..", "..", "migrations", m+".up.sql"))
 		if err != nil {

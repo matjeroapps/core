@@ -488,15 +488,20 @@ type SellerProductDraft struct {
 // MediaUploadIntent tracks a server-side scoped presign request.
 // TokenDigest and seller/store fields are never serialized.
 type MediaUploadIntent struct {
-	ID          string     `json:"id"`
-	SellerID    string     `json:"-"`
-	StoreID     string     `json:"-"`
-	ProductID   string     `json:"product_id"`
-	StorageKey  string     `json:"storage_key"`
-	ContentType string     `json:"content_type"`
-	MaxBytes    int64      `json:"max_bytes"`
-	TokenDigest string     `json:"-"`
-	ExpiresAt   time.Time  `json:"expires_at"`
-	CompletedAt *time.Time `json:"completed_at,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
+	ID                 string     `json:"id"`
+	SellerID           string     `json:"-"`
+	StoreID            string     `json:"-"`
+	ProductID          *string    `json:"product_id,omitempty"`
+	ClientUploadID     *string    `json:"client_upload_id,omitempty"`
+	RequestFingerprint *string    `json:"request_fingerprint,omitempty"`
+	ChecksumSHA256     string     `json:"checksum_sha256,omitempty"`
+	ByteSize           int64      `json:"byte_size,omitempty"`
+	OriginalFilename   string     `json:"original_filename,omitempty"`
+	StorageKey         string     `json:"storage_key"`
+	ContentType        string     `json:"content_type"`
+	MaxBytes           int64      `json:"max_bytes"`
+	TokenDigest        string     `json:"-"`
+	ExpiresAt          time.Time  `json:"expires_at"`
+	CompletedAt        *time.Time `json:"completed_at,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
 }
