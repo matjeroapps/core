@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -531,16 +532,602 @@ func (r Repository) UpdateSKU(ctx context.Context, skuID, code, barcode, status 
 	return updated, err
 }
 
+func lpadHex(str string) string {
+	s := strings.ReplaceAll(str, "-", "")
+	if len(s) >= 64 {
+		return s[:64]
+	}
+	return strings.Repeat("0", 64-len(s)) + s
+}
+
+func (r Repository) ListStoreMediaAssets(ctx context.Context, storeID string, filename, contentType string, limit, offset int) ([]StoreMediaAsset, int, error) {
+	if storeID == "" {
+		return nil, 0, ErrInvalidInput
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	whereClause := "WHERE store_id = $1 AND status = 'ready'"
+	args := []any{storeID}
+	paramIdx := 2
+
+	if filename != "" {
+		whereClause += fmt.Sprintf(" AND original_filename ILIKE $%d", paramIdx)
+		args = append(args, "%"+filename+"%")
+		paramIdx++
+	}
+	if contentType != "" {
+		whereClause += fmt.Sprintf(" AND content_type = $%d", paramIdx)
+		args = append(args, contentType)
+		paramIdx++
+	}
+
+	countSQL := "SELECT COUNT(*) FROM store_media_assets " + whereClause
+	var total int
+	if err := r.pool.QueryRow(ctx, countSQL, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count store_media_assets: %w", err)
+	}
+
+	querySQL := fmt.Sprintf("SELECT id, store_id, checksum_sha256, storage_key, content_type, byte_size, original_filename, status, created_by_subject, created_at, updated_at FROM store_media_assets %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d", whereClause, paramIdx, paramIdx+1)
+	args = append(args, limit, offset)
+
+	rows, err := r.pool.Query(ctx, querySQL, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("query store_media_assets: %w", err)
+	}
+	defer rows.Close()
+
+	var assets []StoreMediaAsset
+	for rows.Next() {
+		var a StoreMediaAsset
+		if err := rows.Scan(&a.ID, &a.StoreID, &a.ChecksumSHA256, &a.StorageKey, &a.ContentType, &a.ByteSize, &a.OriginalFilename, &a.Status, &a.CreatedBySubject, &a.CreatedAt, &a.UpdatedAt); err != nil {
+			return nil, 0, fmt.Errorf("scan store_media_asset: %w", err)
+		}
+		assets = append(assets, a)
+	}
+	return assets, total, nil
+}
+
+func (r Repository) GetMediaUploadIntentByID(ctx context.Context, intentID string) (MediaUploadIntent, error) {
+	if intentID == "" {
+		return MediaUploadIntent{}, ErrInvalidInput
+	}
+	var i MediaUploadIntent
+	var productID, clientUpload, fingerprint, checksum, filename sql.NullString
+	var byteSize sql.NullInt64
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, seller_id, store_id, product_id, client_upload_id, request_fingerprint, checksum_sha256, byte_size, original_filename, storage_key, content_type, max_bytes, token_digest, expires_at, completed_at, created_at
+		FROM media_upload_intents
+		WHERE id = $1
+	`, intentID).Scan(&i.ID, &i.SellerID, &i.StoreID, &productID, &clientUpload, &fingerprint, &checksum, &byteSize, &filename, &i.StorageKey, &i.ContentType, &i.MaxBytes, &i.TokenDigest, &i.ExpiresAt, &i.CompletedAt, &i.CreatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return MediaUploadIntent{}, ErrNotFound
+		}
+		return MediaUploadIntent{}, fmt.Errorf("get media upload intent by id: %w", err)
+	}
+	if productID.Valid {
+		i.ProductID = &productID.String
+	}
+	if clientUpload.Valid {
+		i.ClientUploadID = &clientUpload.String
+	}
+	if fingerprint.Valid {
+		i.RequestFingerprint = &fingerprint.String
+	}
+	if checksum.Valid {
+		i.ChecksumSHA256 = checksum.String
+	}
+	if byteSize.Valid {
+		i.ByteSize = byteSize.Int64
+	}
+	if filename.Valid {
+		i.OriginalFilename = filename.String
+	}
+	return i, nil
+}
+
+func (r Repository) UpdateMediaUploadIntentToken(ctx context.Context, intentID, tokenDigest string, expiresAt time.Time) error {
+	if intentID == "" {
+		return ErrInvalidInput
+	}
+	_, err := r.pool.Exec(ctx, `
+		UPDATE media_upload_intents
+		SET token_digest = $1, expires_at = $2
+		WHERE id = $3
+	`, tokenDigest, expiresAt, intentID)
+	return err
+}
+
+func (r Repository) GetStoreMediaAssetByID(ctx context.Context, storeID, assetID string) (StoreMediaAsset, error) {
+	if storeID == "" || assetID == "" {
+		return StoreMediaAsset{}, ErrInvalidInput
+	}
+	var a StoreMediaAsset
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, store_id, checksum_sha256, storage_key, content_type, byte_size, original_filename, status, created_by_subject, created_at, updated_at
+		FROM store_media_assets
+		WHERE id = $1 AND store_id = $2
+	`, assetID, storeID).Scan(&a.ID, &a.StoreID, &a.ChecksumSHA256, &a.StorageKey, &a.ContentType, &a.ByteSize, &a.OriginalFilename, &a.Status, &a.CreatedBySubject, &a.CreatedAt, &a.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return StoreMediaAsset{}, ErrNotFound
+		}
+		return StoreMediaAsset{}, fmt.Errorf("get store_media_asset: %w", err)
+	}
+	return a, nil
+}
+
+func (r Repository) GetReadyStoreMediaAssetByChecksum(ctx context.Context, storeID, checksumSHA256 string) (StoreMediaAsset, error) {
+	if storeID == "" || checksumSHA256 == "" {
+		return StoreMediaAsset{}, ErrInvalidInput
+	}
+	var a StoreMediaAsset
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, store_id, checksum_sha256, storage_key, content_type, byte_size, original_filename, status, created_by_subject, created_at, updated_at
+		FROM store_media_assets
+		WHERE store_id = $1 AND checksum_sha256 = $2 AND status = 'ready'
+	`, storeID, checksumSHA256).Scan(&a.ID, &a.StoreID, &a.ChecksumSHA256, &a.StorageKey, &a.ContentType, &a.ByteSize, &a.OriginalFilename, &a.Status, &a.CreatedBySubject, &a.CreatedAt, &a.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return StoreMediaAsset{}, ErrNotFound
+		}
+		return StoreMediaAsset{}, fmt.Errorf("get store_media_asset by checksum: %w", err)
+	}
+	return a, nil
+}
+
+func (r Repository) GetMediaUploadIntentByClientUploadID(ctx context.Context, storeID, clientUploadID string) (MediaUploadIntent, error) {
+	if storeID == "" || clientUploadID == "" {
+		return MediaUploadIntent{}, ErrInvalidInput
+	}
+	var i MediaUploadIntent
+	var productID, clientUpload, fingerprint, checksum, filename sql.NullString
+	var byteSize sql.NullInt64
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, seller_id, store_id, product_id, client_upload_id, request_fingerprint, checksum_sha256, byte_size, original_filename, storage_key, content_type, max_bytes, token_digest, expires_at, completed_at, created_at
+		FROM media_upload_intents
+		WHERE store_id = $1 AND client_upload_id = $2
+	`, storeID, clientUploadID).Scan(&i.ID, &i.SellerID, &i.StoreID, &productID, &clientUpload, &fingerprint, &checksum, &byteSize, &filename, &i.StorageKey, &i.ContentType, &i.MaxBytes, &i.TokenDigest, &i.ExpiresAt, &i.CompletedAt, &i.CreatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return MediaUploadIntent{}, ErrNotFound
+		}
+		return MediaUploadIntent{}, fmt.Errorf("get media upload intent by client upload id: %w", err)
+	}
+	if productID.Valid {
+		i.ProductID = &productID.String
+	}
+	if clientUpload.Valid {
+		i.ClientUploadID = &clientUpload.String
+	}
+	if fingerprint.Valid {
+		i.RequestFingerprint = &fingerprint.String
+	}
+	if checksum.Valid {
+		i.ChecksumSHA256 = checksum.String
+	}
+	if byteSize.Valid {
+		i.ByteSize = byteSize.Int64
+	}
+	if filename.Valid {
+		i.OriginalFilename = filename.String
+	}
+	return i, nil
+}
+
+func (r Repository) GetMediaUploadIntentByChecksum(ctx context.Context, storeID, checksumSHA256 string) (MediaUploadIntent, error) {
+	if storeID == "" || checksumSHA256 == "" {
+		return MediaUploadIntent{}, ErrInvalidInput
+	}
+	var i MediaUploadIntent
+	var productID, clientUpload, fingerprint, checksum, filename sql.NullString
+	var byteSize sql.NullInt64
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, seller_id, store_id, product_id, client_upload_id, request_fingerprint, checksum_sha256, byte_size, original_filename, storage_key, content_type, max_bytes, token_digest, expires_at, completed_at, created_at
+		FROM media_upload_intents
+		WHERE store_id = $1 AND checksum_sha256 = $2 AND completed_at IS NULL AND expires_at > now()
+		LIMIT 1
+	`, storeID, checksumSHA256).Scan(&i.ID, &i.SellerID, &i.StoreID, &productID, &clientUpload, &fingerprint, &checksum, &byteSize, &filename, &i.StorageKey, &i.ContentType, &i.MaxBytes, &i.TokenDigest, &i.ExpiresAt, &i.CompletedAt, &i.CreatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return MediaUploadIntent{}, ErrNotFound
+		}
+		return MediaUploadIntent{}, fmt.Errorf("get active media upload intent by checksum: %w", err)
+	}
+	if productID.Valid {
+		i.ProductID = &productID.String
+	}
+	if clientUpload.Valid {
+		i.ClientUploadID = &clientUpload.String
+	}
+	if fingerprint.Valid {
+		i.RequestFingerprint = &fingerprint.String
+	}
+	if checksum.Valid {
+		i.ChecksumSHA256 = checksum.String
+	}
+	if byteSize.Valid {
+		i.ByteSize = byteSize.Int64
+	}
+	if filename.Valid {
+		i.OriginalFilename = filename.String
+	}
+	return i, nil
+}
+
+func (r Repository) CompleteMediaUploadAndCreateAsset(ctx context.Context, intentID string, asset StoreMediaAsset) (StoreMediaAsset, error) {
+	if intentID == "" || asset.StoreID == "" || asset.ChecksumSHA256 == "" || asset.StorageKey == "" {
+		return StoreMediaAsset{}, ErrInvalidInput
+	}
+
+	var created StoreMediaAsset
+	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var completedAt *time.Time
+		var storeID, checksum string
+		err := tx.QueryRow(ctx, `
+			SELECT store_id, checksum_sha256, completed_at
+			FROM media_upload_intents
+			WHERE id = $1 FOR UPDATE
+		`, intentID).Scan(&storeID, &checksum, &completedAt)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrNotFound
+			}
+			return err
+		}
+
+		if completedAt != nil {
+			var existing StoreMediaAsset
+			err := tx.QueryRow(ctx, `
+				SELECT id, store_id, checksum_sha256, storage_key, content_type, byte_size, original_filename, status, created_by_subject, created_at, updated_at
+				FROM store_media_assets
+				WHERE store_id = $1 AND checksum_sha256 = $2 AND status = 'ready'
+			`, storeID, checksum).Scan(&existing.ID, &existing.StoreID, &existing.ChecksumSHA256, &existing.StorageKey, &existing.ContentType, &existing.ByteSize, &existing.OriginalFilename, &existing.Status, &existing.CreatedBySubject, &existing.CreatedAt, &existing.UpdatedAt)
+			if err == nil {
+				created = existing
+				return nil
+			}
+		}
+
+		var winning StoreMediaAsset
+		err = tx.QueryRow(ctx, `
+			SELECT id, store_id, checksum_sha256, storage_key, content_type, byte_size, original_filename, status, created_by_subject, created_at, updated_at
+			FROM store_media_assets
+			WHERE store_id = $1 AND checksum_sha256 = $2 AND status IN ('ready', 'deleting')
+		`, asset.StoreID, asset.ChecksumSHA256).Scan(&winning.ID, &winning.StoreID, &winning.ChecksumSHA256, &winning.StorageKey, &winning.ContentType, &winning.ByteSize, &winning.OriginalFilename, &winning.Status, &winning.CreatedBySubject, &winning.CreatedAt, &winning.UpdatedAt)
+
+		if err == nil {
+			_, _ = tx.Exec(ctx, `UPDATE media_upload_intents SET completed_at = now() WHERE id = $1`, intentID)
+			created = winning
+			return nil
+		}
+
+		assetID := uuid.NewString()
+		err = tx.QueryRow(ctx, `
+			INSERT INTO store_media_assets (id, store_id, checksum_sha256, storage_key, content_type, byte_size, original_filename, status, created_by_subject)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, 'ready', $8)
+			RETURNING created_at, updated_at
+		`, assetID, asset.StoreID, asset.ChecksumSHA256, asset.StorageKey, asset.ContentType, asset.ByteSize, asset.OriginalFilename, asset.CreatedBySubject).Scan(&asset.CreatedAt, &asset.UpdatedAt)
+		if err != nil {
+			return translatePGError(err, "create store_media_asset")
+		}
+
+		_, err = tx.Exec(ctx, `UPDATE media_upload_intents SET completed_at = now() WHERE id = $1`, intentID)
+		if err != nil {
+			return translatePGError(err, "mark upload intent complete")
+		}
+
+		asset.ID = assetID
+		asset.Status = "ready"
+		created = asset
+		return nil
+	})
+
+	if err != nil {
+		return StoreMediaAsset{}, err
+	}
+	return created, nil
+}
+
+func (r Repository) MarkMediaAssetDeleting(ctx context.Context, storeID, assetID, subject string) error {
+	if storeID == "" || assetID == "" {
+		return ErrInvalidInput
+	}
+	return r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var currentStatus, storageKey string
+		err := tx.QueryRow(ctx, `
+			SELECT status, storage_key
+			FROM store_media_assets
+			WHERE id = $1 AND store_id = $2 FOR UPDATE
+		`, assetID, storeID).Scan(&currentStatus, &storageKey)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrNotFound
+			}
+			return err
+		}
+
+		if currentStatus == "deleting" || currentStatus == "deleted" {
+			return nil
+		}
+
+		var refCount int
+		if err := tx.QueryRow(ctx, `SELECT COUNT(*) FROM product_media_references WHERE asset_id = $1`, assetID).Scan(&refCount); err != nil {
+			return err
+		}
+		if refCount > 0 {
+			return ErrMediaInUse
+		}
+
+		res, err := tx.Exec(ctx, `
+			UPDATE store_media_assets
+			SET status = 'deleting', updated_at = now()
+			WHERE id = $1 AND store_id = $2 AND status = 'ready'
+		`, assetID, storeID)
+		if err != nil {
+			return translatePGError(err, "update media asset deleting")
+		}
+		if res.RowsAffected() == 0 {
+			return ErrConflict
+		}
+
+		payload, _ := json.Marshal(map[string]string{
+			"asset_id":    assetID,
+			"store_id":    storeID,
+			"storage_key": storageKey,
+			"subject":     subject,
+		})
+
+		_, err = tx.Exec(ctx, `
+			INSERT INTO outbox (event_type, payload)
+			VALUES ('commerce.media.delete.v1', $1)
+		`, payload)
+		if err != nil {
+			return translatePGError(err, "enqueue media delete outbox event")
+		}
+
+		return nil
+	})
+}
+
+func (r Repository) MarkMediaAssetDeleted(ctx context.Context, assetID string) error {
+	if assetID == "" {
+		return ErrInvalidInput
+	}
+	_, err := r.pool.Exec(ctx, `
+		UPDATE store_media_assets
+		SET status = 'deleted', updated_at = now()
+		WHERE id = $1
+	`, assetID)
+	if err != nil {
+		return translatePGError(err, "mark media asset deleted")
+	}
+	return nil
+}
+
+func (r Repository) GetPendingMediaDeletions(ctx context.Context, limit int) ([]StoreMediaAsset, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, store_id, checksum_sha256, storage_key, content_type, byte_size, original_filename, status, created_by_subject, created_at, updated_at
+		FROM store_media_assets
+		WHERE status = 'deleting'
+		ORDER BY updated_at ASC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query pending media deletions: %w", err)
+	}
+	defer rows.Close()
+
+	var assets []StoreMediaAsset
+	for rows.Next() {
+		var a StoreMediaAsset
+		if err := rows.Scan(&a.ID, &a.StoreID, &a.ChecksumSHA256, &a.StorageKey, &a.ContentType, &a.ByteSize, &a.OriginalFilename, &a.Status, &a.CreatedBySubject, &a.CreatedAt, &a.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan pending media deletion: %w", err)
+		}
+		assets = append(assets, a)
+	}
+	return assets, nil
+}
+
+func (r Repository) AttachProductMediaReference(ctx context.Context, ref ProductMediaReference) (ProductMediaReference, error) {
+	if ref.StoreID == "" || ref.ProductID == "" || ref.AssetID == "" {
+		return ProductMediaReference{}, ErrInvalidInput
+	}
+
+	var created ProductMediaReference
+	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var assetStatus string
+		err := tx.QueryRow(ctx, `
+			SELECT status FROM store_media_assets WHERE id = $1 AND store_id = $2
+		`, ref.AssetID, ref.StoreID).Scan(&assetStatus)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrNotFound
+			}
+			return err
+		}
+		if assetStatus != "ready" {
+			return ErrNotFound
+		}
+
+		var existing ProductMediaReference
+		err = tx.QueryRow(ctx, `
+			SELECT id, store_id, product_id, asset_id, alt_text, sort_order, is_primary, created_at, updated_at
+			FROM product_media_references
+			WHERE store_id = $1 AND product_id = $2 AND asset_id = $3
+		`, ref.StoreID, ref.ProductID, ref.AssetID).Scan(&existing.ID, &existing.StoreID, &existing.ProductID, &existing.AssetID, &existing.AltText, &existing.SortOrder, &existing.IsPrimary, &existing.CreatedAt, &existing.UpdatedAt)
+		if err == nil {
+			created = existing
+			return nil
+		}
+
+		if ref.IsPrimary {
+			if _, err := tx.Exec(ctx, `UPDATE product_media_references SET is_primary = false WHERE store_id = $1 AND product_id = $2`, ref.StoreID, ref.ProductID); err != nil {
+				return translatePGError(err, "clear primary reference")
+			}
+		}
+
+		id := uuid.NewString()
+		if ref.ID != "" {
+			id = ref.ID
+		}
+		err = tx.QueryRow(ctx, `
+			INSERT INTO product_media_references (id, store_id, product_id, asset_id, alt_text, sort_order, is_primary)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			RETURNING created_at, updated_at
+		`, id, ref.StoreID, ref.ProductID, ref.AssetID, ref.AltText, ref.SortOrder, ref.IsPrimary).Scan(&ref.CreatedAt, &ref.UpdatedAt)
+		if err != nil {
+			return translatePGError(err, "insert product_media_reference")
+		}
+
+		ref.ID = id
+		created = ref
+		return bumpStorefrontRevisions(ctx, tx, revisionStoresByProduct, ref.ProductID)
+	})
+
+	if err != nil {
+		return ProductMediaReference{}, err
+	}
+	return created, nil
+}
+
+func (r Repository) UpdateProductMediaReference(ctx context.Context, storeID, productID, refID string, altText string, sortOrder int, isPrimary bool) (ProductMediaReference, error) {
+	if storeID == "" || productID == "" || refID == "" {
+		return ProductMediaReference{}, ErrInvalidInput
+	}
+
+	var updated ProductMediaReference
+	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var assetID string
+		err := tx.QueryRow(ctx, `
+			SELECT asset_id FROM product_media_references WHERE id = $1 AND store_id = $2 AND product_id = $3 FOR UPDATE
+		`, refID, storeID, productID).Scan(&assetID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrNotFound
+			}
+			return err
+		}
+
+		if isPrimary {
+			if _, err := tx.Exec(ctx, `UPDATE product_media_references SET is_primary = false WHERE store_id = $1 AND product_id = $2 AND id != $3`, storeID, productID, refID); err != nil {
+				return translatePGError(err, "clear primary reference")
+			}
+		}
+
+		err = tx.QueryRow(ctx, `
+			UPDATE product_media_references
+			SET alt_text = $1, sort_order = $2, is_primary = $3, updated_at = now()
+			WHERE id = $4 AND store_id = $5 AND product_id = $6
+			RETURNING id, store_id, product_id, asset_id, alt_text, sort_order, is_primary, created_at, updated_at
+		`, altText, sortOrder, isPrimary, refID, storeID, productID).Scan(&updated.ID, &updated.StoreID, &updated.ProductID, &updated.AssetID, &updated.AltText, &updated.SortOrder, &updated.IsPrimary, &updated.CreatedAt, &updated.UpdatedAt)
+		if err != nil {
+			return translatePGError(err, "update product_media_reference")
+		}
+		return bumpStorefrontRevisions(ctx, tx, revisionStoresByProduct, productID)
+	})
+
+	if err != nil {
+		return ProductMediaReference{}, err
+	}
+	return updated, nil
+}
+
+func (r Repository) DetachProductMediaReference(ctx context.Context, storeID, productID, refID string) error {
+	if storeID == "" || productID == "" || refID == "" {
+		return ErrInvalidInput
+	}
+
+	return r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var wasPrimary bool
+		err := tx.QueryRow(ctx, `
+			SELECT is_primary FROM product_media_references WHERE id = $1 AND store_id = $2 AND product_id = $3
+		`, refID, storeID, productID).Scan(&wasPrimary)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrNotFound
+			}
+			return err
+		}
+
+		res, err := tx.Exec(ctx, `DELETE FROM product_media_references WHERE id = $1 AND store_id = $2 AND product_id = $3`, refID, storeID, productID)
+		if err != nil {
+			return translatePGError(err, "delete product_media_reference")
+		}
+		if res.RowsAffected() == 0 {
+			return ErrNotFound
+		}
+
+		if wasPrimary {
+			_, _ = tx.Exec(ctx, `
+				UPDATE product_media_references
+				SET is_primary = true
+				WHERE id = (
+					SELECT id FROM product_media_references
+					WHERE store_id = $1 AND product_id = $2
+					ORDER BY sort_order ASC, created_at ASC, id ASC
+					LIMIT 1
+				)
+			`, storeID, productID)
+		}
+
+		return bumpStorefrontRevisions(ctx, tx, revisionStoresByProduct, productID)
+	})
+}
+
+func (r Repository) ListProductMediaReferences(ctx context.Context, storeID, productID string) ([]ProductMediaReference, error) {
+	if storeID == "" || productID == "" {
+		return nil, ErrInvalidInput
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		SELECT pmr.id, pmr.store_id, pmr.product_id, pmr.asset_id, pmr.alt_text, pmr.sort_order, pmr.is_primary, pmr.created_at, pmr.updated_at,
+		       sma.id, sma.store_id, sma.checksum_sha256, sma.storage_key, sma.content_type, sma.byte_size, sma.original_filename, sma.status, sma.created_by_subject, sma.created_at, sma.updated_at
+		FROM product_media_references pmr
+		JOIN store_media_assets sma ON sma.id = pmr.asset_id AND sma.status = 'ready'
+		WHERE pmr.store_id = $1 AND pmr.product_id = $2
+		ORDER BY pmr.is_primary DESC, pmr.sort_order ASC, pmr.created_at ASC, pmr.id ASC
+	`, storeID, productID)
+	if err != nil {
+		return nil, fmt.Errorf("query product_media_references: %w", err)
+	}
+	defer rows.Close()
+
+	var refs []ProductMediaReference
+	for rows.Next() {
+		var ref ProductMediaReference
+		var a StoreMediaAsset
+		if err := rows.Scan(
+			&ref.ID, &ref.StoreID, &ref.ProductID, &ref.AssetID, &ref.AltText, &ref.SortOrder, &ref.IsPrimary, &ref.CreatedAt, &ref.UpdatedAt,
+			&a.ID, &a.StoreID, &a.ChecksumSHA256, &a.StorageKey, &a.ContentType, &a.ByteSize, &a.OriginalFilename, &a.Status, &a.CreatedBySubject, &a.CreatedAt, &a.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan product_media_reference: %w", err)
+		}
+		ref.Asset = &a
+		refs = append(refs, ref)
+	}
+	return refs, nil
+}
+
 func (r Repository) ListMediaByProductID(ctx context.Context, productID string) ([]MediaMetadata, error) {
 	if productID == "" {
 		return nil, ErrInvalidInput
 	}
 
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, product_id, media_type, uri, alt_text, sort_order, metadata, storage_key, is_primary, created_at, updated_at
-		FROM media_metadata
-		WHERE product_id = $1
-		ORDER BY sort_order ASC, created_at ASC
+		SELECT pmr.id, pmr.product_id, sma.content_type, sma.storage_key, pmr.alt_text, pmr.sort_order, pmr.is_primary, pmr.created_at, pmr.updated_at
+		FROM product_media_references pmr
+		JOIN store_media_assets sma ON sma.id = pmr.asset_id AND sma.status = 'ready'
+		WHERE pmr.product_id = $1
+		ORDER BY pmr.is_primary DESC, pmr.sort_order ASC, pmr.created_at ASC, pmr.id ASC
 	`, productID)
 	if err != nil {
 		return nil, fmt.Errorf("query media metadata: %w", err)
@@ -550,17 +1137,12 @@ func (r Repository) ListMediaByProductID(ctx context.Context, productID string) 
 	var result []MediaMetadata
 	for rows.Next() {
 		var m MediaMetadata
-		var metadataJSON []byte
-		var sk sql.NullString
-		if err := rows.Scan(&m.ID, &m.ProductID, &m.MediaType, &m.URI, &m.AltText, &m.SortOrder, &metadataJSON, &sk, &m.IsPrimary, &m.CreatedAt, &m.UpdatedAt); err != nil {
+		var sk string
+		if err := rows.Scan(&m.ID, &m.ProductID, &m.MediaType, &sk, &m.AltText, &m.SortOrder, &m.IsPrimary, &m.CreatedAt, &m.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan media metadata: %w", err)
 		}
-		if len(metadataJSON) > 0 {
-			_ = json.Unmarshal(metadataJSON, &m.Metadata)
-		}
-		if sk.Valid {
-			m.StorageKey = &sk.String
-		}
+		m.StorageKey = &sk
+		m.URI = sk
 		result = append(result, m)
 	}
 	return result, nil
@@ -572,78 +1154,88 @@ func (r Repository) GetMediaMetadataByID(ctx context.Context, mediaID string) (M
 	}
 
 	var m MediaMetadata
-	var metadataJSON []byte
-	var sk sql.NullString
+	var sk string
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, product_id, media_type, uri, alt_text, sort_order, metadata, storage_key, is_primary, created_at, updated_at
-		FROM media_metadata
-		WHERE id = $1
-	`, mediaID).Scan(&m.ID, &m.ProductID, &m.MediaType, &m.URI, &m.AltText, &m.SortOrder, &metadataJSON, &sk, &m.IsPrimary, &m.CreatedAt, &m.UpdatedAt)
+		SELECT pmr.id, pmr.product_id, sma.content_type, sma.storage_key, pmr.alt_text, pmr.sort_order, pmr.is_primary, pmr.created_at, pmr.updated_at
+		FROM product_media_references pmr
+		JOIN store_media_assets sma ON sma.id = pmr.asset_id AND sma.status = 'ready'
+		WHERE pmr.id = $1
+	`, mediaID).Scan(&m.ID, &m.ProductID, &m.MediaType, &sk, &m.AltText, &m.SortOrder, &m.IsPrimary, &m.CreatedAt, &m.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return MediaMetadata{}, ErrNotFound
 		}
 		return MediaMetadata{}, fmt.Errorf("get media metadata by id: %w", err)
 	}
-	if len(metadataJSON) > 0 {
-		_ = json.Unmarshal(metadataJSON, &m.Metadata)
-	}
-	if sk.Valid {
-		m.StorageKey = &sk.String
-	}
+	m.StorageKey = &sk
+	m.URI = sk
 	return m, nil
 }
 
 func (r Repository) CreateMediaMetadata(ctx context.Context, m MediaMetadata) (MediaMetadata, error) {
-	if m.ProductID == "" || m.MediaType == "" || m.URI == "" {
+	if m.ProductID == "" || m.MediaType == "" {
 		return MediaMetadata{}, ErrInvalidInput
 	}
 
-	var created MediaMetadata
-	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
-		id := uuid.NewString()
-		metadataJSON, _ := json.Marshal(m.Metadata)
+	var storeID string
+	err := r.pool.QueryRow(ctx, `SELECT store_id FROM seller_listings WHERE product_id = $1 LIMIT 1`, m.ProductID).Scan(&storeID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return MediaMetadata{}, ErrNotFound
+		}
+		return MediaMetadata{}, err
+	}
+
+	storageKey := "legacy/" + uuid.NewString()
+	if m.StorageKey != nil && *m.StorageKey != "" {
+		storageKey = *m.StorageKey
+	}
+
+	checksum := lpadHex(uuid.NewString())
+
+	var assetID string
+	err = r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var aid string
+		err := tx.QueryRow(ctx, `
+			INSERT INTO store_media_assets (store_id, checksum_sha256, storage_key, content_type, byte_size, original_filename, status)
+			VALUES ($1, $2, $3, $4, 1, 'image', 'ready')
+			ON CONFLICT (storage_key) DO UPDATE SET updated_at = now()
+			RETURNING id
+		`, storeID, checksum, storageKey, m.MediaType).Scan(&aid)
+		if err != nil {
+			return err
+		}
+		assetID = aid
+
+		refID := m.ID
+		if refID == "" {
+			refID = uuid.NewString()
+		}
+
 		if m.IsPrimary {
-			if _, err := tx.Exec(ctx, `UPDATE media_metadata SET is_primary = false WHERE product_id = $1`, m.ProductID); err != nil {
-				return translatePGError(err, "clear previous primary media")
-			}
+			_, _ = tx.Exec(ctx, `UPDATE product_media_references SET is_primary = false WHERE store_id = $1 AND product_id = $2`, storeID, m.ProductID)
 		}
 
-		if m.StorageKey != nil && *m.StorageKey != "" {
-			if err := tx.QueryRow(ctx, `
-				INSERT INTO media_metadata (id, product_id, media_type, uri, alt_text, sort_order, metadata, storage_key, is_primary)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-				RETURNING created_at, updated_at
-			`, id, m.ProductID, m.MediaType, m.URI, m.AltText, m.SortOrder, metadataJSON, *m.StorageKey, m.IsPrimary).Scan(&created.CreatedAt, &created.UpdatedAt); err != nil {
-				return translatePGError(err, "create media metadata")
-			}
-		} else {
-			if err := tx.QueryRow(ctx, `
-				INSERT INTO media_metadata (id, product_id, media_type, uri, alt_text, sort_order, metadata, is_primary)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-				RETURNING created_at, updated_at
-			`, id, m.ProductID, m.MediaType, m.URI, m.AltText, m.SortOrder, metadataJSON, m.IsPrimary).Scan(&created.CreatedAt, &created.UpdatedAt); err != nil {
-				return translatePGError(err, "create media metadata")
-			}
+		var createdCreatedAt, createdUpdatedAt time.Time
+		err = tx.QueryRow(ctx, `
+			INSERT INTO product_media_references (id, store_id, product_id, asset_id, alt_text, sort_order, is_primary)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			ON CONFLICT (store_id, product_id, asset_id) DO UPDATE SET alt_text = EXCLUDED.alt_text, sort_order = EXCLUDED.sort_order, is_primary = EXCLUDED.is_primary, updated_at = now()
+			RETURNING created_at, updated_at
+		`, refID, storeID, m.ProductID, assetID, m.AltText, m.SortOrder, m.IsPrimary).Scan(&createdCreatedAt, &createdUpdatedAt)
+		if err != nil {
+			return err
 		}
 
-		created = MediaMetadata{
-			ID:         id,
-			ProductID:  m.ProductID,
-			MediaType:  m.MediaType,
-			URI:        m.URI,
-			AltText:    m.AltText,
-			SortOrder:  m.SortOrder,
-			Metadata:   m.Metadata,
-			StorageKey: m.StorageKey,
-			IsPrimary:  m.IsPrimary,
-			CreatedAt:  created.CreatedAt,
-			UpdatedAt:  created.UpdatedAt,
-		}
+		m.ID = refID
+		m.CreatedAt = createdCreatedAt
+		m.UpdatedAt = createdUpdatedAt
 		return bumpStorefrontRevisions(ctx, tx, revisionStoresByProduct, m.ProductID)
 	})
-
-	return created, err
+	if err != nil {
+		return MediaMetadata{}, err
+	}
+	return m, nil
 }
 
 func (r Repository) UpdateMediaMetadata(ctx context.Context, m MediaMetadata) (MediaMetadata, error) {
@@ -651,38 +1243,23 @@ func (r Repository) UpdateMediaMetadata(ctx context.Context, m MediaMetadata) (M
 		return MediaMetadata{}, ErrInvalidInput
 	}
 
-	var updated MediaMetadata
-	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
-		if m.IsPrimary {
-			if _, err := tx.Exec(ctx, `UPDATE media_metadata SET is_primary = false WHERE product_id = $1 AND id != $2`, m.ProductID, m.ID); err != nil {
-				return translatePGError(err, "clear previous primary media on update")
-			}
+	var storeID string
+	err := r.pool.QueryRow(ctx, `SELECT store_id FROM product_media_references WHERE id = $1 AND product_id = $2`, m.ID, m.ProductID).Scan(&storeID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return MediaMetadata{}, ErrNotFound
 		}
+		return MediaMetadata{}, err
+	}
 
-		var metadataJSON []byte
-		if m.Metadata != nil {
-			metadataJSON, _ = json.Marshal(m.Metadata)
-		}
+	ref, err := r.UpdateProductMediaReference(ctx, storeID, m.ProductID, m.ID, m.AltText, m.SortOrder, m.IsPrimary)
+	if err != nil {
+		return MediaMetadata{}, err
+	}
 
-		var sk sql.NullString
-		if err := tx.QueryRow(ctx, `
-			UPDATE media_metadata
-			SET alt_text = $3, sort_order = $4, is_primary = $5, updated_at = now()
-			WHERE id = $1 AND product_id = $2
-			RETURNING id, product_id, media_type, uri, alt_text, sort_order, metadata, storage_key, is_primary, created_at, updated_at
-		`, m.ID, m.ProductID, m.AltText, m.SortOrder, m.IsPrimary).Scan(&updated.ID, &updated.ProductID, &updated.MediaType, &updated.URI, &updated.AltText, &updated.SortOrder, &metadataJSON, &sk, &updated.IsPrimary, &updated.CreatedAt, &updated.UpdatedAt); err != nil {
-			return translatePGError(err, "update media metadata")
-		}
-
-		if len(metadataJSON) > 0 {
-			_ = json.Unmarshal(metadataJSON, &updated.Metadata)
-		}
-		if sk.Valid {
-			updated.StorageKey = &sk.String
-		}
-		return bumpStorefrontRevisions(ctx, tx, revisionStoresByProduct, m.ProductID)
-	})
-	return updated, err
+	m.CreatedAt = ref.CreatedAt
+	m.UpdatedAt = ref.UpdatedAt
+	return m, nil
 }
 
 func (r Repository) DeleteMediaMetadata(ctx context.Context, productID, mediaID string) error {
@@ -690,16 +1267,16 @@ func (r Repository) DeleteMediaMetadata(ctx context.Context, productID, mediaID 
 		return ErrInvalidInput
 	}
 
-	return r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
-		res, err := tx.Exec(ctx, `DELETE FROM media_metadata WHERE id = $1 AND product_id = $2`, mediaID, productID)
-		if err != nil {
-			return translatePGError(err, "delete media metadata")
-		}
-		if res.RowsAffected() == 0 {
+	var storeID string
+	err := r.pool.QueryRow(ctx, `SELECT store_id FROM product_media_references WHERE id = $1 AND product_id = $2`, mediaID, productID).Scan(&storeID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
-		return bumpStorefrontRevisions(ctx, tx, revisionStoresByProduct, productID)
-	})
+		return err
+	}
+
+	return r.DetachProductMediaReference(ctx, storeID, productID, mediaID)
 }
 
 func (r Repository) GetSellerListingPresentation(ctx context.Context, listingID string) (SellerListingPresentation, error) {
@@ -1083,10 +1660,10 @@ func (r Repository) UnpublishSellerProduct(ctx context.Context, storeID, product
 func (r Repository) CreateMediaUploadIntent(ctx context.Context, intent MediaUploadIntent) (MediaUploadIntent, error) {
 	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		row := tx.QueryRow(ctx, `
-			INSERT INTO media_upload_intents (seller_id, store_id, product_id, storage_key, content_type, max_bytes, token_digest, expires_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			INSERT INTO media_upload_intents (seller_id, store_id, product_id, client_upload_id, request_fingerprint, checksum_sha256, byte_size, original_filename, storage_key, content_type, max_bytes, token_digest, expires_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 			RETURNING id, created_at`,
-			intent.SellerID, intent.StoreID, intent.ProductID,
+			intent.SellerID, intent.StoreID, intent.ProductID, intent.ClientUploadID, intent.RequestFingerprint, intent.ChecksumSHA256, intent.ByteSize, intent.OriginalFilename,
 			intent.StorageKey, intent.ContentType, intent.MaxBytes,
 			intent.TokenDigest, intent.ExpiresAt,
 		)

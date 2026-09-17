@@ -357,10 +357,11 @@ func (r CatalogRepository) Products(ctx context.Context, scope CatalogScope, que
 			vc.variant_count
 		FROM listing l
 		LEFT JOIN LATERAL (
-			SELECT uri, alt_text
-			FROM media_metadata
-			WHERE product_id = l.product_id
-			ORDER BY is_primary DESC, sort_order ASC, created_at ASC, id ASC
+			SELECT sma.storage_key AS uri, pmr.alt_text
+			FROM product_media_references pmr
+			JOIN store_media_assets sma ON sma.id = pmr.asset_id AND sma.status = 'ready'
+			WHERE pmr.product_id = l.product_id
+			ORDER BY pmr.is_primary DESC, pmr.sort_order ASC, pmr.created_at ASC, pmr.id ASC
 			LIMIT 1
 		) img ON true
 		LEFT JOIN LATERAL (
@@ -550,9 +551,10 @@ func projectPublicSections(ctx context.Context, pool *pgxpool.Pool, scope Catalo
 	type publicMedia struct{ uri, alt string }
 	mediaByID := map[string]publicMedia{}
 	mediaRows, err := pool.Query(ctx, `
-		SELECT id, uri, COALESCE(alt_text, '')
-		FROM media_metadata
-		WHERE product_id = $1
+		SELECT pmr.id, sma.storage_key AS uri, COALESCE(pmr.alt_text, '')
+		FROM product_media_references pmr
+		JOIN store_media_assets sma ON sma.id = pmr.asset_id AND sma.status = 'ready'
+		WHERE pmr.product_id = $1
 	`, productID)
 	if err == nil {
 		for mediaRows.Next() {
@@ -655,10 +657,11 @@ func projectPublicSections(ctx context.Context, pool *pgxpool.Pool, scope Catalo
 
 func (r CatalogRepository) productImages(ctx context.Context, productID string) ([]ProductImage, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT uri, alt_text
-		FROM media_metadata
-		WHERE product_id = $1
-		ORDER BY is_primary DESC, sort_order ASC, created_at ASC, id ASC
+		SELECT sma.storage_key AS uri, pmr.alt_text
+		FROM product_media_references pmr
+		JOIN store_media_assets sma ON sma.id = pmr.asset_id AND sma.status = 'ready'
+		WHERE pmr.product_id = $1
+		ORDER BY pmr.is_primary DESC, pmr.sort_order ASC, pmr.created_at ASC, pmr.id ASC
 	`, productID)
 	if err != nil {
 		return nil, readError(err, "list public product media")

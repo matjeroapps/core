@@ -419,6 +419,184 @@ func (s *server) handleUpdateVariantSKU(w http.ResponseWriter, r *http.Request) 
 	httpx.WriteJSON(w, http.StatusOK, sku)
 }
 
+func (s *server) handleListStoreMedia(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+
+	filename := r.URL.Query().Get("filename")
+	contentType := r.URL.Query().Get("content_type")
+	page := parsePage(r)
+
+	res, err := s.deps.Commerce.ListStoreMediaAssets(r.Context(), subject, storeID, filename, contentType, page.Limit, page.Offset)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, res)
+}
+
+func (s *server) handlePresignStoreMediaUpload(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+
+	var req commerce.PresignMediaUploadRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, CodeInvalidArgument)
+		return
+	}
+
+	res, err := s.deps.Commerce.PresignStoreMediaUpload(r.Context(), subject, storeID, req)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	status := http.StatusOK
+	if res.Mode == "upload" {
+		status = http.StatusCreated
+	}
+	httpx.WriteJSON(w, status, res)
+}
+
+func (s *server) handleCompleteStoreMediaUpload(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	intentID := chi.URLParam(r, "intentID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+
+	var req commerce.CompleteMediaUploadRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, CodeInvalidArgument)
+		return
+	}
+
+	asset, err := s.deps.Commerce.CompleteStoreMediaUpload(r.Context(), subject, storeID, intentID, req)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusCreated, asset)
+}
+
+func (s *server) handleDeleteStoreMediaAsset(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	assetID := chi.URLParam(r, "assetID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+
+	if err := s.deps.Commerce.DeleteStoreMediaAsset(r.Context(), subject, storeID, assetID); err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusAccepted, StatusResponse{Status: "accepted"})
+}
+
+type productMediaReferenceListResponse struct {
+	References []commerce.ProductMediaReference `json:"references"`
+}
+
+func (s *server) handleListProductMediaReferences(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	productID := chi.URLParam(r, "productID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+
+	refs, err := s.deps.Commerce.ListProductMediaReferences(r.Context(), subject, storeID, productID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, productMediaReferenceListResponse{References: refs})
+}
+
+func (s *server) handleAttachProductMediaReference(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	productID := chi.URLParam(r, "productID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+
+	var req commerce.AttachMediaReferenceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, CodeInvalidArgument)
+		return
+	}
+
+	ref, err := s.deps.Commerce.AttachProductMediaReference(r.Context(), subject, storeID, productID, req)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusCreated, ref)
+}
+
+func (s *server) handleUpdateProductMediaReference(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	productID := chi.URLParam(r, "productID")
+	referenceID := chi.URLParam(r, "referenceID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+
+	var req commerce.UpdateMediaReferenceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, CodeInvalidArgument)
+		return
+	}
+
+	ref, err := s.deps.Commerce.UpdateProductMediaReference(r.Context(), subject, storeID, productID, referenceID, req)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, ref)
+}
+
+func (s *server) handleDetachProductMediaReference(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	productID := chi.URLParam(r, "productID")
+	referenceID := chi.URLParam(r, "referenceID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+
+	if err := s.deps.Commerce.DetachProductMediaReference(r.Context(), subject, storeID, productID, referenceID); err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, StatusResponse{Status: "ok"})
+}
+
 func (s *server) handlePresignMediaUpload(w http.ResponseWriter, r *http.Request) {
 	storeID := chi.URLParam(r, "storeID")
 	productID := chi.URLParam(r, "productID")

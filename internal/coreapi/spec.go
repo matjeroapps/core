@@ -736,6 +736,85 @@ func internalRoutes() []openapi.RouteSpec {
 			},
 			Responses: writeResponses("Deleted media", StatusResponse{}),
 		},
+
+		// Phase C: Store-scoped Media Library and Reusable Product Media References
+		{
+			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/media", OperationID: "internalListStoreMedia",
+			Summary: "List store media assets", Tags: []string{"Seller Media"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				openapi.StringParam("filename", "Filename filter", false),
+				openapi.StringParam("content_type", "Content type filter", false),
+				openapi.LimitParam(), openapi.OffsetParam(),
+			},
+			Responses: readResponses("Store media assets collection", commerce.ListStoreMediaAssetsResponse{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/media/uploads", OperationID: "internalPresignStoreMediaUpload",
+			Summary: "Presign store media upload intent", Tags: []string{"Seller Media"},
+			Parameters:  []openapi.ParameterSpec{pathParam("storeID", "Store identifier")},
+			RequestBody: commerce.PresignMediaUploadRequest{},
+			Responses:   writeResponses("Presigned upload intent", commerce.PresignMediaUploadResponse{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/media/uploads/{intentID}/complete", OperationID: "internalCompleteStoreMediaUpload",
+			Summary: "Complete store media upload", Tags: []string{"Seller Media"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("intentID", "Intent identifier"),
+			},
+			RequestBody: commerce.CompleteMediaUploadRequest{},
+			Responses:   createResponses("Completed store media asset", commerce.StoreMediaAsset{}),
+		},
+		{
+			Method: http.MethodDelete, Path: "/internal/v1/stores/{storeID}/media/{assetID}", OperationID: "internalDeleteStoreMediaAsset",
+			Summary: "Delete store media asset", Tags: []string{"Seller Media"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("assetID", "Asset identifier"),
+			},
+			Responses: writeResponses("Media asset deletion initiated", StatusResponse{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/products/{productID}/media-references", OperationID: "internalListProductMediaReferences",
+			Summary: "List product media references", Tags: []string{"Seller Media"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("productID", "Product identifier"),
+			},
+			Responses: readResponses("Product media reference collection", productMediaReferenceListResponse{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/products/{productID}/media-references", OperationID: "internalAttachProductMediaReference",
+			Summary: "Attach media reference to product", Tags: []string{"Seller Media"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("productID", "Product identifier"),
+			},
+			RequestBody: commerce.AttachMediaReferenceRequest{},
+			Responses:   createResponses("Attached product media reference", commerce.ProductMediaReference{}),
+		},
+		{
+			Method: http.MethodPut, Path: "/internal/v1/stores/{storeID}/products/{productID}/media-references/{referenceID}", OperationID: "internalUpdateProductMediaReference",
+			Summary: "Update product media reference", Tags: []string{"Seller Media"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("productID", "Product identifier"),
+				pathParam("referenceID", "Reference identifier"),
+			},
+			RequestBody: commerce.UpdateMediaReferenceRequest{},
+			Responses:   writeResponses("Updated product media reference", commerce.ProductMediaReference{}),
+		},
+		{
+			Method: http.MethodDelete, Path: "/internal/v1/stores/{storeID}/products/{productID}/media-references/{referenceID}", OperationID: "internalDetachProductMediaReference",
+			Summary: "Detach media reference from product", Tags: []string{"Seller Media"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("productID", "Product identifier"),
+				pathParam("referenceID", "Reference identifier"),
+			},
+			Responses: writeResponses("Detached product media reference", StatusResponse{}),
+		},
 		{
 			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/locations", OperationID: "internalListStoreLocations",
 			Summary: "List a store's own fulfillment locations", Tags: []string{"Seller Catalog"},
