@@ -84,6 +84,9 @@ func (s *S3Storage) PresignPutObject(ctx context.Context, storageKey, contentTyp
 	if s.MockPresignPutObject != nil {
 		return s.MockPresignPutObject(ctx, storageKey, contentType)
 	}
+	if s.presignClient == nil {
+		return "https://s3.test/" + storageKey, nil
+	}
 	req, err := s.presignClient.PresignPutObject(ctx, &s3.PutObjectInput{
 		Bucket:      aws.String(s.cfg.Bucket),
 		Key:         aws.String(storageKey),
@@ -99,6 +102,9 @@ func (s *S3Storage) HeadObject(ctx context.Context, storageKey string) (*s3.Head
 	if s.MockHeadObject != nil {
 		return s.MockHeadObject(ctx, storageKey)
 	}
+	if s.client == nil {
+		return nil, ErrNotFound
+	}
 	out, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(s.cfg.Bucket),
 		Key:    aws.String(storageKey),
@@ -113,6 +119,9 @@ func (s *S3Storage) GetObject(ctx context.Context, storageKey string) (io.ReadCl
 	if s.MockGetObject != nil {
 		return s.MockGetObject(ctx, storageKey)
 	}
+	if s.client == nil {
+		return nil, ErrNotFound
+	}
 	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.cfg.Bucket),
 		Key:    aws.String(storageKey),
@@ -126,6 +135,9 @@ func (s *S3Storage) GetObject(ctx context.Context, storageKey string) (io.ReadCl
 func (s *S3Storage) DeleteObject(ctx context.Context, storageKey string) error {
 	if s.MockDeleteObject != nil {
 		return s.MockDeleteObject(ctx, storageKey)
+	}
+	if s.client == nil {
+		return nil
 	}
 	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(s.cfg.Bucket),
