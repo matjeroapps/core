@@ -82,30 +82,43 @@ Key routes verified and exposed:
 
 ## Testing and Exact Validation Results
 
+### Summary of Fixes
+
+1. **Service Route-Scope Invariant Bug Fix**:
+   - Updated `CreateInventorySnapshotForSubject` and `AdjustStoreInventoryForSubject` in `modules/commerce/seller_catalog_service.go` to explicitly verify `GetSellerListingByStoreAndProduct(ctx, storeID, variant.ProductID)`.
+   - Prevented cross-store inventory snapshot creation/adjustment when an SKU's product belongs to the same seller but is not listed in the path's target store (`storeID`), correctly returning `ErrNotFound` (`404 not_found` / `CodeNotFound`).
+
+2. **Isolation Test Expectation Alignment**:
+   - Updated `TestStoreCatalogIsolationContract` subtest `Non-existent Random Resource Under A1 Path Returns 404` in `internal/coreapi/store_isolation_contract_test.go` to provide a valid `StoreInventoryAdjustmentRequest` payload (`StoreInventoryAdjustmentRequest{QuantityDelta: 5, Reason: "test"}`) for the POST adjustment endpoint.
+   - Ensured request body decoding succeeds so the handler proceeds to evaluate snapshot isolation and return `404 not_found` instead of returning a `400 invalid_argument` JSON decode error.
+
 ### Commands Executed
 
 ```bash
 gofmt -s -w .
 go vet ./...
-go test -v ./internal/coreapi -run TestStoreCatalogIsolationContract
-go run ./cmd/openapi-gen
-go test ./...
+TEST_DATABASE_URL="postgres://commerce:commerce@127.0.0.1:5432/commerce?sslmode=disable" go test -count=1 -v ./internal/coreapi -run TestStoreCatalogIsolationContract
+TEST_DATABASE_URL="postgres://commerce:commerce@127.0.0.1:5432/commerce?sslmode=disable" go test ./...
 ```
 
 ### Validation Results
 
 1. **`gofmt -s -w .`**: Clean, no formatting diffs.
 2. **`go vet ./...`**: Clean, 0 warnings/errors.
-3. **`go test ./internal/coreapi`**: Passed (`ok github.com/matjeroapps/core/internal/coreapi 0.236s`).
-4. **`go test ./...`**: Full Core test suite passed clean across all modules (`apps/workers`, `internal/accounting`, `internal/balance`, `internal/coreapi`, `internal/finance`, `internal/marketplace_finance`, `internal/payments`, `internal/serviceauth`, `internal/settlement`, `internal/shipping`, `internal/suppliers`, `internal/testdb`, `modules/actorapi`, `modules/commerce`, `modules/markets`, `modules/openapi`, `modules/storefront`, `modules/themes`, `packages/auth`, `packages/config`, `packages/events`, `packages/httpx`, `packages/i18n`, `packages/inbox`, `packages/messaging`, `packages/money`, `packages/outbox`).
-5. **OpenAPI generation**: Verified and updated `docs/api/internal/openapi.json`.
+3. **`go test -run TestStoreCatalogIsolationContract`**: Passed all 5 isolation subtests (`ok github.com/matjeroapps/core/internal/coreapi 0.706s`):
+   - `Correct_A1_Scope_Succeeded`: PASS
+   - `Same_Seller_Cross-Store_Resource_Under_A1_Path_Returns_404`: PASS
+   - `Cross-Seller_Store_B1_Access_by_Seller_A_Returns_404`: PASS
+   - `Cross-Seller_Store_A1_Access_by_Seller_B_Returns_404`: PASS
+   - `Non-existent_Random_Resource_Under_A1_Path_Returns_404`: PASS
+4. **`go test ./...`**: Full Core test suite passed clean across all 18 packages (`cmd/core-api`, `cmd/general-worker`, `internal/coreapi`, `internal/i18n`, `internal/serviceauth`, `internal/testdb`, `modules/admin`, `modules/commerce`, `modules/markets`, `modules/marketplace_finance`, `modules/outbox`, `modules/payments`, `modules/settlement`, `modules/shipping`, `modules/storefront`, `modules/themes`, `packages/database`, `packages/money`).
 
 ## Files Changed
 
 - `core/modules/commerce/seller_catalog_service.go`: Added store listing association checks to product, variant, SKU, media reference, product status, archive, and inventory snapshot/adjustment service methods; updated upload intent store mismatch to return `ErrNotFound`.
-- `core/internal/coreapi/store_isolation_contract_test.go`: Created contract test suite covering store catalog isolation matrix (A1/A2/B1 stores and sellers, same-seller cross-store isolation, cross-seller isolation, random non-existent resource 404 verification). Fixed `ProductDraft` fixture (`Status` and `SupplierCode`) to satisfy live database validations.
+- `core/internal/coreapi/store_isolation_contract_test.go`: Updated isolation contract test suite covering store catalog isolation matrix (A1/A2/B1 stores and sellers, same-seller cross-store isolation, cross-seller isolation, random non-existent resource 404 verification). Fixed `ProductDraft` fixture (`Status` and `SupplierCode`) and POST adjustment payload format.
 - `core/docs/api/internal/openapi.json`: Regenerated OpenAPI specification document.
-- `core/docs/implementation/seller-catalog-http-contracts-report.md`: Created implementation report.
+- `core/docs/implementation/seller-catalog-http-contracts-report.md`: Updated implementation report with exact validation results.
 
 ## Known Limitations
 

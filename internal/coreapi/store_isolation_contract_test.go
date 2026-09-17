@@ -461,15 +461,16 @@ func TestStoreCatalogIsolationContract(t *testing.T) {
 			name   string
 			method string
 			path   string
+			body   any
 		}{
-			{"Random Product ID", http.MethodGet, fmt.Sprintf("/internal/v1/stores/%s/products/%s", env.storeA1ID, randomUUID)},
-			{"Random Listing ID", http.MethodGet, fmt.Sprintf("/internal/v1/stores/%s/listings/%s", env.storeA1ID, randomUUID)},
-			{"Random Asset ID", http.MethodDelete, fmt.Sprintf("/internal/v1/stores/%s/media/%s", env.storeA1ID, randomUUID)},
-			{"Random Snapshot ID", http.MethodPost, fmt.Sprintf("/internal/v1/stores/%s/inventory/%s/adjustments", env.storeA1ID, randomUUID)},
+			{"Random Product ID", http.MethodGet, fmt.Sprintf("/internal/v1/stores/%s/products/%s", env.storeA1ID, randomUUID), nil},
+			{"Random Listing ID", http.MethodGet, fmt.Sprintf("/internal/v1/stores/%s/listings/%s", env.storeA1ID, randomUUID), nil},
+			{"Random Asset ID", http.MethodDelete, fmt.Sprintf("/internal/v1/stores/%s/media/%s", env.storeA1ID, randomUUID), nil},
+			{"Random Snapshot ID", http.MethodPost, fmt.Sprintf("/internal/v1/stores/%s/inventory/%s/adjustments", env.storeA1ID, randomUUID), StoreInventoryAdjustmentRequest{QuantityDelta: 5, Reason: "test"}},
 		}
 
 		for _, tc := range tests {
-			rec := env.doRequest(subjectSellerA, tc.method, tc.path, nil)
+			rec := env.doRequest(subjectSellerA, tc.method, tc.path, tc.body)
 			if rec.Code != http.StatusNotFound {
 				t.Errorf("%s: status = %d, want 404 (body: %s)", tc.name, rec.Code, rec.Body.String())
 			}

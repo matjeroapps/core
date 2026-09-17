@@ -1116,13 +1116,16 @@ func (s Service) CreateInventorySnapshotForSubject(ctx context.Context, subject,
 		return InventorySnapshot{}, ErrNotFound
 	}
 
-	// Verify SKU belongs to a seller-owned product
+	// Verify SKU belongs to a seller-owned product listed in this store
 	sku, err := s.repo.GetSKUByID(ctx, skuID)
 	if err != nil {
 		return InventorySnapshot{}, ErrNotFound
 	}
 	variant, err := s.repo.GetVariantByID(ctx, sku.VariantID)
 	if err != nil {
+		return InventorySnapshot{}, ErrNotFound
+	}
+	if _, err := s.repo.GetSellerListingByStoreAndProduct(ctx, storeID, variant.ProductID); err != nil {
 		return InventorySnapshot{}, ErrNotFound
 	}
 	if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, seller.ID, variant.ProductID); err != nil {
@@ -1158,6 +1161,9 @@ func (s Service) AdjustStoreInventoryForSubject(ctx context.Context, subject, st
 	}
 	variant, err := s.repo.GetVariantByID(ctx, sku.VariantID)
 	if err != nil {
+		return InventorySnapshot{}, InventoryMovement{}, ErrNotFound
+	}
+	if _, err := s.repo.GetSellerListingByStoreAndProduct(ctx, storeID, variant.ProductID); err != nil {
 		return InventorySnapshot{}, InventoryMovement{}, ErrNotFound
 	}
 	if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, seller.ID, variant.ProductID); err != nil {
