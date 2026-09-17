@@ -45,6 +45,7 @@ type ListStoreMediaAssetsResponse struct {
 
 // PresignMediaUploadRequest initiates presign or deduplication lookup.
 type PresignMediaUploadRequest struct {
+	ProductID      string `json:"product_id,omitempty"`
 	ClientUploadID string `json:"client_upload_id,omitempty"`
 	Filename       string `json:"filename"`
 	ContentType    string `json:"content_type"`

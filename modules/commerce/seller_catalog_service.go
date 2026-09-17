@@ -597,15 +597,19 @@ func (s Service) PresignStoreMediaUpload(ctx context.Context, subject, storeID s
 	ttl := s.S3Storage.Config().URLTTL
 	expiresAt := time.Now().Add(ttl)
 
-	var clientUploadIDPtr, fingerprintPtr *string
+	var clientUploadIDPtr, fingerprintPtr, productIDPtr *string
 	if req.ClientUploadID != "" {
 		clientUploadIDPtr = &req.ClientUploadID
+	}
+	if req.ProductID != "" {
+		productIDPtr = &req.ProductID
 	}
 	fingerprintPtr = &fingerprint
 
 	intent, err := s.repo.CreateMediaUploadIntent(ctx, MediaUploadIntent{
 		SellerID:           seller.ID,
 		StoreID:            storeID,
+		ProductID:          productIDPtr,
 		ClientUploadID:     clientUploadIDPtr,
 		RequestFingerprint: fingerprintPtr,
 		ChecksumSHA256:     checksum,
@@ -687,6 +691,12 @@ func (s Service) CompleteStoreMediaUpload(ctx context.Context, subject, storeID,
 	}
 	if head.ContentLength == nil || *head.ContentLength <= 0 {
 		return StoreMediaAsset{}, fmt.Errorf("%w: uploaded object is empty", ErrInvalidInput)
+	}
+	if head.ContentType != nil && *head.ContentType != "" && intent.ContentType != "" && !strings.EqualFold(*head.ContentType, intent.ContentType) {
+		return StoreMediaAsset{}, fmt.Errorf("%w: content type mismatch %s vs %s", ErrInvalidInput, *head.ContentType, intent.ContentType)
+	}
+	if intent.ByteSize > 0 && *head.ContentLength > intent.ByteSize {
+		return StoreMediaAsset{}, fmt.Errorf("%w: uploaded object size %d exceeds limit %d", ErrInvalidInput, *head.ContentLength, intent.ByteSize)
 	}
 	if intent.MaxBytes > 0 && *head.ContentLength > intent.MaxBytes {
 		return StoreMediaAsset{}, fmt.Errorf("%w: uploaded object size %d exceeds limit %d", ErrInvalidInput, *head.ContentLength, intent.MaxBytes)
@@ -865,6 +875,7 @@ func (s Service) ProcessPendingMediaDeletions(ctx context.Context, batchSize int
 
 func (s Service) GenerateMediaUploadPresignedURLForSubject(ctx context.Context, subject, storeID, productID string, req MediaUploadRequest) (MediaUploadResponse, error) {
 	resp, err := s.PresignStoreMediaUpload(ctx, subject, storeID, PresignMediaUploadRequest{
+		ProductID:      productID,
 		Filename:       "product_image.jpg",
 		ContentType:    req.ContentType,
 		SizeBytes:      req.SizeBytes,
@@ -885,6 +896,9 @@ func (s Service) CompleteMediaUploadForSubject(ctx context.Context, subject, sto
 	intent, err := s.repo.GetMediaUploadIntentByStorageKey(ctx, req.StorageKey)
 	if err != nil {
 		return MediaMetadata{}, err
+	}
+	if intent.ProductID != nil && *intent.ProductID != "" && *intent.ProductID != productID {
+		return MediaMetadata{}, fmt.Errorf("%w: upload intent belongs to a different product", ErrInvalidInput)
 	}
 
 	asset, err := s.CompleteStoreMediaUpload(ctx, subject, storeID, intent.ID, req)

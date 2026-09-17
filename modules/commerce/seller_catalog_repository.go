@@ -802,7 +802,7 @@ func (r Repository) CompleteMediaUploadAndCreateAsset(ctx context.Context, inten
 		`, asset.StoreID, asset.ChecksumSHA256).Scan(&winning.ID, &winning.StoreID, &winning.ChecksumSHA256, &winning.StorageKey, &winning.ContentType, &winning.ByteSize, &winning.OriginalFilename, &winning.Status, &winning.CreatedBySubject, &winning.CreatedAt, &winning.UpdatedAt)
 
 		if err == nil {
-			_, _ = tx.Exec(ctx, `UPDATE media_upload_intents SET completed_at = now() WHERE id = $1`, intentID)
+			_, _ = tx.Exec(ctx, `UPDATE media_upload_intents SET completed_at = now(), checksum_sha256 = $2 WHERE id = $1`, intentID, winning.ChecksumSHA256)
 			created = winning
 			return nil
 		}
@@ -817,7 +817,7 @@ func (r Repository) CompleteMediaUploadAndCreateAsset(ctx context.Context, inten
 			return translatePGError(err, "create store_media_asset")
 		}
 
-		_, err = tx.Exec(ctx, `UPDATE media_upload_intents SET completed_at = now() WHERE id = $1`, intentID)
+		_, err = tx.Exec(ctx, `UPDATE media_upload_intents SET completed_at = now(), checksum_sha256 = $2 WHERE id = $1`, intentID, asset.ChecksumSHA256)
 		if err != nil {
 			return translatePGError(err, "mark upload intent complete")
 		}

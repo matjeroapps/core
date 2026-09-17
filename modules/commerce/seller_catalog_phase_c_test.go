@@ -202,8 +202,7 @@ func TestCompleteStoreMediaUpload_ChecksumMismatchAndDeletion(t *testing.T) {
 
 func createTestMediaAsset(t *testing.T, ctx context.Context, repo Repository, intentID string, asset StoreMediaAsset) StoreMediaAsset {
 	t.Helper()
-	_, err := repo.CreateMediaUploadIntent(ctx, MediaUploadIntent{
-		ID:               intentID,
+	intent, err := repo.CreateMediaUploadIntent(ctx, MediaUploadIntent{
 		StoreID:          asset.StoreID,
 		ClientUploadID:   &intentID,
 		OriginalFilename: asset.OriginalFilename,
@@ -216,7 +215,7 @@ func createTestMediaAsset(t *testing.T, ctx context.Context, repo Repository, in
 	})
 	require.NoError(t, err)
 
-	created, err := repo.CompleteMediaUploadAndCreateAsset(ctx, intentID, asset)
+	created, err := repo.CompleteMediaUploadAndCreateAsset(ctx, intent.ID, asset)
 	require.NoError(t, err)
 	return created
 }
