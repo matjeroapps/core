@@ -32,6 +32,8 @@ func TestRepositoryCommerceFoundations(t *testing.T) {
 	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000009_supplier_retail_capability.up.sql"))
 	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000010_customer_cart_domain.up.sql"))
 	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000011_checkout_sessions.up.sql"))
+	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000014_seller_catalog_authoring.up.sql"))
+	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000025_seller_catalog_phase_b.up.sql"))
 
 	repo := NewRepository(db.Pool)
 	service := NewService(repo)
@@ -220,7 +222,7 @@ func TestRepositoryCommerceFoundations(t *testing.T) {
 		t.Fatalf("reserved qty changed after failed reserve: %d", updatedSnapshot.ReservedQty)
 	}
 
-	updatedSnapshot, movement, err := repo.AdjustInventory(ctx, snapshot.ID, 1, "adjust", "receive stock", "user-1-"+suffix, "corr-"+suffix, "cause-"+suffix)
+	updatedSnapshot, movement, err := repo.AdjustInventory(ctx, snapshot.ID, 1, "adjust", "receive stock", "user-1-"+suffix, "corr-"+suffix, "cause-"+suffix, "", "")
 	if err != nil {
 		t.Fatalf("AdjustInventory returned error: %v", err)
 	}

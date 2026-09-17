@@ -18,5 +18,8 @@ var (
 	ErrUnauthorized             = errors.New("unauthorized")
 	ErrForbidden                = errors.New("forbidden")
 	ErrStoreEntitlementExceeded = errors.New("active-store entitlement limit exceeded")
+	ErrPublishNotReady          = errors.New("publish readiness failed")
+	ErrOfferUnavailable         = errors.New("supplier offer unavailable")
+	ErrResourceInUse            = errors.New("resource in use")
 	ErrInternalError            = errors.New("internal error")
 )

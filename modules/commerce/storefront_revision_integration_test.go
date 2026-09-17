@@ -68,6 +68,8 @@ func setupRevisionTest(t *testing.T) *revisionEnv {
 		"000009_supplier_retail_capability",
 		"000010_customer_cart_domain",
 		"000011_checkout_sessions",
+		"000014_seller_catalog_authoring",
+		"000025_seller_catalog_phase_b",
 	} {
 		applySQLFile(t, db, filepath.Join("..", "..", "migrations", m+".up.sql"))
 	}
@@ -375,11 +377,11 @@ func TestStorefrontRevisionInventoryWritesBumpEverySellingStore(t *testing.T) {
 	env := setupRevisionTest(t)
 
 	env.expectBump(t, "adjust stock upward", true, true, func() error {
-		_, _, err := env.repo.AdjustInventory(env.ctx, env.sharedStock, 5, "restock", "", "subject", "", "")
+		_, _, err := env.repo.AdjustInventory(env.ctx, env.sharedStock, 5, "restock", "", "subject", "", "", "", "")
 		return err
 	})
 	env.expectBump(t, "adjust stock downward", true, true, func() error {
-		_, _, err := env.repo.AdjustInventory(env.ctx, env.sharedStock, -5, "shrinkage", "", "subject", "", "")
+		_, _, err := env.repo.AdjustInventory(env.ctx, env.sharedStock, -5, "shrinkage", "", "subject", "", "", "", "")
 		return err
 	})
 	env.expectBump(t, "reserve stock", true, true, func() error {
@@ -476,7 +478,7 @@ func TestStorefrontRevisionDoesNotAdvanceOnRollback(t *testing.T) {
 
 	t.Run("failed inventory adjustment", func(t *testing.T) {
 		before := env.revision(t, env.storeA)
-		if _, _, err := env.repo.AdjustInventory(env.ctx, env.sharedStock, -1000, "shrinkage", "", "subject", "", ""); !errors.Is(err, ErrInsufficientInventory) {
+		if _, _, err := env.repo.AdjustInventory(env.ctx, env.sharedStock, -1000, "shrinkage", "", "subject", "", "", "", ""); !errors.Is(err, ErrInsufficientInventory) {
 			t.Fatalf("adjustment error = %v, want ErrInsufficientInventory", err)
 		}
 		if after := env.revision(t, env.storeA); after != before {

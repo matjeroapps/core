@@ -2,6 +2,7 @@ package commerce
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -558,7 +559,7 @@ func (r Repository) ListProductCategoryIDs(ctx context.Context, productID string
 	return ids, rows.Err()
 }
 
-func (r Repository) AdjustInventory(ctx context.Context, snapshotID string, quantityDelta int64, movementType, reason, principalSubject, correlationID, causationID string) (InventorySnapshot, InventoryMovement, error) {
+func (r Repository) AdjustInventory(ctx context.Context, snapshotID string, quantityDelta int64, movementType, reason, principalSubject, correlationID, causationID string, idempotencyKey, requestFingerprint string) (InventorySnapshot, InventoryMovement, error) {
 	if snapshotID == "" || movementType == "" {
 		return InventorySnapshot{}, InventoryMovement{}, ErrInvalidInput
 	}
@@ -569,6 +570,44 @@ func (r Repository) AdjustInventory(ctx context.Context, snapshotID string, quan
 	var updated InventorySnapshot
 	var movement InventoryMovement
 	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		if idempotencyKey != "" {
+			var existingm InventoryMovement
+			var keyVal, fpVal sql.NullString
+			err := tx.QueryRow(ctx, `
+				SELECT id, inventory_snapshot_id, movement_type, quantity_delta, on_hand_qty, reserved_qty,
+				       reason, principal_subject, correlation_id, causation_id, idempotency_key, request_fingerprint, created_at
+				FROM inventory_movements
+				WHERE inventory_snapshot_id = $1 AND idempotency_key = $2
+			`, snapshotID, idempotencyKey).Scan(
+				&existingm.ID, &existingm.InventorySnapshotID, &existingm.MovementType, &existingm.QuantityDelta,
+				&existingm.OnHandQty, &existingm.ReservedQty, &existingm.Reason, &existingm.PrincipalSubject,
+				&existingm.CorrelationID, &existingm.CausationID, &keyVal, &fpVal, &existingm.CreatedAt,
+			)
+			if err == nil {
+				if keyVal.Valid {
+					existingm.IdempotencyKey = keyVal.String
+				}
+				if fpVal.Valid {
+					existingm.RequestFingerprint = fpVal.String
+				}
+				if existingm.RequestFingerprint != requestFingerprint {
+					return ErrIdempotencyConflict
+				}
+				errSnap := tx.QueryRow(ctx, `
+					SELECT id, fulfillment_location_id, sku_id, on_hand_qty, reserved_qty, version, created_at, updated_at
+					FROM inventory_snapshots
+					WHERE id = $1
+				`, snapshotID).Scan(&updated.ID, &updated.FulfillmentLocationID, &updated.SKUID, &updated.OnHandQty, &updated.ReservedQty, &updated.Version, &updated.CreatedAt, &updated.UpdatedAt)
+				if errSnap != nil {
+					return translatePGError(errSnap, "get current snapshot for idempotency replay")
+				}
+				movement = existingm
+				return nil
+			} else if !errors.Is(err, pgx.ErrNoRows) {
+				return translatePGError(err, "check inventory movement idempotency")
+			}
+		}
+
 		if quantityDelta == 0 {
 			return ErrInvalidInput
 		}
@@ -609,15 +648,23 @@ func (r Repository) AdjustInventory(ctx context.Context, snapshotID string, quan
 			return ErrInvalidInput
 		}
 
+		var ikParam, fpParam *string
+		if idempotencyKey != "" {
+			ikParam = &idempotencyKey
+		}
+		if requestFingerprint != "" {
+			fpParam = &requestFingerprint
+		}
+
 		movementID := uuid.NewString()
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO inventory_movements (
 				id, inventory_snapshot_id, movement_type, quantity_delta, on_hand_qty, reserved_qty,
-				reason, principal_subject, correlation_id, causation_id
+				reason, principal_subject, correlation_id, causation_id, idempotency_key, request_fingerprint
 			)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 			RETURNING created_at
-		`, movementID, snapshotID, movementType, quantityDelta, updated.OnHandQty, updated.ReservedQty, reason, principalSubject, correlationID, causationID).Scan(&movement.CreatedAt); err != nil {
+		`, movementID, snapshotID, movementType, quantityDelta, updated.OnHandQty, updated.ReservedQty, reason, principalSubject, correlationID, causationID, ikParam, fpParam).Scan(&movement.CreatedAt); err != nil {
 			return translatePGError(err, "record inventory movement")
 		}
 		movement = InventoryMovement{
@@ -631,6 +678,8 @@ func (r Repository) AdjustInventory(ctx context.Context, snapshotID string, quan
 			PrincipalSubject:    principalSubject,
 			CorrelationID:       correlationID,
 			CausationID:         causationID,
+			IdempotencyKey:      idempotencyKey,
+			RequestFingerprint:  requestFingerprint,
 			CreatedAt:           movement.CreatedAt,
 		}
 		return bumpStorefrontRevisions(ctx, tx, revisionStoresByInventorySnapshot, snapshotID)

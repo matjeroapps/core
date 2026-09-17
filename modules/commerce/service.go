@@ -397,7 +397,7 @@ func (s Service) AdjustInventoryForSubject(ctx context.Context, subject, supplie
 	if location.SupplierID != supplierID {
 		return InventorySnapshot{}, InventoryMovement{}, ErrNotFound
 	}
-	return s.repo.AdjustInventory(ctx, snapshotID, quantityDelta, movementType, reason, subject, correlationID, causationID)
+	return s.repo.AdjustInventory(ctx, snapshotID, quantityDelta, movementType, reason, subject, correlationID, causationID, "", "")
 }
 
 func (s Service) UpdateSupplierStatusForSubject(ctx context.Context, subject, supplierID, status string) error {

@@ -113,7 +113,7 @@ func (r Repository) CreateSellerProductAtomically(ctx context.Context, sellerID,
 		productID := uuid.NewString()
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO products (id, slug, status)
-			VALUES ($1, $2, 'inactive')
+			VALUES ($1, $2, 'draft')
 			RETURNING created_at, updated_at
 		`, productID, draft.Slug).Scan(&createdProduct.CreatedAt, &createdProduct.UpdatedAt); err != nil {
 			return translatePGError(err, "create product atomically")
@@ -121,7 +121,7 @@ func (r Repository) CreateSellerProductAtomically(ctx context.Context, sellerID,
 		createdProduct = Product{
 			ID:        productID,
 			Slug:      draft.Slug,
-			Status:    "inactive",
+			Status:    "draft",
 			CreatedAt: createdProduct.CreatedAt,
 			UpdatedAt: createdProduct.UpdatedAt,
 		}
@@ -181,7 +181,7 @@ func (r Repository) CreateSellerProductAtomically(ctx context.Context, sellerID,
 		listingID := uuid.NewString()
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO seller_listings (id, store_id, product_id, supplier_offer_id, market_code, status)
-			VALUES ($1, $2, $3, NULL, $4, 'inactive')
+			VALUES ($1, $2, $3, NULL, $4, 'draft')
 			RETURNING created_at, updated_at
 		`, listingID, storeID, productID, marketCode).Scan(&createdListing.CreatedAt, &createdListing.UpdatedAt); err != nil {
 			return translatePGError(err, "create seller listing atomically")
@@ -191,7 +191,7 @@ func (r Repository) CreateSellerProductAtomically(ctx context.Context, sellerID,
 			StoreID:    storeID,
 			ProductID:  productID,
 			MarketCode: marketCode,
-			Status:     "inactive",
+			Status:     "draft",
 			CreatedAt:  createdListing.CreatedAt,
 			UpdatedAt:  createdListing.UpdatedAt,
 		}
@@ -1047,7 +1047,7 @@ func (r Repository) PublishSellerProduct(ctx context.Context, storeID, productID
 		}
 
 		res, err := tx.Exec(ctx, `
-			UPDATE seller_listings SET status = 'active', updated_at = now() WHERE store_id = $1 AND product_id = $2
+			UPDATE seller_listings SET status = 'published', updated_at = now() WHERE store_id = $1 AND product_id = $2
 		`, storeID, productID)
 		if err != nil {
 			return translatePGError(err, "activate listing")
@@ -1067,7 +1067,7 @@ func (r Repository) UnpublishSellerProduct(ctx context.Context, storeID, product
 
 	return r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		res, err := tx.Exec(ctx, `
-			UPDATE seller_listings SET status = 'inactive', updated_at = now() WHERE store_id = $1 AND product_id = $2
+			UPDATE seller_listings SET status = 'unpublished', updated_at = now() WHERE store_id = $1 AND product_id = $2
 		`, storeID, productID)
 		if err != nil {
 			return translatePGError(err, "deactivate listing")
@@ -1439,7 +1439,7 @@ func (r Repository) PublishSellerProductAtomically(ctx context.Context, storeID,
 		}
 
 		if _, err := tx.Exec(ctx, `
-			UPDATE seller_listings SET status = 'active', updated_at = now() WHERE id = $1
+			UPDATE seller_listings SET status = 'published', updated_at = now() WHERE id = $1
 		`, listingID); err != nil {
 			return translatePGError(err, "activate listing")
 		}
@@ -1704,4 +1704,452 @@ func (r Repository) CountMediaByProductIDs(ctx context.Context, productIDs []str
 		out[productID] = count
 	}
 	return out, nil
+}
+
+func (r Repository) GetSellerListingByStoreAndID(ctx context.Context, storeID, listingID string) (SellerListing, error) {
+	if storeID == "" || listingID == "" {
+		return SellerListing{}, ErrInvalidInput
+	}
+	var l SellerListing
+	var suppOfferID sql.NullString
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, store_id, product_id, supplier_offer_id, market_code, status, created_at, updated_at
+		FROM seller_listings
+		WHERE id = $1 AND store_id = $2
+	`, listingID, storeID).Scan(&l.ID, &l.StoreID, &l.ProductID, &suppOfferID, &l.MarketCode, &l.Status, &l.CreatedAt, &l.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return SellerListing{}, ErrNotFound
+		}
+		return SellerListing{}, fmt.Errorf("get seller listing by store and id: %w", err)
+	}
+	if suppOfferID.Valid {
+		l.SupplierOfferID = &suppOfferID.String
+	}
+	return l, nil
+}
+
+func (r Repository) TransitionProductStatus(ctx context.Context, productID, targetStatus string) (Product, error) {
+	if productID == "" || targetStatus == "" {
+		return Product{}, ErrInvalidInput
+	}
+	if targetStatus != "draft" && targetStatus != "active" && targetStatus != "archived" {
+		return Product{}, fmt.Errorf("%w: invalid product target status %s", ErrInvalidInput, targetStatus)
+	}
+	if targetStatus == "archived" {
+		if err := r.ArchiveProduct(ctx, productID); err != nil {
+			return Product{}, err
+		}
+		return r.GetProductByID(ctx, productID)
+	}
+
+	var updated Product
+	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `
+			UPDATE products
+			SET status = $2, updated_at = now()
+			WHERE id = $1
+			RETURNING id, slug, status, created_at, updated_at
+		`, productID, targetStatus).Scan(&updated.ID, &updated.Slug, &updated.Status, &updated.CreatedAt, &updated.UpdatedAt); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrNotFound
+			}
+			return translatePGError(err, "transition product status")
+		}
+		return bumpStorefrontRevisions(ctx, tx, revisionStoresByProduct, productID)
+	})
+	return updated, err
+}
+
+func (r Repository) ArchiveProduct(ctx context.Context, productID string) error {
+	if productID == "" {
+		return ErrInvalidInput
+	}
+
+	return r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		// 1. Core rejects Product archival while any Store Listing associated with that product is PUBLISHED.
+		var publishedCount int
+		if err := tx.QueryRow(ctx, `
+			SELECT COUNT(*) FROM seller_listings WHERE product_id = $1 AND status = 'published'
+		`, productID).Scan(&publishedCount); err != nil {
+			return translatePGError(err, "check published listings for product archival")
+		}
+		if publishedCount > 0 {
+			return fmt.Errorf("%w: cannot archive product while store listing is published", ErrResourceInUse)
+		}
+
+		// 2. Check protected reference rules (active orders)
+		var activeOrderCount int
+		if err := tx.QueryRow(ctx, `
+			SELECT COUNT(*)
+			FROM order_items oi
+			JOIN orders o ON o.id = oi.order_id
+			WHERE oi.product_id = $1 AND o.status IN ('pending', 'confirmed', 'processing', 'ready_for_shipping')
+		`, productID).Scan(&activeOrderCount); err != nil {
+			return translatePGError(err, "check active orders for product archival")
+		}
+		if activeOrderCount > 0 {
+			return fmt.Errorf("%w: cannot archive product with active orders", ErrResourceInUse)
+		}
+
+		// 3. Update product status to archived
+		res, err := tx.Exec(ctx, `UPDATE products SET status = 'archived', updated_at = now() WHERE id = $1`, productID)
+		if err != nil {
+			return translatePGError(err, "archive product")
+		}
+		if res.RowsAffected() == 0 {
+			return ErrNotFound
+		}
+
+		return bumpStorefrontRevisions(ctx, tx, revisionStoresByProduct, productID)
+	})
+}
+
+func (r Repository) PublishSellerListingAtomically(ctx context.Context, storeID, listingID string, marketCode, expectedCurrency string) error {
+	if storeID == "" || listingID == "" || marketCode == "" || expectedCurrency == "" {
+		return ErrInvalidInput
+	}
+
+	return r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var storeStatus string
+		if err := tx.QueryRow(ctx, `SELECT status FROM stores WHERE id = $1 FOR UPDATE`, storeID).Scan(&storeStatus); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrNotFound
+			}
+			return translatePGError(err, "lock store for publish")
+		}
+		if storeStatus != "active" {
+			return fmt.Errorf("%w: store is not active", ErrPublishNotReady)
+		}
+
+		var productID, listingMarket, listingStatus string
+		var suppOfferID sql.NullString
+		err := tx.QueryRow(ctx, `
+			SELECT product_id, supplier_offer_id, market_code, status
+			FROM seller_listings
+			WHERE id = $1 AND store_id = $2
+			FOR UPDATE
+		`, listingID, storeID).Scan(&productID, &suppOfferID, &listingMarket, &listingStatus)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrNotFound
+			}
+			return translatePGError(err, "lock listing for publish")
+		}
+		if listingMarket != marketCode {
+			return fmt.Errorf("%w: listing market %s does not match store market %s", ErrPublishNotReady, listingMarket, marketCode)
+		}
+		if listingStatus == "archived" {
+			return fmt.Errorf("%w: cannot publish an archived listing", ErrResourceInUse)
+		}
+
+		var reasons []string
+
+		// Seller-owned vs Supplier-backed readiness checks inside transaction
+		if suppOfferID.Valid && suppOfferID.String != "" {
+			var offerStatus string
+			var offerMarket string
+			var isAvailable sql.NullBool
+			var availableQty sql.NullInt64
+			errOffer := tx.QueryRow(ctx, `
+				SELECT so.status, so.market_code, av.is_available, av.available_qty
+				FROM supplier_offers so
+				LEFT JOIN supplier_offer_availability av ON av.supplier_offer_id = so.id
+				WHERE so.id = $1
+			`, suppOfferID.String).Scan(&offerStatus, &offerMarket, &isAvailable, &availableQty)
+			if errOffer != nil {
+				if errors.Is(errOffer, pgx.ErrNoRows) {
+					reasons = append(reasons, "Referenced supplier offer does not exist")
+				} else {
+					return translatePGError(errOffer, "check supplier offer for publish")
+				}
+			} else {
+				if offerStatus != "active" {
+					reasons = append(reasons, "Supplier offer is not active")
+				}
+				if offerMarket != marketCode {
+					reasons = append(reasons, "Supplier offer market does not match store market")
+				}
+				if !isAvailable.Valid || !isAvailable.Bool {
+					reasons = append(reasons, "Supplier offer is unavailable")
+				}
+				if availableQty.Valid && availableQty.Int64 <= 0 {
+					reasons = append(reasons, "Supplier offer has no available inventory")
+				}
+			}
+		} else {
+			var hasName bool
+			if err := tx.QueryRow(ctx, `
+				SELECT EXISTS (
+					SELECT 1 FROM product_translations
+					WHERE product_id = $1 AND COALESCE(TRIM(name), '') <> ''
+				)
+			`, productID).Scan(&hasName); err != nil {
+				return translatePGError(err, "check product translations for publish")
+			}
+			if !hasName {
+				reasons = append(reasons, "Product title/translation is missing")
+			}
+
+			if _, err := tx.Exec(ctx, `
+				SELECT sk.id FROM skus sk
+				JOIN variants v ON v.id = sk.variant_id
+				WHERE v.product_id = $1
+				FOR UPDATE OF sk
+			`, productID); err != nil {
+				return translatePGError(err, "lock skus for publish")
+			}
+
+			rows, err := tx.Query(ctx, `
+				SELECT v.id, COUNT(sk.id)
+				FROM variants v
+				LEFT JOIN skus sk ON sk.variant_id = v.id AND sk.status = 'active'
+				WHERE v.product_id = $1 AND v.status = 'active'
+				GROUP BY v.id
+			`, productID)
+			if err != nil {
+				return translatePGError(err, "check active variants for publish")
+			}
+			activeVariants := 0
+			for rows.Next() {
+				var variantID string
+				var activeSKUCount int
+				if err := rows.Scan(&variantID, &activeSKUCount); err != nil {
+					rows.Close()
+					return translatePGError(err, "scan active variant for publish")
+				}
+				activeVariants++
+				if activeSKUCount != 1 {
+					reasons = append(reasons, fmt.Sprintf("Variant %s must have exactly one active selectable SKU", variantID))
+				}
+			}
+			rows.Close()
+			if activeVariants == 0 {
+				reasons = append(reasons, "At least one active Variant is required")
+			}
+
+			var hasSellableInventory bool
+			if err := tx.QueryRow(ctx, `
+				SELECT EXISTS (
+					SELECT 1
+					FROM variants v
+					JOIN skus sk ON sk.variant_id = v.id AND sk.status = 'active'
+					JOIN inventory_snapshots inv ON inv.sku_id = sk.id
+					JOIN fulfillment_locations fl ON fl.id = inv.fulfillment_location_id
+					WHERE v.product_id = $1
+					  AND fl.store_id = $2
+					  AND fl.supplier_id IS NULL
+					  AND fl.status = 'active'
+					  AND fl.market_code = $3
+					  AND (inv.on_hand_qty - inv.reserved_qty) > 0
+				)
+			`, productID, storeID, marketCode).Scan(&hasSellableInventory); err != nil {
+				return translatePGError(err, "check inventory topology for publish")
+			}
+			if !hasSellableInventory {
+				reasons = append(reasons, "Sellable inventory at an active store location is required")
+			}
+		}
+
+		var hasPrice bool
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM seller_listing_prices
+				WHERE seller_listing_id = $1 AND is_current = true AND currency_code = $2
+			)
+		`, listingID, expectedCurrency).Scan(&hasPrice); err != nil {
+			return translatePGError(err, "check listing price for publish")
+		}
+		if !hasPrice {
+			reasons = append(reasons, "Current retail price is missing or currency does not match store market")
+		}
+
+		var hasMedia bool
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS (SELECT 1 FROM media_metadata WHERE product_id = $1)
+		`, productID).Scan(&hasMedia); err != nil {
+			return translatePGError(err, "check product media for publish")
+		}
+		if !hasMedia {
+			reasons = append(reasons, "At least one product image is required")
+		}
+
+		presReasons, err := validatePresentationTx(ctx, tx, listingID, productID)
+		if err != nil {
+			return translatePGError(err, "revalidate presentation for publish")
+		}
+		reasons = append(reasons, presReasons...)
+
+		if len(reasons) > 0 {
+			return fmt.Errorf("%w: publish readiness failed: %s", ErrPublishNotReady, strings.Join(reasons, "; "))
+		}
+
+		// Idempotency: if already published, return nil
+		if listingStatus == "published" {
+			return nil
+		}
+
+		if _, err := tx.Exec(ctx, `
+			UPDATE seller_listings SET status = 'published', updated_at = now() WHERE id = $1
+		`, listingID); err != nil {
+			return translatePGError(err, "publish listing")
+		}
+
+		if !suppOfferID.Valid {
+			_, _ = tx.Exec(ctx, `UPDATE products SET status = 'active', updated_at = now() WHERE id = $1 AND status = 'draft'`, productID)
+		}
+
+		return bumpStorefrontRevisions(ctx, tx, revisionStoreItself, storeID)
+	})
+}
+
+func (r Repository) UnpublishSellerListingByListingID(ctx context.Context, storeID, listingID string) error {
+	if storeID == "" || listingID == "" {
+		return ErrInvalidInput
+	}
+
+	return r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var status string
+		err := tx.QueryRow(ctx, `
+			SELECT status FROM seller_listings WHERE id = $1 AND store_id = $2 FOR UPDATE
+		`, listingID, storeID).Scan(&status)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrNotFound
+			}
+			return translatePGError(err, "lock listing for unpublish")
+		}
+		if status == "unpublished" {
+			return nil
+		}
+		if status == "archived" {
+			return fmt.Errorf("%w: cannot unpublish an archived listing", ErrResourceInUse)
+		}
+
+		res, err := tx.Exec(ctx, `
+			UPDATE seller_listings SET status = 'unpublished', updated_at = now() WHERE id = $1 AND store_id = $2
+		`, listingID, storeID)
+		if err != nil {
+			return translatePGError(err, "unpublish listing")
+		}
+		if res.RowsAffected() == 0 {
+			return ErrNotFound
+		}
+
+		return bumpStorefrontRevisions(ctx, tx, revisionStoreItself, storeID)
+	})
+}
+
+func (r Repository) ArchiveSellerListing(ctx context.Context, storeID, listingID string) error {
+	if storeID == "" || listingID == "" {
+		return ErrInvalidInput
+	}
+
+	return r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var status string
+		err := tx.QueryRow(ctx, `
+			SELECT status FROM seller_listings WHERE id = $1 AND store_id = $2 FOR UPDATE
+		`, listingID, storeID).Scan(&status)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrNotFound
+			}
+			return translatePGError(err, "lock listing for archive")
+		}
+
+		if status == "published" {
+			return fmt.Errorf("%w: cannot archive a published listing; unpublish first", ErrResourceInUse)
+		}
+		if status == "archived" {
+			return nil
+		}
+
+		res, err := tx.Exec(ctx, `
+			UPDATE seller_listings SET status = 'archived', updated_at = now() WHERE id = $1 AND store_id = $2
+		`, listingID, storeID)
+		if err != nil {
+			return translatePGError(err, "archive listing")
+		}
+		if res.RowsAffected() == 0 {
+			return ErrNotFound
+		}
+
+		return bumpStorefrontRevisions(ctx, tx, revisionStoreItself, storeID)
+	})
+}
+
+func (r Repository) ImportSupplierOfferAtomically(ctx context.Context, storeID, supplierOfferID string, requestFingerprint string) (SellerListing, error) {
+	if storeID == "" || supplierOfferID == "" {
+		return SellerListing{}, ErrInvalidInput
+	}
+
+	var listing SellerListing
+	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var suppOfferID sql.NullString
+		errExisting := tx.QueryRow(ctx, `
+			SELECT id, store_id, product_id, supplier_offer_id, market_code, status, created_at, updated_at
+			FROM seller_listings
+			WHERE store_id = $1 AND supplier_offer_id = $2
+		`, storeID, supplierOfferID).Scan(&listing.ID, &listing.StoreID, &listing.ProductID, &suppOfferID, &listing.MarketCode, &listing.Status, &listing.CreatedAt, &listing.UpdatedAt)
+		if errExisting == nil {
+			if suppOfferID.Valid {
+				listing.SupplierOfferID = &suppOfferID.String
+			}
+			return nil
+		} else if !errors.Is(errExisting, pgx.ErrNoRows) {
+			return translatePGError(errExisting, "check existing supplier offer import")
+		}
+
+		var storeMarketCode string
+		if err := tx.QueryRow(ctx, `SELECT market_code FROM stores WHERE id = $1`, storeID).Scan(&storeMarketCode); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrNotFound
+			}
+			return translatePGError(err, "get store market code for import")
+		}
+
+		var offerStatus, offerMarket, globalProductID string
+		errOffer := tx.QueryRow(ctx, `
+			SELECT so.status, so.market_code, sp.product_id
+			FROM supplier_offers so
+			JOIN supplier_products sp ON sp.id = so.supplier_product_id
+			WHERE so.id = $1
+		`, supplierOfferID).Scan(&offerStatus, &offerMarket, &globalProductID)
+		if errOffer != nil {
+			if errors.Is(errOffer, pgx.ErrNoRows) {
+				return ErrNotFound
+			}
+			return translatePGError(errOffer, "get supplier offer for import")
+		}
+		if offerStatus != "active" {
+			return fmt.Errorf("%w: supplier offer %s is not active", ErrOfferUnavailable, supplierOfferID)
+		}
+		if offerMarket != storeMarketCode {
+			return fmt.Errorf("%w: supplier offer market %s does not match store market %s", ErrMarketMismatch, offerMarket, storeMarketCode)
+		}
+
+		listingID := uuid.NewString()
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO seller_listings (id, store_id, product_id, supplier_offer_id, market_code, status)
+			VALUES ($1, $2, $3, $4, $5, 'draft')
+			RETURNING created_at, updated_at
+		`, listingID, storeID, globalProductID, supplierOfferID, storeMarketCode).Scan(&listing.CreatedAt, &listing.UpdatedAt); err != nil {
+			return translatePGError(err, "create imported seller listing")
+		}
+
+		listing = SellerListing{
+			ID:              listingID,
+			StoreID:         storeID,
+			ProductID:       globalProductID,
+			SupplierOfferID: &supplierOfferID,
+			MarketCode:      storeMarketCode,
+			Status:          "draft",
+			CreatedAt:       listing.CreatedAt,
+			UpdatedAt:       listing.UpdatedAt,
+		}
+
+		return bumpStorefrontRevisions(ctx, tx, revisionStoreItself, storeID)
+	})
+
+	return listing, err
 }

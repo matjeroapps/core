@@ -785,8 +785,101 @@ func internalRoutes() []openapi.RouteSpec {
 			Responses:   writeResponses("Updated listing presentation", commerce.SellerListingPresentation{}),
 		},
 		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/products/{productID}/status", OperationID: "internalTransitionStoreProductStatus",
+			Summary: "Explicit product status transition", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("productID", "Product identifier"),
+			},
+			RequestBody: ProductStatusUpdateRequest{},
+			Responses:   writeResponses("Updated product status", StatusResponse{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/products/{productID}/archive", OperationID: "internalArchiveStoreProduct",
+			Summary: "Archive seller-owned product", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("productID", "Product identifier"),
+			},
+			Responses: writeResponses("Archived product", StatusResponse{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/supplier-offers", OperationID: "internalListStoreSupplierOffers",
+			Summary: "Browse eligible supplier offers for store", Tags: []string{"Seller Catalog"},
+			Parameters: append([]openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				openapi.StringParam("supplier_id", "Supplier identifier filter", false),
+				openapi.StringParam("category_id", "Category identifier filter", false),
+			}, pageParams...),
+			Responses: readResponses("Supplier offer collection", CollectionResponse[commerce.SupplierCatalogItem]{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/supplier-offers/{offerID}/imports", OperationID: "internalImportSupplierOffer",
+			Summary: "Idempotently create supplier-backed draft listing", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("offerID", "Supplier offer identifier"),
+			},
+			Responses: createResponses("Imported listing", commerce.SellerListing{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/listings/{listingID}", OperationID: "internalGetStoreListing",
+			Summary: "Get seller listing detail", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("listingID", "Listing identifier"),
+			},
+			Responses: readResponses("Listing detail", commerce.SellerListing{}),
+		},
+		{
+			Method: http.MethodPut, Path: "/internal/v1/stores/{storeID}/listings/{listingID}/price", OperationID: "internalSetStoreListingPrice",
+			Summary: "Replace current retail price", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("listingID", "Listing identifier"),
+			},
+			RequestBody: PriceUpdateRequest{},
+			Responses:   writeResponses("Updated listing price", commerce.SellerListingPrice{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/listings/{listingID}/readiness", OperationID: "internalGetStoreListingReadiness",
+			Summary: "Get listing publish readiness", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("listingID", "Listing identifier"),
+			},
+			Responses: readResponses("Listing readiness", commerce.PublishReadiness{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/listings/{listingID}/publish", OperationID: "internalPublishStoreListing",
+			Summary: "Atomic source-aware listing publish", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("listingID", "Listing identifier"),
+			},
+			Responses: writeResponses("Published listing", commerce.SellerListing{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/listings/{listingID}/unpublish", OperationID: "internalUnpublishStoreListing",
+			Summary: "Atomic listing unpublish", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("listingID", "Listing identifier"),
+			},
+			Responses: writeResponses("Unpublished listing", commerce.SellerListing{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/listings/{listingID}/archive", OperationID: "internalArchiveStoreListing",
+			Summary: "Archive draft/unpublished listing", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("listingID", "Listing identifier"),
+			},
+			Responses: writeResponses("Archived listing", commerce.SellerListing{}),
+		},
+		{
 			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/products/{productID}/publish", OperationID: "internalPublishStoreProduct",
-			Summary: "Publish a product: final readiness is revalidated inside the publish transaction", Tags: []string{"Seller Catalog"},
+			Summary: "Publish a product (compatibility shim)", Description: "Deprecated compatibility shim; use POST /internal/v1/stores/{storeID}/listings/{listingID}/publish", Tags: []string{"Seller Catalog"},
 			Parameters: []openapi.ParameterSpec{
 				pathParam("storeID", "Store identifier"),
 				pathParam("productID", "Product identifier"),
@@ -795,7 +888,7 @@ func internalRoutes() []openapi.RouteSpec {
 		},
 		{
 			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/products/{productID}/unpublish", OperationID: "internalUnpublishStoreProduct",
-			Summary: "Unpublish a product", Tags: []string{"Seller Catalog"},
+			Summary: "Unpublish a product (compatibility shim)", Description: "Deprecated compatibility shim; use POST /internal/v1/stores/{storeID}/listings/{listingID}/unpublish", Tags: []string{"Seller Catalog"},
 			Parameters: []openapi.ParameterSpec{
 				pathParam("storeID", "Store identifier"),
 				pathParam("productID", "Product identifier"),

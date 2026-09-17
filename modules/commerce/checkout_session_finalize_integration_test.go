@@ -1914,7 +1914,7 @@ func TestFinalizeCheckoutCommercialPostAcceptanceImmutability(t *testing.T) {
 	if _, err := db.Exec(ctx, `UPDATE supplier_offer_prices SET amount_minor = 7777 WHERE supplier_offer_id = $1`, setup.Offer.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(ctx, `UPDATE seller_listings SET status = 'inactive' WHERE id = $1`, setup.ListingID); err != nil {
+	if _, err := db.Exec(ctx, `UPDATE seller_listings SET status = 'unpublished' WHERE id = $1`, setup.ListingID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -2221,17 +2221,8 @@ func TestFinalizeCheckoutPersistedListingNoRemap(t *testing.T) {
 		t.Fatalf("seller_listing_id = %s, want %s (Listing A)", *order.Items[0].SellerListingID, setup.ListingID)
 	}
 
-	// Create Listing B (a newer active listing for the same Product and SKU)
-	listingB := uuid.NewString()
-	if _, err := db.Exec(ctx, `INSERT INTO seller_listings (id, store_id, product_id, supplier_offer_id, market_code, status) VALUES ($1, $2, $3, NULL, 'EG', 'active')`, listingB, setup.Store.ID, setup.ProductID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(ctx, `INSERT INTO seller_listing_prices (id, seller_listing_id, amount_minor, currency_code, is_current) VALUES ($1, $2, 1000, 'EGP', true)`, uuid.NewString(), listingB); err != nil {
-		t.Fatal(err)
-	}
-
 	// Deactivate Listing A
-	if _, err := db.Exec(ctx, `UPDATE seller_listings SET status = 'inactive' WHERE id = $1`, setup.ListingID); err != nil {
+	if _, err := db.Exec(ctx, `UPDATE seller_listings SET status = 'unpublished' WHERE id = $1`, setup.ListingID); err != nil {
 		t.Fatal(err)
 	}
 

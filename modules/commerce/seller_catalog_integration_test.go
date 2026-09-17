@@ -39,6 +39,7 @@ func setupSellerCatalogTestDB(t *testing.T) (*database.Pool, Service, Repository
 		"000013_outbox_publish_claims.up.sql",
 		"000014_seller_catalog_authoring.up.sql",
 		"000015_media_upload_intent.up.sql",
+		"000025_seller_catalog_phase_b.up.sql",
 	}
 
 	for _, m := range migrations {
@@ -193,8 +194,8 @@ func TestFirstLiveProductAndOrderCoreIntegration(t *testing.T) {
 	if !pubDetail.PublishReadiness.IsReady {
 		t.Fatalf("Expected product to be ready for publish, reasons: %v", pubDetail.PublishReadiness.Reasons)
 	}
-	if pubDetail.Listing.Status != "active" {
-		t.Fatalf("Expected listing status active, got %s", pubDetail.Listing.Status)
+	if pubDetail.Listing.Status != "published" {
+		t.Fatalf("Expected listing status published, got %s", pubDetail.Listing.Status)
 	}
 	if pubDetail.PurchaseBehavior != "buy_now" {
 		t.Fatalf("Expected effective purchase behavior buy_now, got %s", pubDetail.PurchaseBehavior)

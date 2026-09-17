@@ -55,6 +55,7 @@ func setupP58Storefront(t *testing.T) p58StorefrontEnv {
 		"000014_seller_catalog_authoring",
 		"000015_media_upload_intent",
 		"000016_catalog_invariants",
+		"000025_seller_catalog_phase_b",
 	} {
 		content, err := os.ReadFile(filepath.Join("..", "..", "migrations", m+".up.sql"))
 		if err != nil {
@@ -241,12 +242,21 @@ func TestCanonicalListingContinuity(t *testing.T) {
 		Content: map[string]any{"en": map[string]any{"heading": "From listing A", "body": "A body"}},
 	}})
 
-	// Listing B: newest, canonical, price 120, buy_now, presentation B.
-	listingB := e.listing(t, 12000, "buy_now", []commerce.ProductPageSection{{
-		ID: "sec-b", Type: "description", Enabled: true, SortOrder: 1,
-		Content: map[string]any{"en": map[string]any{"heading": "From listing B", "body": "B body"}},
-	}})
-	_ = listingA
+	// Listing B: newest presentation/price for canonical listing, price 120, buy_now, presentation B.
+	if _, err := e.commerce.SetSellerListingPrice(e.ctx, listingA.ID, money.MustNew(12000, "EGP")); err != nil {
+		t.Fatalf("set price: %v", err)
+	}
+	if _, err := e.commerce.UpsertSellerListingPresentation(e.ctx, commerce.SellerListingPresentation{
+		SellerListingID:  listingA.ID,
+		SchemaVersion:    1,
+		PurchaseBehavior: "buy_now",
+		Sections: []commerce.ProductPageSection{{
+			ID: "sec-b", Type: "description", Enabled: true, SortOrder: 1,
+			Content: map[string]any{"en": map[string]any{"heading": "From listing B", "body": "B body"}},
+		}},
+	}); err != nil {
+		t.Fatalf("upsert presentation: %v", err)
+	}
 
 	detail, err := e.catalog.ProductBySlug(e.ctx, scope, "p58-product")
 	if err != nil {
@@ -268,7 +278,6 @@ func TestCanonicalListingContinuity(t *testing.T) {
 	if heading != "From listing B" {
 		t.Fatalf("sections must come from canonical listing B, got %q", heading)
 	}
-	_ = listingB
 }
 
 // TestPublicSectionProjectionAllSixTypes seeds all six structured section

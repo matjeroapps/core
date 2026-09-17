@@ -400,6 +400,9 @@ func (r Repository) CreateProduct(ctx context.Context, slug, status string) (Pro
 	if slug == "" || status == "" {
 		return Product{}, ErrInvalidInput
 	}
+	if status == "inactive" {
+		status = "draft"
+	}
 
 	var created Product
 	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
@@ -697,6 +700,11 @@ func (r Repository) SetSupplierOfferAvailability(ctx context.Context, supplierOf
 func (r Repository) CreateSellerListing(ctx context.Context, storeID, productID string, supplierOfferID *string, marketCode, status string) (SellerListing, error) {
 	if storeID == "" || productID == "" || marketCode == "" || status == "" {
 		return SellerListing{}, ErrInvalidInput
+	}
+	if status == "active" {
+		status = "published"
+	} else if status == "inactive" {
+		status = "draft"
 	}
 
 	var created SellerListing
