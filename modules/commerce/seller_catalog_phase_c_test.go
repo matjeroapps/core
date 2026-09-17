@@ -16,14 +16,17 @@ import (
 func createTestStoreAndSubject(t *testing.T, service Service, repo Repository, name string) (string, string, string) {
 	ctx := context.Background()
 	suffix := fmt.Sprintf("%d-%s", time.Now().UnixNano(), name)
+	if len(suffix) > 30 {
+		suffix = suffix[:30]
+	}
 	subject := "sub-" + suffix
-	seller, err := repo.CreateSeller(ctx, "seller-"+suffix, "Seller "+name, "active", nil)
+	seller, err := repo.CreateSeller(ctx, "sel-"+suffix, "Seller "+name, "active", nil)
 	require.NoError(t, err)
 
 	_, err = repo.CreateSellerMember(ctx, seller.ID, subject, "owner", "active")
 	require.NoError(t, err)
 
-	store, err := repo.CreateStore(ctx, seller.ID, "US", "store-"+suffix, "Store "+name, "active", nil)
+	store, err := repo.CreateStore(ctx, seller.ID, "US", "st-"+suffix, "Store "+name, "active", nil)
 	require.NoError(t, err)
 
 	return subject, seller.ID, store.ID
