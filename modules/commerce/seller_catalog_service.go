@@ -692,12 +692,6 @@ func (s Service) CompleteStoreMediaUpload(ctx context.Context, subject, storeID,
 	if head.ContentLength == nil || *head.ContentLength <= 0 {
 		return StoreMediaAsset{}, fmt.Errorf("%w: uploaded object is empty", ErrInvalidInput)
 	}
-	if head.ContentType != nil && *head.ContentType != "" && intent.ContentType != "" && !strings.EqualFold(*head.ContentType, intent.ContentType) {
-		return StoreMediaAsset{}, fmt.Errorf("%w: content type mismatch %s vs %s", ErrInvalidInput, *head.ContentType, intent.ContentType)
-	}
-	if intent.ByteSize > 0 && *head.ContentLength > intent.ByteSize {
-		return StoreMediaAsset{}, fmt.Errorf("%w: uploaded object size %d exceeds limit %d", ErrInvalidInput, *head.ContentLength, intent.ByteSize)
-	}
 	if intent.MaxBytes > 0 && *head.ContentLength > intent.MaxBytes {
 		return StoreMediaAsset{}, fmt.Errorf("%w: uploaded object size %d exceeds limit %d", ErrInvalidInput, *head.ContentLength, intent.MaxBytes)
 	}

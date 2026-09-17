@@ -12,7 +12,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/matjeroapps/core/packages/events"
 	"github.com/matjeroapps/core/packages/money"
+	"github.com/matjeroapps/core/packages/outbox"
 )
 
 type SellerProductListItem struct {
@@ -876,17 +878,21 @@ func (r Repository) MarkMediaAssetDeleting(ctx context.Context, storeID, assetID
 			return ErrConflict
 		}
 
-		payload, _ := json.Marshal(map[string]string{
-			"asset_id":    assetID,
-			"store_id":    storeID,
-			"storage_key": storageKey,
-			"subject":     subject,
+		err = outbox.NewStore().Enqueue(ctx, tx, events.EventEnvelope{
+			EventID:          uuid.NewString(),
+			AggregateType:    "store_media_asset",
+			AggregateID:      assetID,
+			AggregateVersion: 1,
+			EventType:        "commerce.media.delete.v1",
+			SchemaVersion:    1,
+			Payload: map[string]any{
+				"asset_id":    assetID,
+				"store_id":    storeID,
+				"storage_key": storageKey,
+				"subject":     subject,
+			},
+			OccurredAt: time.Now(),
 		})
-
-		_, err = tx.Exec(ctx, `
-			INSERT INTO outbox (event_type, payload)
-			VALUES ('commerce.media.delete.v1', $1)
-		`, payload)
 		if err != nil {
 			return translatePGError(err, "enqueue media delete outbox event")
 		}
@@ -1966,7 +1972,11 @@ func (r Repository) PublishSellerProductAtomically(ctx context.Context, storeID,
 
 		var hasMedia bool
 		if err := tx.QueryRow(ctx, `
-			SELECT EXISTS (SELECT 1 FROM media_metadata WHERE product_id = $1)
+			SELECT EXISTS (
+				SELECT 1 FROM product_media_references WHERE product_id = $1
+				UNION ALL
+				SELECT 1 FROM media_metadata WHERE product_id = $1
+			)
 		`, productID).Scan(&hasMedia); err != nil {
 			return translatePGError(err, "check product media for publish")
 		}
@@ -2049,7 +2059,11 @@ func validatePresentationTx(ctx context.Context, tx pgx.Tx, listingID, productID
 	reasons = append(reasons, validatePurchaseBehavior(pb)...)
 
 	mediaIDs := map[string]bool{}
-	rows, err := tx.Query(ctx, `SELECT id FROM media_metadata WHERE product_id = $1`, productID)
+	rows, err := tx.Query(ctx, `
+		SELECT id FROM product_media_references WHERE product_id = $1
+		UNION ALL
+		SELECT id FROM media_metadata WHERE product_id = $1
+	`, productID)
 	if err != nil {
 		return nil, err
 	}
@@ -2264,8 +2278,11 @@ func (r Repository) CountMediaByProductIDs(ctx context.Context, productIDs []str
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT product_id, COUNT(*)
-		FROM media_metadata
-		WHERE product_id = ANY($1)
+		FROM (
+			SELECT product_id FROM product_media_references WHERE product_id = ANY($1)
+			UNION ALL
+			SELECT product_id FROM media_metadata WHERE product_id = ANY($1)
+		) m
 		GROUP BY product_id
 	`, productIDs)
 	if err != nil {
@@ -2543,7 +2560,11 @@ func (r Repository) PublishSellerListingAtomically(ctx context.Context, storeID,
 
 		var hasMedia bool
 		if err := tx.QueryRow(ctx, `
-			SELECT EXISTS (SELECT 1 FROM media_metadata WHERE product_id = $1)
+			SELECT EXISTS (
+				SELECT 1 FROM product_media_references WHERE product_id = $1
+				UNION ALL
+				SELECT 1 FROM media_metadata WHERE product_id = $1
+			)
 		`, productID).Scan(&hasMedia); err != nil {
 			return translatePGError(err, "check product media for publish")
 		}
