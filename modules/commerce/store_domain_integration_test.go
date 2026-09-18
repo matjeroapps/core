@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matjeroapps/core/internal/testdb"
-	"github.com/matjeroapps/core/packages/database"
+	"core/internal/testdb"
+	"core/packages/database"
 )
 
 func applyStoreDomainMigrations(t *testing.T, db *database.Pool) {

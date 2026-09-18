@@ -6,8 +6,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/matjeroapps/core/internal/settlement"
-	"github.com/matjeroapps/core/packages/httpx"
+	"core/internal/settlement"
+	"core/packages/httpx"
 )
 
 func (s *server) handleCalculateSettlement(w http.ResponseWriter, r *http.Request) {

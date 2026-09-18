@@ -6,9 +6,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/matjeroapps/core/internal/accounting"
-	"github.com/matjeroapps/core/internal/finance"
-	"github.com/matjeroapps/core/modules/commerce"
+	"core/internal/accounting"
+	"core/internal/finance"
+	"core/modules/commerce"
 )
 
 type mockFinanceService struct {

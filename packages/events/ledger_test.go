@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/matjeroapps/core/packages/events"
+	"core/packages/events"
 )
 
 func TestNewJournalEntryPostedEvent(t *testing.T) {

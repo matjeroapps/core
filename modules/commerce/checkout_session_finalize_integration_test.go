@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/matjeroapps/core/packages/database"
-	"github.com/matjeroapps/core/packages/money"
+	"core/packages/database"
+	"core/packages/money"
 )
 
 type testCheckoutSetup struct {

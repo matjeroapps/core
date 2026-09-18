@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/matjeroapps/core/packages/money"
+	"core/packages/money"
 )
 
 // Atomic supplier onboarding operations.

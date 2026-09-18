@@ -8,9 +8,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/matjeroapps/core/internal/finance"
-	"github.com/matjeroapps/core/internal/testdb"
-	"github.com/matjeroapps/core/packages/database"
+	"core/internal/finance"
+	"core/internal/testdb"
+	"core/packages/database"
 )
 
 func setupFinanceDB(t *testing.T) (*database.Pool, finance.Service, context.Context) {

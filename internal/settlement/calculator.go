@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/matjeroapps/core/internal/balance"
+	"core/internal/balance"
 )
 
 type Calculator interface {

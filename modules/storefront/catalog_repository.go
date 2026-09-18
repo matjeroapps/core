@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/matjeroapps/core/modules/catalog"
+	"core/modules/catalog"
 )
 
 // CatalogRepository is the store-scoped public read model for the native

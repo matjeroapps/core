@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matjeroapps/core/packages/config"
+	"core/packages/config"
 )
 
 func TestLoadDefaults(t *testing.T) {

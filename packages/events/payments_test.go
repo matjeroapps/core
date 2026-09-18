@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matjeroapps/core/packages/events"
+	"core/packages/events"
 )
 
 func TestNewPaymentCapturedEvent(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/matjeroapps/core/packages/i18n"
+	"core/packages/i18n"
 )
 
 // forbiddenPublicTerms are field names and vocabulary that must never appear in a

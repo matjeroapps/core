@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/matjeroapps/core/modules/commerce"
+	"core/modules/commerce"
 )
 
 type Service interface {

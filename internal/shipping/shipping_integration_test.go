@@ -10,9 +10,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/matjeroapps/core/internal/shipping"
-	"github.com/matjeroapps/core/internal/testdb"
-	"github.com/matjeroapps/core/packages/database"
+	"core/internal/shipping"
+	"core/internal/testdb"
+	"core/packages/database"
 )
 
 func setupShippingDB(t *testing.T) (*database.Pool, shipping.Service, context.Context) {

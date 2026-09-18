@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/matjeroapps/core/internal/serviceauth"
-	"github.com/matjeroapps/core/modules/commerce"
-	"github.com/matjeroapps/core/modules/storefront"
-	"github.com/matjeroapps/core/modules/themes"
-	"github.com/matjeroapps/core/packages/i18n"
+	"core/internal/serviceauth"
+	"core/modules/commerce"
+	"core/modules/storefront"
+	"core/modules/themes"
+	"core/packages/i18n"
 )
 
 type previewStubCatalog struct {

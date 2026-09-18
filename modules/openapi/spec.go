@@ -233,7 +233,7 @@ func schemaRefForType(t reflect.Type, cache map[reflect.Type]*openapi3.SchemaRef
 		return &openapi3.SchemaRef{Value: openapi3.NewDateTimeSchema()}, nil
 	}
 
-	if t.PkgPath() == "github.com/matjeroapps/core/packages/money" && t.Name() == "Money" {
+	if t.PkgPath() == "core/packages/money" && t.Name() == "Money" {
 		schema := openapi3.NewObjectSchema().
 			WithProperty("amount_minor", openapi3.NewInt64Schema()).
 			WithProperty("currency", openapi3.NewStringSchema()).

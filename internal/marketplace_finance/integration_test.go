@@ -7,12 +7,12 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/matjeroapps/core/internal/balance"
-	"github.com/matjeroapps/core/internal/finance"
-	"github.com/matjeroapps/core/internal/marketplace_finance"
-	"github.com/matjeroapps/core/internal/settlement"
-	"github.com/matjeroapps/core/internal/testdb"
-	"github.com/matjeroapps/core/packages/database"
+	"core/internal/balance"
+	"core/internal/finance"
+	"core/internal/marketplace_finance"
+	"core/internal/settlement"
+	"core/internal/testdb"
+	"core/packages/database"
 )
 
 func setupMarketplaceFinanceDB(t *testing.T) (*database.Pool, finance.Service, settlement.Service, marketplace_finance.Service, context.Context) {

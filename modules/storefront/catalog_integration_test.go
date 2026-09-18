@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/matjeroapps/core/internal/testdb"
-	"github.com/matjeroapps/core/modules/commerce"
-	"github.com/matjeroapps/core/modules/themes"
-	"github.com/matjeroapps/core/packages/database"
-	"github.com/matjeroapps/core/packages/i18n"
-	"github.com/matjeroapps/core/packages/money"
+	"core/internal/testdb"
+	"core/modules/commerce"
+	"core/modules/themes"
+	"core/packages/database"
+	"core/packages/i18n"
+	"core/packages/money"
 )
 
 // Fixture prices. Each store's public price is its own seller listing price; the

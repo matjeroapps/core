@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/matjeroapps/core/internal/settlement"
+	"core/internal/settlement"
 )
 
 type Calculator struct{}

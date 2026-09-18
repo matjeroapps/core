@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/matjeroapps/core/modules/commerce"
-	"github.com/matjeroapps/core/packages/config"
+	"core/modules/commerce"
+	"core/packages/config"
 )
 
 // NormalizeHost lowercases a host and strips any port and surrounding whitespace,

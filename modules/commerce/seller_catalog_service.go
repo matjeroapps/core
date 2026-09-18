@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/matjeroapps/core/packages/money"
+	"core/packages/money"
 )
 
 var scriptTagRegex = regexp.MustCompile(`(?i)<script|javascript:|on\w+=`)

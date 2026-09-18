@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/matjeroapps/core/modules/commerce"
+	"core/modules/commerce"
 )
 
 type ExpiryWorker struct {

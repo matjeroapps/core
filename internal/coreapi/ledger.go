@@ -6,9 +6,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/matjeroapps/core/internal/finance"
-	"github.com/matjeroapps/core/internal/serviceauth"
-	"github.com/matjeroapps/core/packages/httpx"
+	"core/internal/finance"
+	"core/internal/serviceauth"
+	"core/packages/httpx"
 )
 
 func (s *server) handleCreateLedgerAccount(w http.ResponseWriter, r *http.Request) {

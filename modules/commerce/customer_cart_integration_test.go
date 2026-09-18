@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/matjeroapps/core/internal/testdb"
-	"github.com/matjeroapps/core/packages/database"
-	"github.com/matjeroapps/core/packages/money"
+	"core/internal/testdb"
+	"core/packages/database"
+	"core/packages/money"
 )
 
 func setupP51Database(t *testing.T) (*database.Pool, Repository, context.Context) {

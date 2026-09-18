@@ -6,8 +6,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/matjeroapps/core/internal/integration"
-	"github.com/matjeroapps/core/packages/httpx"
+	"core/internal/integration"
+	"core/packages/httpx"
 )
 
 func (s *server) handleCreateConnection(w http.ResponseWriter, r *http.Request) {

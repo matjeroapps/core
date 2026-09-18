@@ -9,9 +9,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/matjeroapps/core/packages/config"
-	"github.com/matjeroapps/core/packages/events"
-	"github.com/matjeroapps/core/packages/messaging"
+	"core/packages/config"
+	"core/packages/events"
+	"core/packages/messaging"
 )
 
 var newClaimUUID = func() (uuid.UUID, error) {
