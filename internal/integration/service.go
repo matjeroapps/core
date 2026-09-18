@@ -64,6 +64,11 @@ type Service interface {
 	GetSyncCursor(ctx context.Context, connectionID string, entityType EntityType) (*SyncCursor, error)
 
 	PersistWebhookInbox(ctx context.Context, params PersistWebhookInboxParams) (*WebhookInboxItem, bool, error)
+
+	CreateSyncJob(ctx context.Context, connectionID, supplierID string) (*SupplierSyncJob, error)
+	GetSyncJob(ctx context.Context, id string) (*SupplierSyncJob, error)
+	UpdateSyncJobStatus(ctx context.Context, id string, status SyncJobStatus, processed, failed int, errSummary string) (*SupplierSyncJob, error)
+	ListSyncJobsBySupplier(ctx context.Context, supplierID string, page commerce.Page) ([]SupplierSyncJob, error)
 }
 
 type service struct {
@@ -213,4 +218,37 @@ func (s *service) PersistWebhookInbox(ctx context.Context, params PersistWebhook
 	}
 
 	return s.repo.PersistWebhookInbox(ctx, nil, item)
+}
+
+func (s *service) CreateSyncJob(ctx context.Context, connectionID, supplierID string) (*SupplierSyncJob, error) {
+	if strings.TrimSpace(connectionID) == "" || strings.TrimSpace(supplierID) == "" {
+		return nil, fmt.Errorf("connection_id and supplier_id are required")
+	}
+
+	now := time.Now().UTC()
+	job := SupplierSyncJob{
+		ID:           uuid.NewString(),
+		ConnectionID: connectionID,
+		SupplierID:   supplierID,
+		Status:       SyncJobStatusQueued,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+
+	return s.repo.CreateSyncJob(ctx, nil, job)
+}
+
+func (s *service) GetSyncJob(ctx context.Context, id string) (*SupplierSyncJob, error) {
+	if strings.TrimSpace(id) == "" {
+		return nil, ErrSyncJobNotFound
+	}
+	return s.repo.GetSyncJobByID(ctx, nil, id)
+}
+
+func (s *service) UpdateSyncJobStatus(ctx context.Context, id string, status SyncJobStatus, processed, failed int, errSummary string) (*SupplierSyncJob, error) {
+	return s.repo.UpdateSyncJobStatus(ctx, nil, id, status, processed, failed, errSummary)
+}
+
+func (s *service) ListSyncJobsBySupplier(ctx context.Context, supplierID string, page commerce.Page) ([]SupplierSyncJob, error) {
+	return s.repo.ListSyncJobsBySupplier(ctx, nil, supplierID, page)
 }
