@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"core/internal/settlement"
+	"github.com/google/uuid"
 )
 
 func TestCalculator_CalculateAllocations(t *testing.T) {

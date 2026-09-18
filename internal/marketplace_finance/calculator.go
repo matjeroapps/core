@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"core/internal/settlement"
+	"github.com/google/uuid"
 )
 
 type Calculator struct{}

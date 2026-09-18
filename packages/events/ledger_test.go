@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"core/packages/events"
+	"github.com/google/uuid"
 )
 
 func TestNewJournalEntryPostedEvent(t *testing.T) {

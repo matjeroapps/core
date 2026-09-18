@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"core/packages/database"
 	"core/packages/money"
+	"github.com/google/uuid"
 )
 
 type testCheckoutSetup struct {
