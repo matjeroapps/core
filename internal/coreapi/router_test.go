@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/matjeroapps/core/internal/serviceauth"
-	"github.com/matjeroapps/core/modules/markets"
-	"github.com/matjeroapps/core/modules/storefront"
-	"github.com/matjeroapps/core/packages/i18n"
+	"core/internal/serviceauth"
+	"core/modules/markets"
+	"core/modules/storefront"
+	"core/packages/i18n"
 )
 
 // errBoom stands in for an unexpected failure. Its message must never reach a

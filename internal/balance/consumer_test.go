@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/matjeroapps/core/internal/balance"
-	"github.com/matjeroapps/core/packages/events"
+	"core/internal/balance"
+	"core/packages/events"
 )
 
 func TestConsumerValidation(t *testing.T) {

@@ -9,8 +9,8 @@ package coreapi
 import (
 	"time"
 
-	"github.com/matjeroapps/core/modules/commerce"
-	"github.com/matjeroapps/core/packages/money"
+	"core/modules/commerce"
+	"core/packages/money"
 )
 
 type moneyDTO struct {

@@ -6,7 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/matjeroapps/core/packages/httpx"
+	"core/packages/httpx"
 )
 
 func (s *server) handleGetStoreBalance(w http.ResponseWriter, r *http.Request) {

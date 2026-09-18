@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/matjeroapps/core/internal/testdb"
-	"github.com/matjeroapps/core/packages/database"
-	"github.com/matjeroapps/core/packages/money"
+	"core/internal/testdb"
+	"core/packages/database"
+	"core/packages/money"
 )
 
 // Supplier onboarding writes several rows per logical creation. When those rows

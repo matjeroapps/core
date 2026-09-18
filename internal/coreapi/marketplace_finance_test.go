@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matjeroapps/core/internal/marketplace_finance"
-	"github.com/matjeroapps/core/internal/serviceauth"
+	"core/internal/marketplace_finance"
+	"core/internal/serviceauth"
 )
 
 type stubMarketplaceFinance struct {

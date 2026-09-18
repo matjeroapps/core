@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/matjeroapps/core/internal/testdb"
+	"core/internal/testdb"
 )
 
 func TestConcurrentDBSetup(t *testing.T) {

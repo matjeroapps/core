@@ -9,8 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	pkgEvents "github.com/matjeroapps/core/packages/events"
-	"github.com/matjeroapps/core/packages/outbox"
+	pkgEvents "core/packages/events"
+	"core/packages/outbox"
 )
 
 type Service struct {

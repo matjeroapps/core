@@ -13,9 +13,9 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	amqp "github.com/rabbitmq/amqp091-go"
 
-	"github.com/matjeroapps/core/packages/config"
-	"github.com/matjeroapps/core/packages/events"
-	"github.com/matjeroapps/core/packages/messaging"
+	"core/packages/config"
+	"core/packages/events"
+	"core/packages/messaging"
 )
 
 type emptyRows struct{}

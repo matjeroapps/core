@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/matjeroapps/core/packages/events"
+	"core/packages/events"
 )
 
 var ErrClaimLost = errors.New("outbox claim lost or expired")

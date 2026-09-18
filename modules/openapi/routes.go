@@ -5,10 +5,10 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 
-	"github.com/matjeroapps/core/modules/api"
-	"github.com/matjeroapps/core/modules/contracts"
-	"github.com/matjeroapps/core/modules/markets"
-	"github.com/matjeroapps/core/packages/httpx"
+	"core/modules/api"
+	"core/modules/contracts"
+	"core/modules/markets"
+	"core/packages/httpx"
 )
 
 // ActorRoutes returns the route specs every actor API serves: app bootstrap and

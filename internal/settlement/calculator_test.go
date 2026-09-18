@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matjeroapps/core/internal/balance"
+	"core/internal/balance"
 )
 
 func TestCalculator(t *testing.T) {

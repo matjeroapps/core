@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/matjeroapps/core/internal/accounting"
-	"github.com/matjeroapps/core/packages/events"
+	"core/internal/accounting"
+	"core/packages/events"
 )
 
 func TestPaymentAccountingRules(t *testing.T) {

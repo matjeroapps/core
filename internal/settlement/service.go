@@ -7,10 +7,10 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/matjeroapps/core/internal/balance"
-	"github.com/matjeroapps/core/modules/commerce"
-	"github.com/matjeroapps/core/packages/events"
-	"github.com/matjeroapps/core/packages/outbox"
+	"core/internal/balance"
+	"core/modules/commerce"
+	"core/packages/events"
+	"core/packages/outbox"
 )
 
 type BalanceReader interface {

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matjeroapps/core/packages/money"
+	"core/packages/money"
 )
 
 func TestProductSearchPayloadAndEvent(t *testing.T) {

@@ -6,9 +6,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/matjeroapps/core/internal/serviceauth"
-	"github.com/matjeroapps/core/internal/shipping"
-	"github.com/matjeroapps/core/packages/httpx"
+	"core/internal/serviceauth"
+	"core/internal/shipping"
+	"core/packages/httpx"
 )
 
 func (s *server) handleCreateOrderShipment(w http.ResponseWriter, r *http.Request) {

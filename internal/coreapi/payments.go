@@ -6,9 +6,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/matjeroapps/core/internal/payments"
-	"github.com/matjeroapps/core/internal/serviceauth"
-	"github.com/matjeroapps/core/packages/httpx"
+	"core/internal/payments"
+	"core/internal/serviceauth"
+	"core/packages/httpx"
 )
 
 func (s *server) handleInitializePayment(w http.ResponseWriter, r *http.Request) {

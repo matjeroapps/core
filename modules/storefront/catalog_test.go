@@ -3,8 +3,8 @@ package storefront
 import (
 	"testing"
 
-	"github.com/matjeroapps/core/modules/commerce"
-	"github.com/matjeroapps/core/packages/i18n"
+	"core/modules/commerce"
+	"core/packages/i18n"
 )
 
 func resolvedStore() ResolvedStore {

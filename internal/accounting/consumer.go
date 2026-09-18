@@ -7,9 +7,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/matjeroapps/core/internal/finance"
-	"github.com/matjeroapps/core/packages/events"
-	"github.com/matjeroapps/core/packages/inbox"
+	"core/internal/finance"
+	"core/packages/events"
+	"core/packages/inbox"
 )
 
 const ConsumerName = "accounting_payment_consumer"

@@ -8,7 +8,7 @@ import (
 
 	amqp "github.com/rabbitmq/amqp091-go"
 
-	"github.com/matjeroapps/core/packages/events"
+	"core/packages/events"
 )
 
 var ErrPublisherUnavailable = errors.New("publisher unavailable")

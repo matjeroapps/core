@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/matjeroapps/core/internal/settlement"
+	"core/internal/settlement"
 )
 
 func TestCalculator_CalculateAllocations(t *testing.T) {

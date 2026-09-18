@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/matjeroapps/core/internal/finance"
+	"core/internal/finance"
 )
 
 type mockRepo struct {

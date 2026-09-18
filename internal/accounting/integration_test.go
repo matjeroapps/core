@@ -9,11 +9,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/matjeroapps/core/internal/accounting"
-	"github.com/matjeroapps/core/internal/finance"
-	"github.com/matjeroapps/core/internal/testdb"
-	"github.com/matjeroapps/core/packages/database"
-	"github.com/matjeroapps/core/packages/events"
+	"core/internal/accounting"
+	"core/internal/finance"
+	"core/internal/testdb"
+	"core/packages/database"
+	"core/packages/events"
 )
 
 func setupAccountingDB(t *testing.T) (*database.Pool, finance.Service, accounting.Consumer, context.Context) {

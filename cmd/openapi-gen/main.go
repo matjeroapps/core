@@ -13,8 +13,8 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 
-	"github.com/matjeroapps/core/internal/coreapi"
-	"github.com/matjeroapps/core/modules/openapi"
+	"core/internal/coreapi"
+	"core/modules/openapi"
 )
 
 func main() {

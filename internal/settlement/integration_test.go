@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matjeroapps/core/internal/balance"
-	"github.com/matjeroapps/core/internal/finance"
-	"github.com/matjeroapps/core/internal/settlement"
-	"github.com/matjeroapps/core/internal/testdb"
-	"github.com/matjeroapps/core/packages/database"
+	"core/internal/balance"
+	"core/internal/finance"
+	"core/internal/settlement"
+	"core/internal/testdb"
+	"core/packages/database"
 )
 
 func setupSettlementDB(t *testing.T) (*database.Pool, finance.Service, balance.Service, settlement.Service, context.Context) {

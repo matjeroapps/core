@@ -8,11 +8,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/matjeroapps/core/modules/commerce"
-	"github.com/matjeroapps/core/packages/config"
-	"github.com/matjeroapps/core/packages/database"
-	"github.com/matjeroapps/core/packages/logging"
-	"github.com/matjeroapps/core/packages/observability"
+	"core/modules/commerce"
+	"core/packages/config"
+	"core/packages/database"
+	"core/packages/logging"
+	"core/packages/observability"
 )
 
 func main() {

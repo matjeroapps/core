@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matjeroapps/core/internal/testdb"
-	"github.com/matjeroapps/core/packages/database"
-	"github.com/matjeroapps/core/packages/money"
+	"core/internal/testdb"
+	"core/packages/database"
+	"core/packages/money"
 )
 
 func setupSellerCatalogTestDB(t *testing.T) (*database.Pool, Service, Repository, string) {

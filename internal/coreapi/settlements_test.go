@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matjeroapps/core/internal/serviceauth"
-	"github.com/matjeroapps/core/internal/settlement"
-	"github.com/matjeroapps/core/modules/commerce"
+	"core/internal/serviceauth"
+	"core/internal/settlement"
+	"core/modules/commerce"
 )
 
 type stubSettlement struct {

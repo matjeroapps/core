@@ -3,9 +3,9 @@ package coreapi
 import (
 	"net/http"
 
-	"github.com/matjeroapps/core/internal/suppliers"
-	"github.com/matjeroapps/core/modules/commerce"
-	"github.com/matjeroapps/core/packages/httpx"
+	"core/internal/suppliers"
+	"core/modules/commerce"
+	"core/packages/httpx"
 )
 
 // handleGetSupplierRetailCapability retrieves the explicit 1:1 retail link and seller profile for a supplier.

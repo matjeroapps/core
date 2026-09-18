@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/matjeroapps/core/internal/finance"
-	"github.com/matjeroapps/core/modules/commerce"
+	"core/internal/finance"
+	"core/modules/commerce"
 )
 
 type AccountRole string

@@ -9,9 +9,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/matjeroapps/core/internal/accounting"
-	"github.com/matjeroapps/core/internal/finance"
-	"github.com/matjeroapps/core/packages/events"
+	"core/internal/accounting"
+	"core/internal/finance"
+	"core/packages/events"
 )
 
 type mockInboxStore struct {
