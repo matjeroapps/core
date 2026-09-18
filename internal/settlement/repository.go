@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/matjeroapps/core/modules/commerce"
+	"core/modules/commerce"
 )
 
 type DBExecutor interface {

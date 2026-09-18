@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
+	"core/internal/settlement"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/matjeroapps/core/internal/settlement"
 )
 
 type DBExecutor interface {

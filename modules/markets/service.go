@@ -3,7 +3,7 @@ package markets
 import (
 	"context"
 
-	"github.com/matjeroapps/core/packages/i18n"
+	"core/packages/i18n"
 )
 
 type Service struct {

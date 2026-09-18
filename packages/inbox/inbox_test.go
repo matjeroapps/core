@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/matjeroapps/core/internal/testdb"
-	"github.com/matjeroapps/core/packages/database"
-	"github.com/matjeroapps/core/packages/inbox"
+	"core/internal/testdb"
+	"core/packages/database"
+	"core/packages/inbox"
 )
 
 func setupInboxDB(t *testing.T) (*database.Pool, context.Context) {

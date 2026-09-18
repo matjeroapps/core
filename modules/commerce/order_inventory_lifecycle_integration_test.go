@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"core/packages/database"
 	"github.com/google/uuid"
-	"github.com/matjeroapps/core/packages/database"
 )
 
 func createTestOrderWithInventory(t *testing.T, db *database.Pool, repo Repository, ctx context.Context, suffix string, initialOnHand, initialReserved, itemQty int64, deadlineDuration time.Duration) (Store, Order, string, string) {

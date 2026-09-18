@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matjeroapps/core/internal/serviceauth"
+	"core/internal/serviceauth"
 )
 
 func sellerRequest(t *testing.T, method, path, subject string) *http.Request {

@@ -12,17 +12,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matjeroapps/core/internal/balance"
-	"github.com/matjeroapps/core/internal/finance"
-	"github.com/matjeroapps/core/internal/serviceauth"
-	"github.com/matjeroapps/core/internal/testdb"
-	"github.com/matjeroapps/core/modules/commerce"
-	"github.com/matjeroapps/core/modules/markets"
-	"github.com/matjeroapps/core/modules/storefront"
-	"github.com/matjeroapps/core/modules/themes"
-	"github.com/matjeroapps/core/packages/database"
-	"github.com/matjeroapps/core/packages/httpx"
-	"github.com/matjeroapps/core/packages/money"
+	"core/internal/balance"
+	"core/internal/finance"
+	"core/internal/serviceauth"
+	"core/internal/testdb"
+	"core/modules/commerce"
+	"core/modules/markets"
+	"core/modules/storefront"
+	"core/modules/themes"
+	"core/packages/database"
+	"core/packages/httpx"
+	"core/packages/money"
 )
 
 // Integration tests for the internal API against real PostgreSQL.

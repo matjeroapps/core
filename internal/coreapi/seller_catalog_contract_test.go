@@ -18,15 +18,15 @@ import (
 	"testing"
 	"time"
 
+	"core/internal/serviceauth"
+	"core/internal/testdb"
+	"core/modules/commerce"
+	"core/modules/markets"
+	"core/modules/storefront"
+	"core/modules/themes"
+	"core/packages/database"
+	"core/packages/money"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/matjeroapps/core/internal/serviceauth"
-	"github.com/matjeroapps/core/internal/testdb"
-	"github.com/matjeroapps/core/modules/commerce"
-	"github.com/matjeroapps/core/modules/markets"
-	"github.com/matjeroapps/core/modules/storefront"
-	"github.com/matjeroapps/core/modules/themes"
-	"github.com/matjeroapps/core/packages/database"
-	"github.com/matjeroapps/core/packages/money"
 )
 
 const p58Subject = "subject-of-seller-a"

@@ -6,14 +6,14 @@ import (
 	"path/filepath"
 	"testing"
 
+	"core/internal/testdb"
 	"encoding/json"
-	"github.com/matjeroapps/core/internal/testdb"
 	"strings"
 
-	"github.com/matjeroapps/core/modules/commerce"
-	"github.com/matjeroapps/core/packages/database"
-	"github.com/matjeroapps/core/packages/i18n"
-	"github.com/matjeroapps/core/packages/money"
+	"core/modules/commerce"
+	"core/packages/database"
+	"core/packages/i18n"
+	"core/packages/money"
 )
 
 // p58StorefrontEnv seeds a single EG store with one seller-owned active

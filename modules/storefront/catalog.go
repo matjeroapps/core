@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/matjeroapps/core/packages/i18n"
-	"github.com/matjeroapps/core/packages/money"
+	"core/packages/i18n"
+	"core/packages/money"
 )
 
 // Public catalog read errors. They are deliberately coarse so actor APIs can

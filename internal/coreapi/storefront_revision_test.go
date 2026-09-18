@@ -6,11 +6,11 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/matjeroapps/core/internal/serviceauth"
-	"github.com/matjeroapps/core/modules/commerce"
-	"github.com/matjeroapps/core/modules/storefront"
-	"github.com/matjeroapps/core/modules/themes"
-	"github.com/matjeroapps/core/packages/money"
+	"core/internal/serviceauth"
+	"core/modules/commerce"
+	"core/modules/storefront"
+	"core/modules/themes"
+	"core/packages/money"
 )
 
 // Storefront revision behaviour through the network boundary.

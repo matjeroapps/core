@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/matjeroapps/core/internal/serviceauth"
-	"github.com/matjeroapps/core/packages/httpx"
+	"core/internal/serviceauth"
+	"core/packages/httpx"
 )
 
 // decodeJSON decodes a request body into dst, writing the internal

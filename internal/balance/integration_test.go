@@ -10,11 +10,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/matjeroapps/core/internal/balance"
-	"github.com/matjeroapps/core/internal/finance"
-	"github.com/matjeroapps/core/internal/testdb"
-	"github.com/matjeroapps/core/packages/database"
-	"github.com/matjeroapps/core/packages/events"
+	"core/internal/balance"
+	"core/internal/finance"
+	"core/internal/testdb"
+	"core/packages/database"
+	"core/packages/events"
 )
 
 func setupBalanceDB(t *testing.T) (*database.Pool, finance.Service, balance.Service, balance.Consumer, context.Context) {

@@ -17,19 +17,19 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/matjeroapps/core/internal/balance"
-	"github.com/matjeroapps/core/internal/finance"
-	"github.com/matjeroapps/core/internal/integration"
-	"github.com/matjeroapps/core/internal/marketplace_finance"
-	"github.com/matjeroapps/core/internal/payments"
-	"github.com/matjeroapps/core/internal/serviceauth"
-	"github.com/matjeroapps/core/internal/settlement"
-	"github.com/matjeroapps/core/internal/shipping"
-	"github.com/matjeroapps/core/modules/commerce"
-	"github.com/matjeroapps/core/modules/markets"
-	"github.com/matjeroapps/core/modules/storefront"
-	"github.com/matjeroapps/core/modules/themes"
-	"github.com/matjeroapps/core/packages/i18n"
+	"core/internal/balance"
+	"core/internal/finance"
+	"core/internal/integration"
+	"core/internal/marketplace_finance"
+	"core/internal/payments"
+	"core/internal/serviceauth"
+	"core/internal/settlement"
+	"core/internal/shipping"
+	"core/modules/commerce"
+	"core/modules/markets"
+	"core/modules/storefront"
+	"core/modules/themes"
+	"core/packages/i18n"
 )
 
 // CatalogReader is the public catalog read model. storefront.CatalogRepository

@@ -5,7 +5,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/matjeroapps/core/modules/commerce"
+	"core/modules/commerce"
 )
 
 type Repository interface {

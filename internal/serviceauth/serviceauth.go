@@ -20,7 +20,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/matjeroapps/core/packages/httpx"
+	"core/packages/httpx"
 )
 
 // Caller identifies a Matjero actor service. It is carried on the request

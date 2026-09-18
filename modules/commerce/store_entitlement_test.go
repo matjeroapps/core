@@ -3,7 +3,7 @@ package commerce_test
 import (
 	"testing"
 
-	"github.com/matjeroapps/core/modules/commerce"
+	"core/modules/commerce"
 )
 
 func TestStoreEntitlementPolicy(t *testing.T) {

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"core/internal/settlement"
 	"github.com/google/uuid"
-	"github.com/matjeroapps/core/internal/settlement"
 )
 
 type Calculator struct{}

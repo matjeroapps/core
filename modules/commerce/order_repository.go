@@ -13,7 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/matjeroapps/core/packages/outbox"
+	"core/packages/outbox"
 )
 
 type DBExecutor interface {

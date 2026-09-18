@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"core/internal/testdb"
+	"core/packages/database"
 	"github.com/google/uuid"
-	"github.com/matjeroapps/core/internal/testdb"
-	"github.com/matjeroapps/core/packages/database"
 )
 
 func setupP53Database(t *testing.T) (*database.Pool, Repository, context.Context) {

@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/matjeroapps/core/internal/testdb"
+	"core/internal/testdb"
 )
 
 // Theme writes and the public storefront cache generation.

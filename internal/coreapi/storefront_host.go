@@ -3,7 +3,7 @@ package coreapi
 import (
 	"net/http"
 
-	"github.com/matjeroapps/core/packages/httpx"
+	"core/packages/httpx"
 )
 
 // StorefrontHostResponse is the minimal internal response containing the

@@ -9,9 +9,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/matjeroapps/core/modules/commerce"
-	"github.com/matjeroapps/core/packages/events"
-	"github.com/matjeroapps/core/packages/outbox"
+	"core/modules/commerce"
+	"core/packages/events"
+	"core/packages/outbox"
 )
 
 type Service interface {

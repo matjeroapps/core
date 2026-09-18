@@ -13,11 +13,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	amqp "github.com/rabbitmq/amqp091-go"
 
-	"github.com/matjeroapps/core/packages/config"
-	"github.com/matjeroapps/core/packages/logging"
-	"github.com/matjeroapps/core/packages/messaging"
-	"github.com/matjeroapps/core/packages/observability"
-	"github.com/matjeroapps/core/packages/outbox"
+	"core/packages/config"
+	"core/packages/logging"
+	"core/packages/messaging"
+	"core/packages/observability"
+	"core/packages/outbox"
 )
 
 type RabbitSetupFunc func(rabbitURL string) (*amqp.Connection, *amqp.Channel, messaging.Publisher, error)

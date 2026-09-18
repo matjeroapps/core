@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 
-	"github.com/matjeroapps/core/packages/events"
-	"github.com/matjeroapps/core/packages/messaging"
+	"core/packages/events"
+	"core/packages/messaging"
 )
 
 type mockConfirmWaiter struct {

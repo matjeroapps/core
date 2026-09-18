@@ -15,7 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/matjeroapps/core/packages/money"
+	"core/packages/money"
 )
 
 type Repository struct {

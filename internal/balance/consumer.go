@@ -8,8 +8,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/matjeroapps/core/packages/events"
-	"github.com/matjeroapps/core/packages/inbox"
+	"core/packages/events"
+	"core/packages/inbox"
 )
 
 const ConsumerName = "balance_projection_consumer"

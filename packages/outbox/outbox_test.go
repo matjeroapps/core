@@ -13,11 +13,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/matjeroapps/core/internal/testdb"
-	"github.com/matjeroapps/core/packages/config"
-	"github.com/matjeroapps/core/packages/database"
-	"github.com/matjeroapps/core/packages/events"
-	"github.com/matjeroapps/core/packages/outbox"
+	"core/internal/testdb"
+	"core/packages/config"
+	"core/packages/database"
+	"core/packages/events"
+	"core/packages/outbox"
 )
 
 func setupOutboxDB(t *testing.T) (*database.Pool, context.Context) {

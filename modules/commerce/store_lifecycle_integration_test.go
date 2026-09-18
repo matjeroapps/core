@@ -9,10 +9,10 @@ import (
 	"sync"
 	"testing"
 
+	"core/internal/testdb"
+	"core/modules/commerce"
+	"core/packages/database"
 	"github.com/google/uuid"
-	"github.com/matjeroapps/core/internal/testdb"
-	"github.com/matjeroapps/core/modules/commerce"
-	"github.com/matjeroapps/core/packages/database"
 )
 
 type testEnv struct {

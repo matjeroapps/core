@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/matjeroapps/core/internal/payments"
+	"core/internal/payments"
 )
 
 func TestStateMachine_ValidStatuses(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/matjeroapps/core/modules/commerce"
-	"github.com/matjeroapps/core/packages/httpx"
+	"core/modules/commerce"
+	"core/packages/httpx"
 )
 
 // Platform moderation handlers. Every handler in this file is admin-only; the

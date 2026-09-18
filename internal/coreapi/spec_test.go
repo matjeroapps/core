@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/matjeroapps/core/modules/openapi"
+	"core/modules/openapi"
 )
 
 // routerRoutes walks the chi tree and returns every registered method+path.
