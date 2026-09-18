@@ -106,6 +106,38 @@ func (s *server) handlePersistWebhookInbox(w http.ResponseWriter, r *http.Reques
 	httpx.WriteJSON(w, status, toWebhookInboxResponse(inbox, deduplicated))
 }
 
+func (s *server) handleGetPayment(w http.ResponseWriter, r *http.Request) {
+	paymentID := chi.URLParam(r, "paymentID")
+	if paymentID == "" {
+		writeError(w, CodeValidationError)
+		return
+	}
+
+	p, err := s.deps.Payments.GetPayment(r.Context(), paymentID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, toPaymentResponse(p))
+}
+
+func (s *server) handleGetPaymentByOrder(w http.ResponseWriter, r *http.Request) {
+	orderID := chi.URLParam(r, "orderID")
+	if orderID == "" {
+		writeError(w, CodeValidationError)
+		return
+	}
+
+	p, err := s.deps.Payments.GetPaymentByOrder(r.Context(), orderID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, toPaymentResponse(p))
+}
+
 func toPaymentResponse(p *payments.Payment) PaymentResponse {
 	attempts := make([]PaymentAttemptResponse, 0, len(p.Attempts))
 	for _, a := range p.Attempts {

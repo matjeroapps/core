@@ -100,6 +100,27 @@ func (s *server) handleGetShipment(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, toShipmentResponse(sh))
 }
 
+func (s *server) handleListOrderShipments(w http.ResponseWriter, r *http.Request) {
+	orderID := chi.URLParam(r, "orderID")
+	if orderID == "" {
+		writeError(w, CodeValidationError)
+		return
+	}
+
+	shipments, err := s.deps.Shipping.ListShipmentsForOrder(r.Context(), orderID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	res := make([]ShipmentResponse, 0, len(shipments))
+	for i := range shipments {
+		res = append(res, toShipmentResponse(&shipments[i]))
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"shipments": res})
+}
+
 func toShipmentResponse(sh *shipping.Shipment) ShipmentResponse {
 	items := make([]ShipmentItemResponse, 0, len(sh.Items))
 	for _, item := range sh.Items {
