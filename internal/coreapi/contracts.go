@@ -559,3 +559,21 @@ type SettlementAllocationResponse struct {
 	Currency       string    `json:"currency"`
 	CreatedAt      time.Time `json:"created_at"`
 }
+
+type StoreBalanceResponse struct {
+	AvailableMinor int64     `json:"available_minor"`
+	PendingMinor   int64     `json:"pending_minor"`
+	Currency       string    `json:"currency"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+type PayoutResponse struct {
+	ID           string    `json:"id"`
+	StoreID      string    `json:"store_id"`
+	AmountMinor  int64     `json:"amount_minor"`
+	Currency     string    `json:"currency"`
+	Status       string    `json:"status"`
+	PayoutMethod string    `json:"payout_method"`
+	Reference    string    `json:"reference,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+}
