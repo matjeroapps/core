@@ -23,4 +23,9 @@ type Repository interface {
 	GetSyncCursor(ctx context.Context, tx pgx.Tx, connectionID string, entityType EntityType) (*SyncCursor, error)
 
 	PersistWebhookInbox(ctx context.Context, tx pgx.Tx, item WebhookInboxItem) (*WebhookInboxItem, bool, error)
+
+	CreateSyncJob(ctx context.Context, tx pgx.Tx, job SupplierSyncJob) (*SupplierSyncJob, error)
+	GetSyncJobByID(ctx context.Context, tx pgx.Tx, id string) (*SupplierSyncJob, error)
+	UpdateSyncJobStatus(ctx context.Context, tx pgx.Tx, id string, status SyncJobStatus, processed, failed int, errSummary string) (*SupplierSyncJob, error)
+	ListSyncJobsBySupplier(ctx context.Context, tx pgx.Tx, supplierID string, page commerce.Page) ([]SupplierSyncJob, error)
 }

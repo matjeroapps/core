@@ -410,6 +410,11 @@ func NewRouter(deps Dependencies) chi.Router {
 			r.Get("/integrations/sync-cursors", server.handleGetSyncCursor)
 
 			r.Post("/integrations/webhooks/inbox", server.handlePersistIntegrationWebhookInbox)
+
+			r.Post("/integrations/suppliers/sync-jobs", server.handleCreateSupplierSyncJob)
+			r.Get("/integrations/suppliers/sync-jobs", server.handleListSupplierSyncJobs)
+			r.Get("/integrations/suppliers/sync-jobs/{id}", server.handleGetSupplierSyncJob)
+			r.Patch("/integrations/suppliers/sync-jobs/{id}/status", server.handleUpdateSupplierSyncJobStatus)
 		})
 	})
 

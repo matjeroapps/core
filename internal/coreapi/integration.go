@@ -280,3 +280,87 @@ func toWebhookInboxItemResponse(w *integration.WebhookInboxItem) WebhookInboxIte
 		ProcessedAt:    w.ProcessedAt,
 	}
 }
+
+func (s *server) handleCreateSupplierSyncJob(w http.ResponseWriter, r *http.Request) {
+	var req CreateSupplierSyncJobRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, CodeValidationError)
+		return
+	}
+
+	job, err := s.deps.Integration.CreateSyncJob(r.Context(), req.ConnectionID, req.SupplierID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusCreated, toSupplierSyncJobResponse(job))
+}
+
+func (s *server) handleGetSupplierSyncJob(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, CodeValidationError)
+		return
+	}
+
+	job, err := s.deps.Integration.GetSyncJob(r.Context(), id)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, toSupplierSyncJobResponse(job))
+}
+
+func (s *server) handleUpdateSupplierSyncJobStatus(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req UpdateSupplierSyncJobStatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, CodeValidationError)
+		return
+	}
+
+	job, err := s.deps.Integration.UpdateSyncJobStatus(r.Context(), id, integration.SyncJobStatus(req.Status), req.ProcessedItems, req.FailedItems, req.ErrorSummary)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, toSupplierSyncJobResponse(job))
+}
+
+func (s *server) handleListSupplierSyncJobs(w http.ResponseWriter, r *http.Request) {
+	supplierID := r.URL.Query().Get("supplier_id")
+	page := parsePage(r)
+
+	jobs, err := s.deps.Integration.ListSyncJobsBySupplier(r.Context(), supplierID, page)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	items := make([]SupplierSyncJobResponse, 0, len(jobs))
+	for _, j := range jobs {
+		items = append(items, toSupplierSyncJobResponse(&j))
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, CollectionResponse[SupplierSyncJobResponse]{Items: items})
+}
+
+func toSupplierSyncJobResponse(j *integration.SupplierSyncJob) SupplierSyncJobResponse {
+	return SupplierSyncJobResponse{
+		ID:             j.ID,
+		ConnectionID:   j.ConnectionID,
+		SupplierID:     j.SupplierID,
+		Status:         string(j.Status),
+		TotalItems:     j.TotalItems,
+		ProcessedItems: j.ProcessedItems,
+		FailedItems:    j.FailedItems,
+		ErrorSummary:   j.ErrorSummary,
+		StartedAt:      j.StartedAt,
+		CompletedAt:    j.CompletedAt,
+		CreatedAt:      j.CreatedAt,
+		UpdatedAt:      j.UpdatedAt,
+	}
+}

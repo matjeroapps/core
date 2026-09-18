@@ -12,7 +12,32 @@ var (
 	ErrSyncCursorNotFound   = errors.New("sync cursor not found")
 	ErrWebhookInboxNotFound = errors.New("webhook inbox item not found")
 	ErrDuplicateMapping     = errors.New("duplicate external entity mapping")
+	ErrSyncJobNotFound      = errors.New("supplier sync job not found")
 )
+
+type SyncJobStatus string
+
+const (
+	SyncJobStatusQueued     SyncJobStatus = "queued"
+	SyncJobStatusProcessing SyncJobStatus = "processing"
+	SyncJobStatusCompleted  SyncJobStatus = "completed"
+	SyncJobStatusFailed     SyncJobStatus = "failed"
+)
+
+type SupplierSyncJob struct {
+	ID             string        `json:"id"`
+	ConnectionID   string        `json:"connection_id"`
+	SupplierID     string        `json:"supplier_id"`
+	Status         SyncJobStatus `json:"status"`
+	TotalItems     int           `json:"total_items"`
+	ProcessedItems int           `json:"processed_items"`
+	FailedItems    int           `json:"failed_items"`
+	ErrorSummary   string        `json:"error_summary,omitempty"`
+	StartedAt      *time.Time    `json:"started_at,omitempty"`
+	CompletedAt    *time.Time    `json:"completed_at,omitempty"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
+}
 
 type ActorType string
 
