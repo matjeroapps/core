@@ -727,3 +727,48 @@ type SellerSyncJobResponse struct {
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 }
+
+type CreateAPIKeyRequest struct {
+	ActorType string   `json:"actor_type"`
+	ActorID   string   `json:"actor_id"`
+	Name      string   `json:"name"`
+	Scopes    []string `json:"scopes"`
+	Live      bool     `json:"live"`
+}
+
+type APIKeyResponse struct {
+	ID        string     `json:"id"`
+	ActorType string     `json:"actor_type"`
+	ActorID   string     `json:"actor_id"`
+	Name      string     `json:"name"`
+	KeyPrefix string     `json:"key_prefix"`
+	Scopes    []string   `json:"scopes"`
+	Status    string     `json:"status"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+}
+
+type CreateAPIKeyResponse struct {
+	Record    APIKeyResponse `json:"record"`
+	RawAPIKey string         `json:"raw_api_key"`
+}
+
+type CreateWebhookSubscriptionRequest struct {
+	ActorType        string   `json:"actor_type"`
+	ActorID          string   `json:"actor_id"`
+	TargetURL        string   `json:"target_url"`
+	Secret           string   `json:"secret,omitempty"`
+	SubscribedEvents []string `json:"subscribed_events"`
+}
+
+type WebhookSubscriptionResponse struct {
+	ID               string    `json:"id"`
+	ActorType        string    `json:"actor_type"`
+	ActorID          string    `json:"actor_id"`
+	TargetURL        string    `json:"target_url"`
+	SubscribedEvents []string  `json:"subscribed_events"`
+	Status           string    `json:"status"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}

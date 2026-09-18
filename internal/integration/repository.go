@@ -33,4 +33,14 @@ type Repository interface {
 	GetSellerSyncJobByID(ctx context.Context, tx pgx.Tx, id string) (*SellerSyncJob, error)
 	UpdateSellerSyncJobStatus(ctx context.Context, tx pgx.Tx, id string, status SyncJobStatus, processed, failed int, errSummary string) (*SellerSyncJob, error)
 	ListSellerSyncJobsByStore(ctx context.Context, tx pgx.Tx, storeID string, page commerce.Page) ([]SellerSyncJob, error)
+
+	CreateAPIKey(ctx context.Context, tx pgx.Tx, key APIKey) error
+	GetAPIKeyByHash(ctx context.Context, tx pgx.Tx, hash string) (*APIKey, error)
+	ListAPIKeysByActor(ctx context.Context, tx pgx.Tx, actorType ActorType, actorID string) ([]APIKey, error)
+	RevokeAPIKey(ctx context.Context, tx pgx.Tx, id, actorID string) error
+
+	CreateWebhookSubscription(ctx context.Context, tx pgx.Tx, sub WebhookSubscription) error
+	ListWebhookSubscriptionsByActor(ctx context.Context, tx pgx.Tx, actorType ActorType, actorID string) ([]WebhookSubscription, error)
+	DeleteWebhookSubscription(ctx context.Context, tx pgx.Tx, id, actorID string) error
+	GetWebhookSubscriptionByID(ctx context.Context, tx pgx.Tx, id string) (*WebhookSubscription, error)
 }
