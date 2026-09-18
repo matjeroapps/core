@@ -19,6 +19,7 @@ import (
 
 	"github.com/matjeroapps/core/internal/balance"
 	"github.com/matjeroapps/core/internal/finance"
+	"github.com/matjeroapps/core/internal/integration"
 	"github.com/matjeroapps/core/internal/marketplace_finance"
 	"github.com/matjeroapps/core/internal/payments"
 	"github.com/matjeroapps/core/internal/serviceauth"
@@ -131,6 +132,7 @@ type Dependencies struct {
 	Balance            BalanceService
 	Settlement         SettlementService
 	MarketplaceFinance MarketplaceFinanceService
+	Integration        integration.Service
 }
 
 // NewRouter registers the internal API under /internal/v1.
@@ -389,6 +391,25 @@ func NewRouter(deps Dependencies) chi.Router {
 			r.Get("/financial-rules", server.handleListFinancialRules)
 			r.Post("/settlements/{id}/allocate", server.handleAllocateSettlement)
 			r.Get("/settlements/{id}/allocations", server.handleListSettlementAllocations)
+		})
+
+		// Integration Foundation capabilities.
+		r.Group(func(r chi.Router) {
+			r.Use(requireCallers(serviceauth.CallerSeller, serviceauth.CallerSupplier, serviceauth.CallerAdmin))
+			r.Post("/integrations/connections", server.handleCreateConnection)
+			r.Get("/integrations/connections", server.handleListConnections)
+			r.Get("/integrations/connections/{id}", server.handleGetConnection)
+			r.Patch("/integrations/connections/{id}/status", server.handleUpdateConnectionStatus)
+
+			r.Post("/integrations/mappings", server.handleUpsertEntityMapping)
+			r.Get("/integrations/mappings", server.handleListEntityMappings)
+			r.Get("/integrations/mappings/external", server.handleGetEntityMappingByExternalID)
+			r.Get("/integrations/mappings/internal", server.handleGetEntityMappingByInternalID)
+
+			r.Post("/integrations/sync-cursors", server.handleUpdateSyncCursor)
+			r.Get("/integrations/sync-cursors", server.handleGetSyncCursor)
+
+			r.Post("/integrations/webhooks/inbox", server.handlePersistIntegrationWebhookInbox)
 		})
 	})
 
