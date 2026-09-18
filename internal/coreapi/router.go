@@ -282,6 +282,12 @@ func NewRouter(deps Dependencies) chi.Router {
 			r.Get("/stores/{storeID}/orders", server.handleListStoreOrders)
 			r.Get("/stores/{storeID}/orders/{orderID}", server.handleGetStoreOrder)
 			r.Post("/stores/{storeID}/orders/{orderID}/transition", server.handleTransitionStoreOrder)
+
+			// Store Finance capabilities
+			r.Get("/stores/{storeID}/finance/balance", server.handleGetStoreBalance)
+			r.Get("/stores/{storeID}/finance/ledger", server.handleListStoreLedgerEntries)
+			r.Get("/stores/{storeID}/finance/settlements", server.handleListStoreSettlements)
+			r.Get("/stores/{storeID}/finance/payouts", server.handleListStorePayouts)
 		})
 
 		// Seller listing capabilities.
