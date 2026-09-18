@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/google/uuid"
 	"core/internal/finance"
+	"github.com/google/uuid"
 )
 
 type mockRepo struct {

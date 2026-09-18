@@ -18,7 +18,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"core/internal/serviceauth"
 	"core/internal/testdb"
 	"core/modules/commerce"
@@ -27,6 +26,7 @@ import (
 	"core/modules/themes"
 	"core/packages/database"
 	"core/packages/money"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 const p58Subject = "subject-of-seller-a"

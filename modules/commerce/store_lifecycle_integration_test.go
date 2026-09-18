@@ -9,10 +9,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/google/uuid"
 	"core/internal/testdb"
 	"core/modules/commerce"
 	"core/packages/database"
+	"github.com/google/uuid"
 )
 
 type testEnv struct {

@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/google/uuid"
 	"core/internal/testdb"
 	"core/packages/database"
 	"core/packages/money"
+	"github.com/google/uuid"
 )
 
 func setupP51Database(t *testing.T) (*database.Pool, Repository, context.Context) {

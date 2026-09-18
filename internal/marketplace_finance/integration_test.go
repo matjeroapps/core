@@ -6,13 +6,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/google/uuid"
 	"core/internal/balance"
 	"core/internal/finance"
 	"core/internal/marketplace_finance"
 	"core/internal/settlement"
 	"core/internal/testdb"
 	"core/packages/database"
+	"github.com/google/uuid"
 )
 
 func setupMarketplaceFinanceDB(t *testing.T) (*database.Pool, finance.Service, settlement.Service, marketplace_finance.Service, context.Context) {

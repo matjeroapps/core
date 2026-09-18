@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"core/internal/testdb"
 	"core/packages/database"
+	"github.com/google/uuid"
 )
 
 func setupP53Database(t *testing.T) (*database.Pool, Repository, context.Context) {

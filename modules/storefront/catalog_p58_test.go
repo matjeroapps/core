@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"encoding/json"
 	"core/internal/testdb"
+	"encoding/json"
 	"strings"
 
 	"core/modules/commerce"

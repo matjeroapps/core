@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"core/packages/database"
 	"core/packages/money"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 func setupP58TestDB(t *testing.T) (*p58Env, string) {
