@@ -415,6 +415,11 @@ func NewRouter(deps Dependencies) chi.Router {
 			r.Get("/integrations/suppliers/sync-jobs", server.handleListSupplierSyncJobs)
 			r.Get("/integrations/suppliers/sync-jobs/{id}", server.handleGetSupplierSyncJob)
 			r.Patch("/integrations/suppliers/sync-jobs/{id}/status", server.handleUpdateSupplierSyncJobStatus)
+
+			r.Post("/integrations/sellers/sync-jobs", server.handleCreateSellerSyncJob)
+			r.Get("/integrations/sellers/sync-jobs", server.handleListSellerSyncJobs)
+			r.Get("/integrations/sellers/sync-jobs/{id}", server.handleGetSellerSyncJob)
+			r.Patch("/integrations/sellers/sync-jobs/{id}/status", server.handleUpdateSellerSyncJobStatus)
 		})
 	})
 

@@ -698,3 +698,32 @@ type SupplierSyncJobResponse struct {
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 }
+
+type CreateSellerSyncJobRequest struct {
+	ConnectionID string `json:"connection_id"`
+	StoreID      string `json:"store_id"`
+	SyncType     string `json:"sync_type,omitempty"`
+}
+
+type UpdateSellerSyncJobStatusRequest struct {
+	Status         string `json:"status"`
+	ProcessedItems int    `json:"processed_items"`
+	FailedItems    int    `json:"failed_items"`
+	ErrorSummary   string `json:"error_summary,omitempty"`
+}
+
+type SellerSyncJobResponse struct {
+	ID             string     `json:"id"`
+	StoreID        string     `json:"store_id"`
+	ConnectionID   string     `json:"connection_id"`
+	SyncType       string     `json:"sync_type"`
+	Status         string     `json:"status"`
+	TotalItems     int        `json:"total_items"`
+	ProcessedItems int        `json:"processed_items"`
+	FailedItems    int        `json:"failed_items"`
+	ErrorSummary   string     `json:"error_summary,omitempty"`
+	StartedAt      *time.Time `json:"started_at,omitempty"`
+	CompletedAt    *time.Time `json:"completed_at,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+}

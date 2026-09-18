@@ -364,3 +364,88 @@ func toSupplierSyncJobResponse(j *integration.SupplierSyncJob) SupplierSyncJobRe
 		UpdatedAt:      j.UpdatedAt,
 	}
 }
+
+func (s *server) handleCreateSellerSyncJob(w http.ResponseWriter, r *http.Request) {
+	var req CreateSellerSyncJobRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, CodeValidationError)
+		return
+	}
+
+	job, err := s.deps.Integration.CreateSellerSyncJob(r.Context(), req.ConnectionID, req.StoreID, req.SyncType)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusCreated, toSellerSyncJobResponse(job))
+}
+
+func (s *server) handleGetSellerSyncJob(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, CodeValidationError)
+		return
+	}
+
+	job, err := s.deps.Integration.GetSellerSyncJob(r.Context(), id)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, toSellerSyncJobResponse(job))
+}
+
+func (s *server) handleUpdateSellerSyncJobStatus(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req UpdateSellerSyncJobStatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, CodeValidationError)
+		return
+	}
+
+	job, err := s.deps.Integration.UpdateSellerSyncJobStatus(r.Context(), id, integration.SyncJobStatus(req.Status), req.ProcessedItems, req.FailedItems, req.ErrorSummary)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, toSellerSyncJobResponse(job))
+}
+
+func (s *server) handleListSellerSyncJobs(w http.ResponseWriter, r *http.Request) {
+	storeID := r.URL.Query().Get("store_id")
+	page := parsePage(r)
+
+	jobs, err := s.deps.Integration.ListSellerSyncJobsByStore(r.Context(), storeID, page)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	items := make([]SellerSyncJobResponse, 0, len(jobs))
+	for _, j := range jobs {
+		items = append(items, toSellerSyncJobResponse(&j))
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, CollectionResponse[SellerSyncJobResponse]{Items: items})
+}
+
+func toSellerSyncJobResponse(j *integration.SellerSyncJob) SellerSyncJobResponse {
+	return SellerSyncJobResponse{
+		ID:             j.ID,
+		StoreID:        j.StoreID,
+		ConnectionID:   j.ConnectionID,
+		SyncType:       j.SyncType,
+		Status:         string(j.Status),
+		TotalItems:     j.TotalItems,
+		ProcessedItems: j.ProcessedItems,
+		FailedItems:    j.FailedItems,
+		ErrorSummary:   j.ErrorSummary,
+		StartedAt:      j.StartedAt,
+		CompletedAt:    j.CompletedAt,
+		CreatedAt:      j.CreatedAt,
+		UpdatedAt:      j.UpdatedAt,
+	}
+}
