@@ -74,6 +74,16 @@ type Service interface {
 	GetSellerSyncJob(ctx context.Context, id string) (*SellerSyncJob, error)
 	UpdateSellerSyncJobStatus(ctx context.Context, id string, status SyncJobStatus, processed, failed int, errSummary string) (*SellerSyncJob, error)
 	ListSellerSyncJobsByStore(ctx context.Context, storeID string, page commerce.Page) ([]SellerSyncJob, error)
+
+	CreateAPIKey(ctx context.Context, input CreateAPIKeyInput) (*CreateAPIKeyOutput, error)
+	AuthenticateAPIKey(ctx context.Context, rawKey string) (*APIKey, error)
+	ListAPIKeys(ctx context.Context, actorType ActorType, actorID string) ([]APIKey, error)
+	RevokeAPIKey(ctx context.Context, keyID, actorID string) error
+
+	CreateWebhookSubscription(ctx context.Context, input CreateWebhookSubscriptionInput) (*WebhookSubscription, error)
+	ListWebhookSubscriptions(ctx context.Context, actorType ActorType, actorID string) ([]WebhookSubscription, error)
+	DeleteWebhookSubscription(ctx context.Context, subID, actorID string) error
+	GetWebhookSubscription(ctx context.Context, subID string) (*WebhookSubscription, error)
 }
 
 type service struct {

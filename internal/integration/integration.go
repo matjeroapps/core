@@ -14,6 +14,9 @@ var (
 	ErrDuplicateMapping      = errors.New("duplicate external entity mapping")
 	ErrSyncJobNotFound       = errors.New("supplier sync job not found")
 	ErrSellerSyncJobNotFound = errors.New("seller sync job not found")
+	ErrAPIKeyNotFound        = errors.New("api key not found")
+	ErrInvalidAPIKey         = errors.New("invalid or revoked api key")
+	ErrWebhookSubNotFound    = errors.New("webhook subscription not found")
 )
 
 type SyncJobStatus string
@@ -161,4 +164,30 @@ type WebhookInboxItem struct {
 	ErrorMessage   string          `json:"error_message,omitempty"`
 	ReceivedAt     time.Time       `json:"received_at"`
 	ProcessedAt    *time.Time      `json:"processed_at,omitempty"`
+}
+
+type APIKey struct {
+	ID        string     `json:"id"`
+	ActorType ActorType  `json:"actor_type"`
+	ActorID   string     `json:"actor_id"`
+	Name      string     `json:"name"`
+	KeyPrefix string     `json:"key_prefix"`
+	KeyHash   string     `json:"key_hash"`
+	Scopes    []string   `json:"scopes"`
+	Status    string     `json:"status"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+}
+
+type WebhookSubscription struct {
+	ID               string    `json:"id"`
+	ActorType        ActorType `json:"actor_type"`
+	ActorID          string    `json:"actor_id"`
+	TargetURL        string    `json:"target_url"`
+	SecretHash       string    `json:"secret_hash"`
+	SubscribedEvents []string  `json:"subscribed_events"`
+	Status           string    `json:"status"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }

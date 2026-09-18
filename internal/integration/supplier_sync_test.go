@@ -18,6 +18,8 @@ type mockIntegrationRepo struct {
 	inbox          []integration.WebhookInboxItem
 	syncJobs       []integration.SupplierSyncJob
 	sellerSyncJobs []integration.SellerSyncJob
+	apiKeys        []integration.APIKey
+	webhooks       []integration.WebhookSubscription
 }
 
 func (m *mockIntegrationRepo) CreateConnection(ctx context.Context, tx pgx.Tx, conn integration.Connection) error {
@@ -146,6 +148,74 @@ func (m *mockIntegrationRepo) ListSyncJobsBySupplier(ctx context.Context, tx pgx
 		}
 	}
 	return result, nil
+}
+
+func (m *mockIntegrationRepo) CreateAPIKey(ctx context.Context, tx pgx.Tx, key integration.APIKey) error {
+	m.apiKeys = append(m.apiKeys, key)
+	return nil
+}
+
+func (m *mockIntegrationRepo) GetAPIKeyByHash(ctx context.Context, tx pgx.Tx, hash string) (*integration.APIKey, error) {
+	for _, k := range m.apiKeys {
+		if k.KeyHash == hash {
+			return &k, nil
+		}
+	}
+	return nil, integration.ErrAPIKeyNotFound
+}
+
+func (m *mockIntegrationRepo) ListAPIKeysByActor(ctx context.Context, tx pgx.Tx, actorType integration.ActorType, actorID string) ([]integration.APIKey, error) {
+	var res []integration.APIKey
+	for _, k := range m.apiKeys {
+		if k.ActorType == actorType && k.ActorID == actorID {
+			res = append(res, k)
+		}
+	}
+	return res, nil
+}
+
+func (m *mockIntegrationRepo) RevokeAPIKey(ctx context.Context, tx pgx.Tx, id, actorID string) error {
+	for i, k := range m.apiKeys {
+		if k.ID == id && k.ActorID == actorID {
+			m.apiKeys[i].Status = "revoked"
+			return nil
+		}
+	}
+	return integration.ErrAPIKeyNotFound
+}
+
+func (m *mockIntegrationRepo) CreateWebhookSubscription(ctx context.Context, tx pgx.Tx, sub integration.WebhookSubscription) error {
+	m.webhooks = append(m.webhooks, sub)
+	return nil
+}
+
+func (m *mockIntegrationRepo) ListWebhookSubscriptionsByActor(ctx context.Context, tx pgx.Tx, actorType integration.ActorType, actorID string) ([]integration.WebhookSubscription, error) {
+	var res []integration.WebhookSubscription
+	for _, w := range m.webhooks {
+		if w.ActorType == actorType && w.ActorID == actorID {
+			res = append(res, w)
+		}
+	}
+	return res, nil
+}
+
+func (m *mockIntegrationRepo) DeleteWebhookSubscription(ctx context.Context, tx pgx.Tx, id, actorID string) error {
+	for i, w := range m.webhooks {
+		if w.ID == id && w.ActorID == actorID {
+			m.webhooks = append(m.webhooks[:i], m.webhooks[i+1:]...)
+			return nil
+		}
+	}
+	return integration.ErrWebhookSubNotFound
+}
+
+func (m *mockIntegrationRepo) GetWebhookSubscriptionByID(ctx context.Context, tx pgx.Tx, id string) (*integration.WebhookSubscription, error) {
+	for _, w := range m.webhooks {
+		if w.ID == id {
+			return &w, nil
+		}
+	}
+	return nil, integration.ErrWebhookSubNotFound
 }
 
 func TestSupplierSyncJobLifecycle(t *testing.T) {

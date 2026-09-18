@@ -420,6 +420,15 @@ func NewRouter(deps Dependencies) chi.Router {
 			r.Get("/integrations/sellers/sync-jobs", server.handleListSellerSyncJobs)
 			r.Get("/integrations/sellers/sync-jobs/{id}", server.handleGetSellerSyncJob)
 			r.Patch("/integrations/sellers/sync-jobs/{id}/status", server.handleUpdateSellerSyncJobStatus)
+
+			r.Post("/integrations/api-keys", server.handleCreateAPIKey)
+			r.Get("/integrations/api-keys/authenticate", server.handleAuthenticateAPIKey)
+			r.Get("/integrations/api-keys", server.handleListAPIKeys)
+			r.Delete("/integrations/api-keys/{id}", server.handleRevokeAPIKey)
+
+			r.Post("/integrations/webhooks/subscriptions", server.handleCreateWebhookSubscription)
+			r.Get("/integrations/webhooks/subscriptions", server.handleListWebhookSubscriptions)
+			r.Delete("/integrations/webhooks/subscriptions/{id}", server.handleDeleteWebhookSubscription)
 		})
 	})
 
