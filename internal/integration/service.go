@@ -69,6 +69,11 @@ type Service interface {
 	GetSyncJob(ctx context.Context, id string) (*SupplierSyncJob, error)
 	UpdateSyncJobStatus(ctx context.Context, id string, status SyncJobStatus, processed, failed int, errSummary string) (*SupplierSyncJob, error)
 	ListSyncJobsBySupplier(ctx context.Context, supplierID string, page commerce.Page) ([]SupplierSyncJob, error)
+
+	CreateSellerSyncJob(ctx context.Context, connectionID, storeID, syncType string) (*SellerSyncJob, error)
+	GetSellerSyncJob(ctx context.Context, id string) (*SellerSyncJob, error)
+	UpdateSellerSyncJobStatus(ctx context.Context, id string, status SyncJobStatus, processed, failed int, errSummary string) (*SellerSyncJob, error)
+	ListSellerSyncJobsByStore(ctx context.Context, storeID string, page commerce.Page) ([]SellerSyncJob, error)
 }
 
 type service struct {
@@ -251,4 +256,41 @@ func (s *service) UpdateSyncJobStatus(ctx context.Context, id string, status Syn
 
 func (s *service) ListSyncJobsBySupplier(ctx context.Context, supplierID string, page commerce.Page) ([]SupplierSyncJob, error) {
 	return s.repo.ListSyncJobsBySupplier(ctx, nil, supplierID, page)
+}
+
+func (s *service) CreateSellerSyncJob(ctx context.Context, connectionID, storeID, syncType string) (*SellerSyncJob, error) {
+	if strings.TrimSpace(connectionID) == "" || strings.TrimSpace(storeID) == "" {
+		return nil, fmt.Errorf("connection_id and store_id are required")
+	}
+	if strings.TrimSpace(syncType) == "" {
+		syncType = "catalog_import"
+	}
+
+	now := time.Now().UTC()
+	job := SellerSyncJob{
+		ID:           uuid.NewString(),
+		StoreID:      storeID,
+		ConnectionID: connectionID,
+		SyncType:     syncType,
+		Status:       SyncJobStatusQueued,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+
+	return s.repo.CreateSellerSyncJob(ctx, nil, job)
+}
+
+func (s *service) GetSellerSyncJob(ctx context.Context, id string) (*SellerSyncJob, error) {
+	if strings.TrimSpace(id) == "" {
+		return nil, ErrSellerSyncJobNotFound
+	}
+	return s.repo.GetSellerSyncJobByID(ctx, nil, id)
+}
+
+func (s *service) UpdateSellerSyncJobStatus(ctx context.Context, id string, status SyncJobStatus, processed, failed int, errSummary string) (*SellerSyncJob, error) {
+	return s.repo.UpdateSellerSyncJobStatus(ctx, nil, id, status, processed, failed, errSummary)
+}
+
+func (s *service) ListSellerSyncJobsByStore(ctx context.Context, storeID string, page commerce.Page) ([]SellerSyncJob, error) {
+	return s.repo.ListSellerSyncJobsByStore(ctx, nil, storeID, page)
 }

@@ -28,4 +28,9 @@ type Repository interface {
 	GetSyncJobByID(ctx context.Context, tx pgx.Tx, id string) (*SupplierSyncJob, error)
 	UpdateSyncJobStatus(ctx context.Context, tx pgx.Tx, id string, status SyncJobStatus, processed, failed int, errSummary string) (*SupplierSyncJob, error)
 	ListSyncJobsBySupplier(ctx context.Context, tx pgx.Tx, supplierID string, page commerce.Page) ([]SupplierSyncJob, error)
+
+	CreateSellerSyncJob(ctx context.Context, tx pgx.Tx, job SellerSyncJob) (*SellerSyncJob, error)
+	GetSellerSyncJobByID(ctx context.Context, tx pgx.Tx, id string) (*SellerSyncJob, error)
+	UpdateSellerSyncJobStatus(ctx context.Context, tx pgx.Tx, id string, status SyncJobStatus, processed, failed int, errSummary string) (*SellerSyncJob, error)
+	ListSellerSyncJobsByStore(ctx context.Context, tx pgx.Tx, storeID string, page commerce.Page) ([]SellerSyncJob, error)
 }

@@ -12,11 +12,12 @@ import (
 )
 
 type mockIntegrationRepo struct {
-	connections []integration.Connection
-	mappings    []integration.EntityMapping
-	cursors     []integration.SyncCursor
-	inbox       []integration.WebhookInboxItem
-	syncJobs    []integration.SupplierSyncJob
+	connections    []integration.Connection
+	mappings       []integration.EntityMapping
+	cursors        []integration.SyncCursor
+	inbox          []integration.WebhookInboxItem
+	syncJobs       []integration.SupplierSyncJob
+	sellerSyncJobs []integration.SellerSyncJob
 }
 
 func (m *mockIntegrationRepo) CreateConnection(ctx context.Context, tx pgx.Tx, conn integration.Connection) error {
