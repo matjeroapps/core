@@ -577,3 +577,97 @@ type PayoutResponse struct {
 	Reference    string    `json:"reference,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 }
+
+type CreateConnectionRequest struct {
+	ActorType           string          `json:"actor_type"`
+	ActorID             string          `json:"actor_id"`
+	Provider            string          `json:"provider"`
+	Name                string          `json:"name"`
+	CredentialsVaultRef string          `json:"credentials_vault_ref,omitempty"`
+	Settings            json.RawMessage `json:"settings,omitempty"`
+}
+
+type ConnectionResponse struct {
+	ID                  string          `json:"id"`
+	ActorType           string          `json:"actor_type"`
+	ActorID             string          `json:"actor_id"`
+	Provider            string          `json:"provider"`
+	Name                string          `json:"name"`
+	Status              string          `json:"status"`
+	CredentialsVaultRef string          `json:"credentials_vault_ref,omitempty"`
+	Settings            json.RawMessage `json:"settings"`
+	CreatedAt           time.Time       `json:"created_at"`
+	UpdatedAt           time.Time       `json:"updated_at"`
+}
+
+type UpdateConnectionStatusRequest struct {
+	Status string `json:"status"`
+}
+
+type UpsertEntityMappingRequest struct {
+	ConnectionID    string          `json:"connection_id"`
+	EntityType      string          `json:"entity_type"`
+	InternalID      string          `json:"internal_id"`
+	ExternalID      string          `json:"external_id"`
+	ExternalVersion string          `json:"external_version,omitempty"`
+	MappingStatus   string          `json:"mapping_status,omitempty"`
+	SyncDirection   string          `json:"sync_direction,omitempty"`
+	ConflictStatus  string          `json:"conflict_status,omitempty"`
+	Metadata        json.RawMessage `json:"metadata,omitempty"`
+}
+
+type EntityMappingResponse struct {
+	ID              string          `json:"id"`
+	ConnectionID    string          `json:"connection_id"`
+	EntityType      string          `json:"entity_type"`
+	InternalID      string          `json:"internal_id"`
+	ExternalID      string          `json:"external_id"`
+	ExternalVersion string          `json:"external_version,omitempty"`
+	MappingStatus   string          `json:"mapping_status"`
+	SyncDirection   string          `json:"sync_direction"`
+	ConflictStatus  string          `json:"conflict_status,omitempty"`
+	Metadata        json.RawMessage `json:"metadata"`
+	LastSyncedAt    time.Time       `json:"last_synced_at"`
+	CreatedAt       time.Time       `json:"created_at"`
+	UpdatedAt       time.Time       `json:"updated_at"`
+}
+
+type UpdateSyncCursorRequest struct {
+	ConnectionID       string     `json:"connection_id"`
+	EntityType         string     `json:"entity_type"`
+	CursorToken        string     `json:"cursor_token,omitempty"`
+	LastSuccessfulSync *time.Time `json:"last_successful_sync,omitempty"`
+	LastReconciledAt   *time.Time `json:"last_reconciled_at,omitempty"`
+}
+
+type SyncCursorResponse struct {
+	ID                 string     `json:"id"`
+	ConnectionID       string     `json:"connection_id"`
+	EntityType         string     `json:"entity_type"`
+	CursorToken        string     `json:"cursor_token,omitempty"`
+	LastSuccessfulSync *time.Time `json:"last_successful_sync,omitempty"`
+	LastReconciledAt   *time.Time `json:"last_reconciled_at,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+}
+
+type PersistIntegrationWebhookInboxRequest struct {
+	ConnectionID   string          `json:"connection_id,omitempty"`
+	Provider       string          `json:"provider"`
+	EventType      string          `json:"event_type"`
+	IdempotencyKey string          `json:"idempotency_key"`
+	Payload        json.RawMessage `json:"payload"`
+}
+
+type WebhookInboxItemResponse struct {
+	ID             string          `json:"id"`
+	ConnectionID   string          `json:"connection_id,omitempty"`
+	Provider       string          `json:"provider"`
+	EventType      string          `json:"event_type"`
+	IdempotencyKey string          `json:"idempotency_key"`
+	Payload        json.RawMessage `json:"payload"`
+	Status         string          `json:"status"`
+	ErrorMessage   string          `json:"error_message,omitempty"`
+	ReceivedAt     time.Time       `json:"received_at"`
+	ProcessedAt    *time.Time      `json:"processed_at,omitempty"`
+}
