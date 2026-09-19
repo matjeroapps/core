@@ -218,6 +218,54 @@ func (m *mockIntegrationRepo) GetWebhookSubscriptionByID(ctx context.Context, tx
 	return nil, integration.ErrWebhookSubNotFound
 }
 
+func (m *mockIntegrationRepo) RevokeAPIKeyWithReason(ctx context.Context, tx pgx.Tx, id, actorID, reason string) error {
+	for i, k := range m.apiKeys {
+		if k.ID == id && k.ActorID == actorID {
+			m.apiKeys[i].Status = "revoked"
+			m.apiKeys[i].RevocationReason = reason
+			return nil
+		}
+	}
+	return integration.ErrAPIKeyNotFound
+}
+
+func (m *mockIntegrationRepo) MarkAPIKeyRotated(ctx context.Context, tx pgx.Tx, id, actorID string, rotatedAt time.Time, expiresAt *time.Time) error {
+	for i, k := range m.apiKeys {
+		if k.ID == id && k.ActorID == actorID {
+			m.apiKeys[i].RotatedAt = &rotatedAt
+			m.apiKeys[i].ExpiresAt = expiresAt
+			return nil
+		}
+	}
+	return integration.ErrAPIKeyNotFound
+}
+
+func (m *mockIntegrationRepo) UpdateAPIKeyLastUsed(ctx context.Context, tx pgx.Tx, id string, lastUsed time.Time) error {
+	for i, k := range m.apiKeys {
+		if k.ID == id {
+			m.apiKeys[i].LastUsedAt = &lastUsed
+			return nil
+		}
+	}
+	return nil
+}
+
+func (m *mockIntegrationRepo) RecordAPIKeyAuditLog(ctx context.Context, tx pgx.Tx, log integration.APIKeyAuditLog) error {
+	return nil
+}
+
+func (m *mockIntegrationRepo) EnqueueWebhookOutbox(ctx context.Context, tx pgx.Tx, item integration.WebhookOutboxItem) error {
+	return nil
+}
+
+func (m *mockIntegrationRepo) UpdateWebhookOutboxStatus(ctx context.Context, tx pgx.Tx, id, status string, retryCount int, nextAttemptAt time.Time, lastError string) error {
+	return nil
+}
+
+func (m *mockIntegrationRepo) RecordWebhookDeliveryLog(ctx context.Context, tx pgx.Tx, log integration.WebhookDeliveryLog) error {
+	return nil
+}
+
 func TestSupplierSyncJobLifecycle(t *testing.T) {
 	mockRepo := &mockIntegrationRepo{}
 	svc := integration.NewService(mockRepo)

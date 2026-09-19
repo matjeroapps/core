@@ -18,6 +18,7 @@ import (
 	"core/internal/balance"
 	"core/internal/coreapi"
 	"core/internal/finance"
+	"core/internal/integration"
 	"core/internal/marketplace_finance"
 	"core/internal/payments"
 	"core/internal/serviceauth"
@@ -127,6 +128,7 @@ func run(ctx context.Context) error {
 		Balance:            balService,
 		Settlement:         settleService,
 		MarketplaceFinance: mfService,
+		Integration:        integration.NewService(integration.NewRepository(db.Pool)),
 	}
 
 	appCfg := httpx.ConfigFrom(cfg)
