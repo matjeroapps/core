@@ -20,6 +20,7 @@ import (
 	"core/internal/balance"
 	"core/internal/finance"
 	"core/internal/integration"
+	"core/internal/marketplace"
 	"core/internal/marketplace_finance"
 	"core/internal/payments"
 	"core/internal/serviceauth"
@@ -133,6 +134,7 @@ type Dependencies struct {
 	Settlement         SettlementService
 	MarketplaceFinance MarketplaceFinanceService
 	Integration        integration.Service
+	Marketplace        marketplace.Service
 }
 
 // NewRouter registers the internal API under /internal/v1.
@@ -173,6 +175,12 @@ func NewRouter(deps Dependencies) chi.Router {
 			r.Post("/storefront/checkout-sessions/{sessionID}/finalize", server.handleEvaluateCheckoutSession)
 			r.Get("/storefront/orders/{orderID}", server.handleGetGuestOrder)
 			r.Post("/storefront/orders/{orderID}/cancel", server.handleCancelGuestOrder)
+		})
+
+		// Curated marketplace discovery is an authenticated Core read model.
+		r.Group(func(r chi.Router) {
+			r.Use(requireCallers(serviceauth.CallerSeller, serviceauth.CallerAdmin, serviceauth.CallerSupplier))
+			r.Get("/markets/{market_code}/marketplace/collections/{collection_type}", server.handleMarketplaceCollection)
 		})
 
 		// Store-owned fulfillment locations. Seller identity is resolved from the

@@ -19,6 +19,7 @@ import (
 	"core/internal/coreapi"
 	"core/internal/finance"
 	"core/internal/integration"
+	"core/internal/marketplace"
 	"core/internal/marketplace_finance"
 	"core/internal/payments"
 	"core/internal/serviceauth"
@@ -128,6 +129,7 @@ func run(ctx context.Context) error {
 		Balance:            balService,
 		Settlement:         settleService,
 		MarketplaceFinance: mfService,
+		Marketplace:        marketplace.NewService(marketplace.NewRepository(db.Pool)),
 		Integration:        integration.NewService(integration.NewRepository(db.Pool)),
 	}
 

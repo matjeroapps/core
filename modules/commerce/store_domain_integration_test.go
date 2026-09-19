@@ -15,7 +15,7 @@ import (
 
 func applyStoreDomainMigrations(t *testing.T, db *database.Pool) {
 	t.Helper()
-	for _, m := range []string{
+	migrationNames := []string{
 		"000002_market_reference_data",
 		"000003_commerce_domain_schema",
 		"000004_admin_supplier_seller_platforms",
@@ -25,9 +25,8 @@ func applyStoreDomainMigrations(t *testing.T, db *database.Pool) {
 		"000009_supplier_retail_capability",
 		"000010_customer_cart_domain",
 		"000011_checkout_sessions",
-	} {
-		applySQLFile(t, db, filepath.Join("..", "..", "migrations", m+".up.sql"))
 	}
+	applyMigrationBatch(t, db, migrationNames...)
 }
 
 func countStores(t *testing.T, db *database.Pool) int {
@@ -190,14 +189,10 @@ func TestMigrationsReplay(t *testing.T) {
 		"000007_theme_engine_schema",
 		"000008_storefront_revisions",
 	}
-	for _, m := range migrations {
-		applySQLFile(t, db, filepath.Join("..", "..", "migrations", m+".up.sql"))
-	}
+	applyMigrationBatch(t, db, migrations...)
 	for i := len(migrations) - 1; i >= 0; i-- {
 		applySQLFile(t, db, filepath.Join("..", "..", "migrations", migrations[i]+".down.sql"))
 	}
-	for _, m := range migrations {
-		applySQLFile(t, db, filepath.Join("..", "..", "migrations", m+".up.sql"))
-	}
+	applyMigrationBatch(t, db, migrations...)
 	_ = ctx
 }

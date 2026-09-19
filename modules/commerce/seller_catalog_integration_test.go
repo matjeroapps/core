@@ -7,7 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/stretchr/testify/require"
 	"os"
-	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,16 +43,11 @@ func setupSellerCatalogTestDB(t *testing.T) (*database.Pool, Service, Repository
 		"000026_seller_catalog_phase_c.up.sql",
 	}
 
+	migrationNames := make([]string, 0, len(migrations))
 	for _, m := range migrations {
-		path := filepath.Join("..", "..", "migrations", m)
-		content, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatalf("failed to read migration %s: %v", m, err)
-		}
-		if _, err := db.Pool.Exec(context.Background(), string(content)); err != nil {
-			t.Fatalf("failed to execute migration %s: %v", m, err)
-		}
+		migrationNames = append(migrationNames, strings.TrimSuffix(m, ".up.sql"))
 	}
+	applyMigrationBatch(t, db, migrationNames...)
 
 	repo := NewRepository(db.Pool)
 	service := NewService(repo)

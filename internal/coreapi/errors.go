@@ -6,6 +6,7 @@ import (
 
 	"core/internal/balance"
 	"core/internal/finance"
+	"core/internal/marketplace"
 	"core/internal/marketplace_finance"
 	"core/internal/payments"
 	"core/internal/settlement"
@@ -182,6 +183,11 @@ func codeFor(err error) string {
 		errors.Is(err, marketplace_finance.ErrSettlementNotFound),
 		errors.Is(err, suppliers.ErrNotFound):
 		return CodeNotFound
+	case errors.Is(err, marketplace.ErrInvalidInput),
+		errors.Is(err, marketplace.ErrInvalidCollectionType):
+		return CodeInvalidArgument
+	case errors.Is(err, marketplace.ErrCollectionUnavailable):
+		return CodeUnavailable
 	case errors.Is(err, storefront.ErrStoreNotFound),
 		errors.Is(err, storefront.ErrDomainInactive),
 		errors.Is(err, storefront.ErrStoreInactive):

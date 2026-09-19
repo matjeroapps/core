@@ -24,7 +24,7 @@ func setupP53Database(t *testing.T) (*database.Pool, Repository, context.Context
 		dsn = "postgres://commerce:commerce@localhost:5432/commerce?sslmode=disable"
 	}
 	db := testdb.Open(t, dsn)
-	for _, name := range []string{
+	migrationNames := []string{
 		"000001_event_delivery_foundation",
 		"000002_market_reference_data",
 		"000003_commerce_domain_schema",
@@ -37,9 +37,8 @@ func setupP53Database(t *testing.T) (*database.Pool, Repository, context.Context
 		"000010_customer_cart_domain",
 		"000011_checkout_sessions",
 		"000012_order_aggregate_schema",
-	} {
-		applySQLFile(t, db, filepath.Join("..", "..", "migrations", name+".up.sql"))
 	}
+	applyMigrationBatch(t, db, migrationNames...)
 	return db, NewRepository(db.Pool), context.Background()
 }
 
@@ -824,7 +823,7 @@ func TestMigration000012_UpAndDown(t *testing.T) {
 	db := testdb.Open(t, dsn)
 	ctx := context.Background()
 
-	for _, name := range []string{
+	migrationNames := []string{
 		"000002_market_reference_data",
 		"000003_commerce_domain_schema",
 		"000004_admin_supplier_seller_platforms",
@@ -835,9 +834,8 @@ func TestMigration000012_UpAndDown(t *testing.T) {
 		"000009_supplier_retail_capability",
 		"000010_customer_cart_domain",
 		"000011_checkout_sessions",
-	} {
-		applySQLFile(t, db, filepath.Join("..", "..", "migrations", name+".up.sql"))
 	}
+	applyMigrationBatch(t, db, migrationNames...)
 
 	upSQL, err := os.ReadFile(filepath.Join("..", "..", "migrations", "000012_order_aggregate_schema.up.sql"))
 	if err != nil {

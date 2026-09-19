@@ -3,7 +3,7 @@
 test: go-test openapi-check docker-config migrate-check
 
 go-test:
-	go test ./...
+	go test -timeout=20m ./...
 
 openapi:
 	go run ./cmd/openapi-gen

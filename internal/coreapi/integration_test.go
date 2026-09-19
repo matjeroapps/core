@@ -67,7 +67,7 @@ func setupIntegration(t *testing.T) integrationEnv {
 	ctx := context.Background()
 	db := testdb.Open(t, dsn)
 
-	for _, name := range []string{
+	migrationNames := []string{
 		"000001_event_delivery_foundation",
 		"000002_market_reference_data",
 		"000003_commerce_domain_schema",
@@ -90,9 +90,12 @@ func setupIntegration(t *testing.T) integrationEnv {
 		"000020_create_ledger_schema",
 		"000021_create_balance_projection_schema",
 		"000026_seller_catalog_phase_c",
-	} {
-		applyMigrationFile(t, db, filepath.Join("..", "..", "migrations", name+".up.sql"))
 	}
+	migrationPaths := make([]string, 0, len(migrationNames))
+	for _, name := range migrationNames {
+		migrationPaths = append(migrationPaths, filepath.Join("..", "..", "migrations", name+".up.sql"))
+	}
+	testdb.ApplyMigrations(t, db, migrationPaths...)
 
 	repo := commerce.NewRepository(db.Pool)
 	service := commerce.NewService(repo)
@@ -300,17 +303,6 @@ func (e integrationEnv) listing(t *testing.T, storeID string, product commerce.P
 		t.Fatalf("set listing price: %v", err)
 	}
 	return listing
-}
-
-func applyMigrationFile(t *testing.T, db *database.Pool, path string) {
-	t.Helper()
-	body, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read migration %s: %v", path, err)
-	}
-	if _, err := db.Exec(context.Background(), string(body)); err != nil {
-		t.Fatalf("apply migration %s: %v", path, err)
-	}
 }
 
 // --- helpers ---
@@ -680,7 +672,7 @@ func TestIntegrationThemePreviewFailsClosedWithoutSecret(t *testing.T) {
 		dsn = "postgres://commerce:commerce@localhost:5432/commerce?sslmode=disable"
 	}
 	db := testdb.Open(t, dsn)
-	for _, name := range []string{
+	migrationNames := []string{
 		"000001_event_delivery_foundation",
 		"000002_market_reference_data",
 		"000003_commerce_domain_schema",
@@ -703,9 +695,12 @@ func TestIntegrationThemePreviewFailsClosedWithoutSecret(t *testing.T) {
 		"000020_create_ledger_schema",
 		"000021_create_balance_projection_schema",
 		"000026_seller_catalog_phase_c",
-	} {
-		applyMigrationFile(t, db, filepath.Join("..", "..", "migrations", name+".up.sql"))
 	}
+	migrationPaths := make([]string, 0, len(migrationNames))
+	for _, name := range migrationNames {
+		migrationPaths = append(migrationPaths, filepath.Join("..", "..", "migrations", name+".up.sql"))
+	}
+	testdb.ApplyMigrations(t, db, migrationPaths...)
 
 	repo := commerce.NewRepository(db.Pool)
 	resolver := storefront.NewStoreResolver(repo)

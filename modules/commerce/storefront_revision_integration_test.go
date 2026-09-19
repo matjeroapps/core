@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -58,7 +57,7 @@ func setupRevisionTest(t *testing.T) *revisionEnv {
 		dsn = "postgres://commerce:commerce@localhost:5432/commerce?sslmode=disable"
 	}
 	db := testdb.Open(t, dsn)
-	for _, m := range []string{
+	migrationNames := []string{
 		"000002_market_reference_data",
 		"000003_commerce_domain_schema",
 		"000004_admin_supplier_seller_platforms",
@@ -72,9 +71,8 @@ func setupRevisionTest(t *testing.T) *revisionEnv {
 		"000015_media_upload_intent",
 		"000025_seller_catalog_phase_b",
 		"000026_seller_catalog_phase_c",
-	} {
-		applySQLFile(t, db, filepath.Join("..", "..", "migrations", m+".up.sql"))
 	}
+	applyMigrationBatch(t, db, migrationNames...)
 
 	ctx := context.Background()
 	repo := NewRepository(db.Pool)
