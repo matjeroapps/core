@@ -5,6 +5,7 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 
+	"core/internal/integration"
 	"core/modules/commerce"
 	"core/modules/contracts"
 	"core/modules/markets"
@@ -112,6 +113,7 @@ func internalTags() []openapi3.Tag {
 		{Name: "Settlement Calculation", Description: "Settlement calculation foundation and snapshots"},
 		{Name: "Marketplace Financial Rules", Description: "Configurable revenue distribution rules and settlement allocations"},
 		{Name: "Platform Administration", Description: "Platform moderation and operational overview"},
+		{Name: "Integration Foundation", Description: "External entity mappings, API keys, sync cursors, and webhook subscriptions"},
 	}
 }
 
@@ -611,6 +613,30 @@ func internalRoutes() []openapi.RouteSpec {
 			Parameters:  []openapi.ParameterSpec{pathParam("storeID", "Store identifier")},
 			RequestBody: StoreFulfillmentLocationCreateRequest{},
 			Responses:   createResponses("Created Store-owned location", commerce.FulfillmentLocation{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/finance/balance", OperationID: "internalGetStoreBalance",
+			Summary: "Get store financial balance", Tags: []string{"Stores"},
+			Parameters: []openapi.ParameterSpec{pathParam("storeID", "Store identifier")},
+			Responses:  readResponses("Store balance", AccountBalanceResponse{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/finance/ledger", OperationID: "internalListStoreLedgerEntries",
+			Summary: "List store ledger entries", Tags: []string{"Stores"},
+			Parameters: append([]openapi.ParameterSpec{pathParam("storeID", "Store identifier")}, pageParams...),
+			Responses:  readResponses("Ledger entry collection", CollectionResponse[JournalEntryResponse]{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/finance/settlements", OperationID: "internalListStoreSettlements",
+			Summary: "List store settlements", Tags: []string{"Stores"},
+			Parameters: append([]openapi.ParameterSpec{pathParam("storeID", "Store identifier")}, pageParams...),
+			Responses:  readResponses("Settlement collection", CollectionResponse[SettlementResponse]{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/finance/payouts", OperationID: "internalListStorePayouts",
+			Summary: "List store payouts", Tags: []string{"Stores"},
+			Parameters: append([]openapi.ParameterSpec{pathParam("storeID", "Store identifier")}, pageParams...),
+			Responses:  readResponses("Payout collection", CollectionResponse[SettlementResponse]{}),
 		},
 
 		// --- P5.8 Seller catalog operations ---
@@ -1197,6 +1223,12 @@ func internalRoutes() []openapi.RouteSpec {
 			Responses:   writeResponses("Created shipment", ShipmentResponse{}),
 		},
 		{
+			Method: http.MethodGet, Path: "/internal/v1/orders/{orderID}/shipments", OperationID: "internalListOrderShipments",
+			Summary: "List shipments for an order", Tags: []string{"Shipping"},
+			Parameters: []openapi.ParameterSpec{pathParam("orderID", "Order identifier")},
+			Responses:  readResponses("Shipment collection", CollectionResponse[ShipmentResponse]{}),
+		},
+		{
 			Method: http.MethodPatch, Path: "/internal/v1/shipments/{shipmentID}/status", OperationID: "internalUpdateShipmentStatus",
 			Summary: "Transition shipment status", Tags: []string{"Shipping"},
 			Parameters:  []openapi.ParameterSpec{pathParam("shipmentID", "Shipment identifier")},
@@ -1215,6 +1247,18 @@ func internalRoutes() []openapi.RouteSpec {
 			Parameters:  []openapi.ParameterSpec{pathParam("orderID", "Order identifier")},
 			RequestBody: InitializePaymentRequest{},
 			Responses:   writeResponses("Initialized payment", PaymentResponse{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/orders/{orderID}/payments", OperationID: "internalGetPaymentByOrder",
+			Summary: "Get payment by order", Tags: []string{"Payments"},
+			Parameters: []openapi.ParameterSpec{pathParam("orderID", "Order identifier")},
+			Responses:  readResponses("Payment details", PaymentResponse{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/payments/{paymentID}", OperationID: "internalGetPayment",
+			Summary: "Get payment by ID", Tags: []string{"Payments"},
+			Parameters: []openapi.ParameterSpec{pathParam("paymentID", "Payment identifier")},
+			Responses:  readResponses("Payment details", PaymentResponse{}),
 		},
 		{
 			Method: http.MethodPatch, Path: "/internal/v1/payments/{paymentID}/status", OperationID: "internalUpdatePaymentStatus",
@@ -1327,6 +1371,150 @@ func internalRoutes() []openapi.RouteSpec {
 			Summary: "Get settlement allocations", Tags: []string{"Marketplace Financial Rules"},
 			Parameters: []openapi.ParameterSpec{pathParam("id", "Settlement identifier")},
 			Responses:  readResponses("Settlement allocation collection", CollectionResponse[SettlementAllocationResponse]{}),
+		},
+
+		// --- Integration Foundation ---
+		{
+			Method: http.MethodPost, Path: "/internal/v1/integrations/connections", OperationID: "internalCreateConnection",
+			Summary: "Create integration connection", Tags: []string{"Integration Foundation"},
+			Responses: createResponses("Connection", integration.Connection{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/integrations/connections", OperationID: "internalListConnections",
+			Summary: "List integration connections", Tags: []string{"Integration Foundation"},
+			Parameters: pageParams,
+			Responses:  readResponses("Connection collection", CollectionResponse[integration.Connection]{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/integrations/connections/{id}", OperationID: "internalGetConnection",
+			Summary: "Get integration connection", Tags: []string{"Integration Foundation"},
+			Parameters: []openapi.ParameterSpec{pathParam("id", "Connection identifier")},
+			Responses:  readResponses("Connection", integration.Connection{}),
+		},
+		{
+			Method: http.MethodPatch, Path: "/internal/v1/integrations/connections/{id}/status", OperationID: "internalUpdateConnectionStatus",
+			Summary: "Update integration connection status", Tags: []string{"Integration Foundation"},
+			Parameters: []openapi.ParameterSpec{pathParam("id", "Connection identifier")},
+			Responses:  writeResponses("Connection", integration.Connection{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/integrations/mappings", OperationID: "internalUpsertEntityMapping",
+			Summary: "Upsert external entity mapping", Tags: []string{"Integration Foundation"},
+			Responses: createResponses("Entity mapping", integration.EntityMapping{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/integrations/mappings", OperationID: "internalListEntityMappings",
+			Summary: "List external entity mappings", Tags: []string{"Integration Foundation"},
+			Parameters: pageParams,
+			Responses:  readResponses("Entity mapping collection", CollectionResponse[integration.EntityMapping]{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/integrations/mappings/external", OperationID: "internalGetEntityMappingByExternalID",
+			Summary: "Get entity mapping by external ID", Tags: []string{"Integration Foundation"},
+			Responses: readResponses("Entity mapping", integration.EntityMapping{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/integrations/mappings/internal", OperationID: "internalGetEntityMappingByInternalID",
+			Summary: "Get entity mapping by internal ID", Tags: []string{"Integration Foundation"},
+			Responses: readResponses("Entity mapping", integration.EntityMapping{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/integrations/sync-cursors", OperationID: "internalUpdateSyncCursor",
+			Summary: "Update integration sync cursor", Tags: []string{"Integration Foundation"},
+			Responses: writeResponses("Sync cursor", integration.SyncCursor{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/integrations/sync-cursors", OperationID: "internalGetSyncCursor",
+			Summary: "Get integration sync cursor", Tags: []string{"Integration Foundation"},
+			Responses: readResponses("Sync cursor", integration.SyncCursor{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/integrations/webhooks/inbox", OperationID: "internalPersistIntegrationWebhookInbox",
+			Summary: "Persist webhook inbox item", Tags: []string{"Integration Foundation"},
+			Responses: createResponses("Webhook inbox item", integration.WebhookInboxItem{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/integrations/suppliers/sync-jobs", OperationID: "internalCreateSupplierSyncJob",
+			Summary: "Create supplier sync job", Tags: []string{"Integration Foundation"},
+			Responses: createResponses("Supplier sync job", integration.SupplierSyncJob{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/integrations/suppliers/sync-jobs", OperationID: "internalListSupplierSyncJobs",
+			Summary: "List supplier sync jobs", Tags: []string{"Integration Foundation"},
+			Parameters: pageParams,
+			Responses:  readResponses("Supplier sync job collection", CollectionResponse[integration.SupplierSyncJob]{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/integrations/suppliers/sync-jobs/{id}", OperationID: "internalGetSupplierSyncJob",
+			Summary: "Get supplier sync job", Tags: []string{"Integration Foundation"},
+			Parameters: []openapi.ParameterSpec{pathParam("id", "Sync job identifier")},
+			Responses:  readResponses("Supplier sync job", integration.SupplierSyncJob{}),
+		},
+		{
+			Method: http.MethodPatch, Path: "/internal/v1/integrations/suppliers/sync-jobs/{id}/status", OperationID: "internalUpdateSupplierSyncJobStatus",
+			Summary: "Update supplier sync job status", Tags: []string{"Integration Foundation"},
+			Parameters: []openapi.ParameterSpec{pathParam("id", "Sync job identifier")},
+			Responses:  writeResponses("Supplier sync job", integration.SupplierSyncJob{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/integrations/sellers/sync-jobs", OperationID: "internalCreateSellerSyncJob",
+			Summary: "Create seller sync job", Tags: []string{"Integration Foundation"},
+			Responses: createResponses("Seller sync job", integration.SellerSyncJob{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/integrations/sellers/sync-jobs", OperationID: "internalListSellerSyncJobs",
+			Summary: "List seller sync jobs", Tags: []string{"Integration Foundation"},
+			Parameters: pageParams,
+			Responses:  readResponses("Seller sync job collection", CollectionResponse[integration.SellerSyncJob]{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/integrations/sellers/sync-jobs/{id}", OperationID: "internalGetSellerSyncJob",
+			Summary: "Get seller sync job", Tags: []string{"Integration Foundation"},
+			Parameters: []openapi.ParameterSpec{pathParam("id", "Sync job identifier")},
+			Responses:  readResponses("Seller sync job", integration.SellerSyncJob{}),
+		},
+		{
+			Method: http.MethodPatch, Path: "/internal/v1/integrations/sellers/sync-jobs/{id}/status", OperationID: "internalUpdateSellerSyncJobStatus",
+			Summary: "Update seller sync job status", Tags: []string{"Integration Foundation"},
+			Parameters: []openapi.ParameterSpec{pathParam("id", "Sync job identifier")},
+			Responses:  writeResponses("Seller sync job", integration.SellerSyncJob{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/integrations/api-keys", OperationID: "internalCreateAPIKey",
+			Summary: "Create API key", Tags: []string{"Integration Foundation"},
+			Responses: createResponses("API key response", CreateAPIKeyResponse{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/integrations/api-keys/authenticate", OperationID: "internalAuthenticateAPIKey",
+			Summary: "Authenticate API key", Tags: []string{"Integration Foundation"},
+			Responses: readResponses("API key response", APIKeyResponse{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/integrations/api-keys", OperationID: "internalListAPIKeys",
+			Summary: "List API keys", Tags: []string{"Integration Foundation"},
+			Responses: readResponses("API key collection", CollectionResponse[APIKeyResponse]{}),
+		},
+		{
+			Method: http.MethodDelete, Path: "/internal/v1/integrations/api-keys/{id}", OperationID: "internalRevokeAPIKey",
+			Summary: "Revoke API key", Tags: []string{"Integration Foundation"},
+			Parameters: []openapi.ParameterSpec{pathParam("id", "API key identifier")},
+			Responses:  writeResponses("Revoked status", StatusResponse{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/integrations/webhooks/subscriptions", OperationID: "internalCreateWebhookSubscription",
+			Summary: "Create webhook subscription", Tags: []string{"Integration Foundation"},
+			Responses: createResponses("Webhook subscription", WebhookSubscriptionResponse{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/integrations/webhooks/subscriptions", OperationID: "internalListWebhookSubscriptions",
+			Summary: "List webhook subscriptions", Tags: []string{"Integration Foundation"},
+			Responses: readResponses("Webhook subscription collection", CollectionResponse[WebhookSubscriptionResponse]{}),
+		},
+		{
+			Method: http.MethodDelete, Path: "/internal/v1/integrations/webhooks/subscriptions/{id}", OperationID: "internalDeleteWebhookSubscription",
+			Summary: "Delete webhook subscription", Tags: []string{"Integration Foundation"},
+			Parameters: []openapi.ParameterSpec{pathParam("id", "Webhook subscription identifier")},
+			Responses:  writeResponses("Deleted status", StatusResponse{}),
 		},
 	}
 }

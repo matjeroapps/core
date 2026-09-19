@@ -167,17 +167,31 @@ type WebhookInboxItem struct {
 }
 
 type APIKey struct {
-	ID        string     `json:"id"`
-	ActorType ActorType  `json:"actor_type"`
-	ActorID   string     `json:"actor_id"`
-	Name      string     `json:"name"`
-	KeyPrefix string     `json:"key_prefix"`
-	KeyHash   string     `json:"key_hash"`
-	Scopes    []string   `json:"scopes"`
-	Status    string     `json:"status"`
-	ExpiresAt *time.Time `json:"expires_at,omitempty"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
+	ID               string     `json:"id"`
+	ActorType        ActorType  `json:"actor_type"`
+	ActorID          string     `json:"actor_id"`
+	Name             string     `json:"name"`
+	KeyPrefix        string     `json:"key_prefix"`
+	KeyHash          string     `json:"key_hash"`
+	Scopes           []string   `json:"scopes"`
+	Status           string     `json:"status"`
+	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
+	LastUsedAt       *time.Time `json:"last_used_at,omitempty"`
+	RotatedAt        *time.Time `json:"rotated_at,omitempty"`
+	RevocationReason string     `json:"revocation_reason,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+}
+
+type APIKeyAuditLog struct {
+	ID        string          `json:"id"`
+	APIKeyID  string          `json:"api_key_id"`
+	ActorType ActorType       `json:"actor_type"`
+	ActorID   string          `json:"actor_id"`
+	Action    string          `json:"action"`
+	Details   json.RawMessage `json:"details"`
+	IPAddress string          `json:"ip_address,omitempty"`
+	CreatedAt time.Time       `json:"created_at"`
 }
 
 type WebhookSubscription struct {
@@ -190,4 +204,31 @@ type WebhookSubscription struct {
 	Status           string    `json:"status"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+type WebhookOutboxItem struct {
+	ID             string          `json:"id"`
+	SubscriptionID string          `json:"subscription_id"`
+	EventType      string          `json:"event_type"`
+	Payload        json.RawMessage `json:"payload"`
+	Status         string          `json:"status"`
+	RetryCount     int             `json:"retry_count"`
+	MaxRetries     int             `json:"max_retries"`
+	NextAttemptAt  time.Time       `json:"next_attempt_at"`
+	LastError      string          `json:"last_error,omitempty"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
+}
+
+type WebhookDeliveryLog struct {
+	ID                 string          `json:"id"`
+	SubscriptionID     string          `json:"subscription_id"`
+	EventType          string          `json:"event_type"`
+	Payload            json.RawMessage `json:"payload"`
+	ResponseStatusCode *int            `json:"response_status_code,omitempty"`
+	Attempts           int             `json:"attempts"`
+	Status             string          `json:"status"`
+	NextRetryAt        *time.Time      `json:"next_retry_at,omitempty"`
+	DeliveredAt        *time.Time      `json:"delivered_at,omitempty"`
+	CreatedAt          time.Time       `json:"created_at"`
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -79,11 +80,15 @@ type Service interface {
 	AuthenticateAPIKey(ctx context.Context, rawKey string) (*APIKey, error)
 	ListAPIKeys(ctx context.Context, actorType ActorType, actorID string) ([]APIKey, error)
 	RevokeAPIKey(ctx context.Context, keyID, actorID string) error
+	RevokeAPIKeyWithReason(ctx context.Context, keyID, actorID, reason string) error
+	RotateAPIKey(ctx context.Context, keyID, actorID string, gracePeriod time.Duration) (*CreateAPIKeyOutput, error)
 
 	CreateWebhookSubscription(ctx context.Context, input CreateWebhookSubscriptionInput) (*WebhookSubscription, error)
 	ListWebhookSubscriptions(ctx context.Context, actorType ActorType, actorID string) ([]WebhookSubscription, error)
 	DeleteWebhookSubscription(ctx context.Context, subID, actorID string) error
 	GetWebhookSubscription(ctx context.Context, subID string) (*WebhookSubscription, error)
+	DispatchWebhookEvent(ctx context.Context, actorType ActorType, actorID, eventType string, payload json.RawMessage) ([]WebhookOutboxItem, error)
+	DeliverWebhookOutboxItem(ctx context.Context, item WebhookOutboxItem, secret string, client *http.Client) error
 }
 
 type service struct {

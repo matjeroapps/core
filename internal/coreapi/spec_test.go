@@ -61,17 +61,26 @@ func specRoutes(t *testing.T) []string {
 // The committed docs/api/internal/openapi.json is generated from the same
 // declarations, so this keeps the document honest too.
 func TestSpecMatchesRouter(t *testing.T) {
-	t.Skip("Skipping spec match test for now")
 	got := routerRoutes(t)
 	want := specRoutes(t)
 
-	if len(got) != len(want) {
-		t.Fatalf("route count mismatch: router has %d, spec declares %d\nrouter: %v\nspec:   %v",
-			len(got), len(want), got, want)
+	gotMap := make(map[string]bool)
+	for _, r := range got {
+		gotMap[r] = true
 	}
-	for i := range got {
-		if got[i] != want[i] {
-			t.Errorf("route %d: router has %q, spec declares %q", i, got[i], want[i])
+	wantMap := make(map[string]bool)
+	for _, r := range want {
+		wantMap[r] = true
+	}
+
+	for _, r := range got {
+		if !wantMap[r] {
+			t.Errorf("router has route not in spec: %s", r)
+		}
+	}
+	for _, r := range want {
+		if !gotMap[r] {
+			t.Errorf("spec declares route not in router: %s", r)
 		}
 	}
 }
