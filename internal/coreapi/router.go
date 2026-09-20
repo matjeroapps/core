@@ -179,7 +179,7 @@ func NewRouter(deps Dependencies) chi.Router {
 
 		// Curated marketplace discovery is an authenticated Core read model.
 		r.Group(func(r chi.Router) {
-			r.Use(requireCallers(serviceauth.CallerSeller, serviceauth.CallerAdmin, serviceauth.CallerSupplier))
+			r.Use(requireCallers(serviceauth.CallerPlatform, serviceauth.CallerSeller, serviceauth.CallerAdmin, serviceauth.CallerSupplier))
 			r.Get("/markets/{market_code}/marketplace/collections/{collection_type}", server.handleMarketplaceCollection)
 		})
 

@@ -8,12 +8,14 @@ import (
 )
 
 const (
-	sellerToken = "s3ll3r-s3cr3t"
-	adminToken  = "4dm1n-s3cr3t"
+	platformToken = "pl4tform-s3cr3t"
+	sellerToken   = "s3ll3r-s3cr3t"
+	adminToken    = "4dm1n-s3cr3t"
 )
 
 func testConfig() Config {
 	return Config{Tokens: map[Caller]string{
+		CallerPlatform: platformToken,
 		CallerSeller:   sellerToken,
 		CallerAdmin:    adminToken,
 		CallerSupplier: "",
@@ -32,12 +34,12 @@ func request(caller, token string) *http.Request {
 }
 
 func TestAuthenticateAcceptsMatchingCallerAndToken(t *testing.T) {
-	caller, err := Authenticate(request("seller", sellerToken), testConfig())
+	caller, err := Authenticate(request("platform", platformToken), testConfig())
 	if err != nil {
 		t.Fatalf("authenticate: %v", err)
 	}
-	if caller != CallerSeller {
-		t.Fatalf("caller = %q, want %q", caller, CallerSeller)
+	if caller != CallerPlatform {
+		t.Fatalf("caller = %q, want %q", caller, CallerPlatform)
 	}
 }
 
@@ -51,6 +53,8 @@ func TestAuthenticateRejectsMismatches(t *testing.T) {
 		{"caller without token", "seller", ""},
 		{"token without caller", "", sellerToken},
 		{"unknown caller", "attacker", sellerToken},
+		{"seller token as platform", "platform", sellerToken},
+		{"platform token as seller", "seller", platformToken},
 		{"seller token as admin", "admin", sellerToken},
 		{"admin token as seller", "seller", adminToken},
 		{"caller with no configured token", "supplier", sellerToken},
@@ -166,7 +170,7 @@ func TestConfigEnabled(t *testing.T) {
 
 func TestCallersWithTokensIsSortedAndOmitsBlank(t *testing.T) {
 	got := testConfig().CallersWithTokens()
-	want := []Caller{CallerAdmin, CallerSeller}
+	want := []Caller{CallerAdmin, CallerPlatform, CallerSeller}
 	if len(got) != len(want) {
 		t.Fatalf("callers = %v, want %v", got, want)
 	}
@@ -191,7 +195,7 @@ func TestHeaderAccessorsTrimAndReadTrustedValues(t *testing.T) {
 }
 
 func TestCallerValid(t *testing.T) {
-	for _, caller := range []Caller{CallerAdmin, CallerSeller, CallerSupplier} {
+	for _, caller := range []Caller{CallerAdmin, CallerPlatform, CallerSeller, CallerSupplier} {
 		if !caller.Valid() {
 			t.Errorf("%q should be valid", caller)
 		}
