@@ -88,27 +88,25 @@ Identity + Localization + Markets
         ↓
 Commerce Domain Foundation
         ↓
-Admin / Supplier / Seller Platforms
+P0 Seller Stores + P0 Supplier Stores Completeness
         ↓
-Native Storefront + Themes
+Staged Product Import Lifecycle
         ↓
-Checkout + Orders + Inventory
+Multiple Storefront Themes
         ↓
-Shipping
+Complete Checkout / Order Lifecycle
         ↓
-Payments
+Operational Store Experience
         ↓
-Financial Ledger + Settlements
+Shipping & Payments Operational Integration
         ↓
-External Integration Foundation
+Financial Ledger & Settlements
         ↓
-Supplier Integrations
-        ↓
-Seller Integrations
+External Integration Foundation (Supplier & Seller Integrations)
         ↓
 Public Integration API
         ↓
-Marketplace
+Unified Marketplace (Deferred to lowest priority until ecosystems are complete)
         ↓
 Reputation + Intelligence
         ↓
@@ -122,6 +120,137 @@ Advanced Scale
 ```
 
 Parallel work is allowed only when there are no unresolved dependencies.
+
+---
+
+## 3.1 Approved Execution Priority & Strategic Roadmap Alignment
+
+### Immediate Strategic Milestone
+The approved MatjerHub execution priority is strictly ordered as:
+
+```text
+P0 Seller Stores + P0 Supplier Stores
+        ↓
+Product Import Lifecycle
+        ↓
+Multiple Storefront Themes
+        ↓
+Complete Checkout / Order Lifecycle
+        ↓
+Operational Store Experience
+```
+
+**Unified Marketplace Deferral**: Any new Unified Marketplace discovery, search, merchandising, ranking, recommendations, and cross-store features are explicitly deferred to the lowest priority until Seller and Supplier ecosystems are substantially complete and production-ready in live operational environments. Merged foundational marketplace capabilities (such as curated discovery read models in PR #68, platform service authentication in PR #69, and marketplace listing resolution with checkout attribution in PR #70) remain fully supported in `matjeroapps/core`, but further consumer marketplace feature development is paused unless required as a genuine prerequisite or for security/regression fixes.
+
+### Immediate Product Goal
+A Seller or Supplier can operate a production-ready store with Core integration, product creation/import, variants/SKUs, media management, pricing, inventory tracking, multiple storefront themes where applicable, checkout execution, order management, multi-language/RTL localization, security, and complete operational lifecycle.
+
+### Required End-to-End Operational Flows
+
+#### 1. End-to-End Seller Flow
+1. **Seller Registration & Tenant Onboarding**: Seller registers, creates a store, and receives a store-scoped tenant context with role-based access control.
+2. **Store Setup & Custom Domain Configuration**: Seller configures store profile, custom domain mapping or platform subdomain (`seller.matjerhub.com`), currency, and localization (Arabic/English, RTL/LTR).
+3. **Catalog Setup & Product Management**: Seller creates products directly via Seller Dashboard or initiates a staged bulk product import.
+4. **Variants, SKUs, Media, Pricing & Inventory**: Seller configures product options (color, size), unique SKUs/barcodes, attaches media assets to products/variants, sets retail pricing, and allocates stock to store fulfillment locations.
+5. **Storefront Theme Selection & Publishing**: Seller chooses and configures a storefront theme, customizing logo, colors, and layout, and publishes active seller listings.
+6. **Customer Browsing & Cart Execution**: Buyer visits seller store on Next.js storefront, browses localized product catalog, selects variants, and adds items to single-store cart.
+7. **Checkout & Atomic Inventory Reservation**: Buyer proceeds to checkout. Core validates store context, market currency, and reserves stock atomically in `inventory_snapshots` within a database transaction.
+8. **Payment, Shipping & Order Placement**: Buyer completes payment (COD or electronic gateway) and submits shipping address. Core finalizes order aggregate and publishes `order.created` event via transactional outbox.
+9. **Seller Order Operations & Fulfillment**: Seller views incoming order in Seller Dashboard, updates fulfillment state machine (processing -> shipped -> delivered), and tracks balance/payout in financial ledger.
+
+#### 2. End-to-End Supplier-to-Seller Flow
+1. **Supplier Registration & Tenant Onboarding**: Supplier registers, establishes supplier tenant context, and configures fulfillment capabilities.
+2. **Supplier Catalog & Market Offer Creation**: Supplier defines products, variants, SKUs, wholesale cost pricing, minimum order quantities (MOQ), and market offers with effective dating.
+3. **Offer Publishing to Market Catalog**: Supplier publishes active offers to the Core market catalog, making them discoverable to verified sellers.
+4. **Seller Discovery & Offer Linking**: Seller browses available supplier offers in Seller Dashboard, selects offers, links them to seller store listings, and defines retail pricing markups.
+5. **Inventory & Price Synchronization**: Real-time or batch synchronization reflects supplier stock availability and wholesale price updates on linked seller listings.
+6. **Customer Purchase on Seller Storefront**: Buyer purchases the seller listing on the seller's storefront.
+7. **Atomic Order Finalization & Inventory Reservation**: Core validates supplier offer validity, stock, and reserves inventory atomically across supplier fulfillment locations.
+8. **Dropship Order Routing & Supplier Fulfillment**: Core routes dropship order items to Supplier Dashboard / Integration API. Supplier accepts, packages, ships item, and uploads tracking information.
+9. **Automated Settlement & Ledger Reconciliation**: Double-entry financial ledger records buyer payment, deducts platform commission, credits supplier wholesale price, credits seller margin, and queues payout settlement.
+
+### Staged Product Import Lifecycle
+
+Product creation via bulk import or integration feeds must adhere strictly to the 10-stage import lifecycle:
+
+```text
+Import → Validate → Map → Review → Create/Update Product → Variants/SKUs → Media → Pricing → Inventory → Publish
+```
+
+1. **Import**: Receive raw feed/file (CSV, JSON, Excel) or API payload into isolated staging tables (`import_jobs`, `import_records`).
+2. **Validate**: Perform strict schema validation, check required fields (title, SKU, price), verify market currency, and detect duplicates.
+3. **Map**: Map external attributes, category hierarchies, option values, and units to MatjerHub Core taxonomy and domain schemas.
+4. **Review**: Present staging summary, warnings, and error logs to Seller or Supplier in dashboard for manual or automated review before database mutation.
+5. **Create/Update Product**: Transactionally create or update `products` domain entities with localized Arabic/English titles and descriptions.
+6. **Variants/SKUs**: Generate variant permutations and create `skus` records enforcing unique SKU code and barcode constraints.
+7. **Media**: Process, store, and link image assets and galleries to products and variants via Object Storage.
+8. **Pricing**: Establish seller listing prices (`seller_listing_prices`) or supplier offer prices (`supplier_offers`) with currency validation.
+9. **Inventory**: Initialize or update `inventory_snapshots` for assigned fulfillment locations.
+10. **Publish**: Update `seller_listings` or `supplier_offers` status to active/published, exposing listings for storefront resolution or seller catalog discovery.
+
+*Note: This lifecycle reuses existing Core database tables, transactional outbox patterns, and service boundaries without inventing competing architectures.*
+
+### Core Ownership & Repository Boundaries
+
+Repository boundaries must be strictly preserved across all operational capabilities:
+
+* **`matjeroapps/core`**: Owns all domain models, persistence schemas, business invariants, authorization, tenant isolation, financial ledger, and outbox event publishing. Serves private HTTP/JSON API (`/internal/v1`) behind service-auth tokens (`X-Matjero-Service`, `Authorization: Bearer`).
+* **`matjeroapps/seller`**: Seller actor application (Next.js / React). Communicates with Core solely via internal APIs. No direct database access or Core package imports.
+* **`matjeroapps/supplier`**: Supplier actor application. Communicates with Core solely via internal APIs.
+* **`matjeroapps/platform`**: Public Platform application and native Seller Storefront (Next.js). Resolves stores via trusted host mapping and communicates with Core internal APIs.
+* **`matjeroapps/admin`**: Platform Admin application. Communicates with Core internal APIs.
+* **`matjeroapps/ui-sdk`**: Shared `@matjerhub/ui-sdk` package containing design tokens, shared UI components, and accessibility primitives.
+
+### Status of Merged Marketplace Work
+
+Foundational marketplace capabilities merged through Core PR #70 remain supported in `matjeroapps/core`:
+* Curated discovery collection read models (`GET /internal/v1/markets/{market_code}/marketplace/collections/{collection_type}` in PR #68).
+* Platform service authentication (`X-Matjero-Service: platform` in PR #69).
+* Marketplace listing resolution (`POST /internal/v1/markets/{market_code}/marketplace/listings/{listing_id}/resolve` in PR #70).
+* Single-store checkout attribution stored in `marketplace_order_attributions` and published on `order.created` (PR #70).
+
+All future consumer marketplace discovery, multi-seller catalog aggregation, cross-store search, merchandising, ranking algorithms, and recommendations are deferred until Seller Stores and Supplier Stores achieve complete operational readiness.
+
+---
+
+## 3.2 Measurable Exit Criteria for Immediate Operational Milestones
+
+To verify completion of the immediate operational priorities, the following measurable exit criteria must be met:
+
+### 1. Seller Completeness Exit Criteria
+* [ ] **Store Configuration**: Sellers can complete onboarding, map custom domains/subdomains, set store locale defaults, and select active storefront themes.
+* [ ] **Catalog Management**: Sellers can create, update, archive, and view products, variants, SKUs, barcodes, and media galleries.
+* [ ] **Inventory & Pricing**: Sellers can set retail prices, configure currency defaults, assign stock across fulfillment locations, and track available vs reserved inventory.
+* [ ] **Order Management**: Sellers can view orders, update order status through the state machine (pending -> confirmed -> processing -> shipped -> delivered), process cancellations, and view order financial snapshots.
+* [ ] **Localization & Security**: 100% Arabic/English and RTL/LTR rendering accuracy across Seller Dashboard; tenant isolation verified with zero cross-tenant data leaks.
+* [ ] **Core Integration**: All mutations emit versioned outbox events (`seller.created`, `product.updated`, `order.updated`); unit, vet, lint, and build suites pass cleanly.
+
+### 2. Supplier Completeness Exit Criteria
+* [ ] **Supplier Onboarding & Catalog**: Suppliers can register, create wholesale catalogs, define product variants, SKUs, and wholesale cost pricing.
+* [ ] **Market Offers**: Suppliers can publish market offers with effective dating, minimum order quantities (MOQ), and market currency constraints.
+* [ ] **Fulfillment & Dropship Routing**: Suppliers receive routed dropship orders from linked seller sales, confirm fulfillment, submit tracking information, and emit `supplier_order.fulfilled` events.
+* [ ] **Stock Feeds**: Real-time or batch inventory snapshot updates reflect accurately across all linked seller listings.
+* [ ] **Financial Settlement**: Wholesale order fulfillments generate double-entry financial ledger entries; balance projections and payouts reconcile accurately.
+
+### 3. Product Import Lifecycle Exit Criteria
+* [ ] **Full 10-Stage Pipeline**: CSV, JSON, and API feed imports execute through all 10 stages (`Import -> Validate -> Map -> Review -> Create/Update Product -> Variants/SKUs -> Media -> Pricing -> Inventory -> Publish`).
+* [ ] **Validation & Error Reporting**: Staging tables capture schema errors, missing required fields, and mapping failures with line-by-line diagnostic reports.
+* [ ] **Review Interface**: Sellers/Suppliers can inspect staged import records, review mapping warnings, and approve batch creation.
+* [ ] **Transactional Safety & Idempotency**: Re-running imports with identical feed identifiers updates existing products without creating duplicate SKUs or orphaned database records.
+
+### 4. Storefront & Themes Exit Criteria
+* [ ] **Multiple Configurable Themes**: At least multiple distinct storefront themes rendered by Next.js storefront, supporting customizable logos, color tokens, typography, and section layouts.
+* [ ] **Theme Isolation**: Themes depend strictly on shared components from `@matjerhub/ui-sdk` and token primitives, with 0 dependencies on other themes.
+* [ ] **Separation of Business Logic**: Theme components contain 0 business logic, cart state calculation, or direct API calls; all logic resides in storefront application services.
+* [ ] **Localization & RTL**: 100% Arabic and English rendering with mirror-image RTL/LTR layout transitions, zero horizontal scroll overflow, and WCAG AA contrast compliance.
+* [ ] **Storefront Caching & Performance**: Caching strategy includes store context in cache keys (`store:{store_id}:...`); theme assets load cleanly from CDN.
+
+### 5. Checkout & Order Lifecycle Exit Criteria
+* [ ] **Single-Store Cart & Checkout**: Single-seller checkout session creation validated against tenant and market invariants.
+* [ ] **Atomic Inventory Reservations**: Inventory reservations use atomic database transactions with concurrency control, eliminating over-selling under load.
+* [ ] **Payment & Shipping Execution**: Support COD and electronic payment flows; webhook processing handles idempotency keys (`Idempotency-Key`); shipment state machine handles package creation and tracking.
+* [ ] **Attribution & Outbox Reliability**: Marketplace-attributed checkouts store immutable snapshots in `marketplace_order_attributions`; `order.created` and `order.finalized` events publish reliably through outbox background workers.
+* [ ] **Ledger Integration**: Completed, cancelled, and refunded orders generate immutably balanced double-entry financial ledger postings.
 
 ---
 
@@ -1691,7 +1820,23 @@ Third-party theme development may be introduced only after a safe extension mode
 
 ---
 
+## 36.1 Theme Architecture & UI/UX Workflow Rules
+
+### Theme Dependency & Logic Rules
+1. **Shared Primitives**: Themes may depend on shared components, layouts, and design tokens provided by `@matjerhub/ui-sdk`.
+2. **Zero Inter-Theme Dependencies**: Themes must NEVER depend on or import components from other themes. Each theme must remain strictly independent and self-contained.
+3. **Decoupled Business Logic**: All business logic, cart calculation, inventory checking, checkout state management, and direct API calls must reside outside theme rendering components in storefront application services.
+4. **Token System & Localization**: All themes must consume the `@matjerhub/ui-sdk` design token system and provide 100% Arabic and English localization with native RTL and LTR mirror layout support.
+
+### Mandatory UI/UX Skill Workflow
+* **UI/UX Design Skill**: For all upcoming UI design and frontend development tasks across MatjerHub applications (Seller, Supplier, Admin, Platform), developers must use `https://github.com/nextlevelbuilder/ui-ux-pro-max-skill` and initialize project UI contexts using `uipro init --ai antigravity`.
+* **Stitch Tooling Boundary**: Stitch MCP tools are restricted strictly to the MatjerHub Platform UI components previously designed with Stitch. Stitch must NOT be used for Seller Storefront Themes unless explicitly requested by the user. Storefront themes must be authored using UI/UX Pro Max + `@matjerhub/ui-sdk` primitives.
+
+---
+
 # PHASE 5 — Cart, Checkout, Orders and Inventory Transactions
+
+*Historical Status*: Core domain models, transactional outbox publishing, atomic inventory reservation algorithms, order aggregate state machines, and single-store marketplace checkout attribution (merged in Core PR #70) have completed foundational backend implementation in `matjeroapps/core`. Production end-to-end checkout execution across multiple Seller Storefront themes remains an active operational focus.
 
 ## Implement
 
@@ -2598,6 +2743,8 @@ rather than four redundant API calls when safe.
 
 Implement one Supplier Integration end-to-end.
 
+*Historical Status*: Core supplier connectors, sync jobs DB schemas, and internal capability APIs were merged in PR #62 and PR #63.
+
 For an Egypt-first MVP, WooCommerce may be a reasonable first candidate.
 
 Capabilities:
@@ -2605,7 +2752,7 @@ Capabilities:
 ```text
 Connect
 Authenticate
-Import Product
+Import Product (via 10-Stage Product Import Lifecycle)
 Import Variants
 Import Inventory
 Import Pricing
@@ -2616,7 +2763,8 @@ Pull Fulfillment
 Handle Webhooks
 ```
 
-Use this first implementation to validate Integration architecture.
+All product and catalog imports must execute through the 10-Stage Product Import Lifecycle:
+`Import → Validate → Map → Review → Create/Update Product → Variants/SKUs → Media → Pricing → Inventory → Publish`.
 
 ---
 
@@ -2629,7 +2777,7 @@ Capabilities:
 ```text
 Connect
 Authenticate
-Publish Product
+Publish Product (via 10-Stage Product Import Lifecycle)
 Publish Variants
 Publish Price
 Publish Inventory
@@ -2650,6 +2798,8 @@ After internal integration contracts stabilize, expose a Public API for:
 * Custom seller stores
 * Agencies
 * Enterprise merchants
+
+*Historical Status*: Core Public Integration API foundation, API keys, webhook dispatcher, rate limiting, and operation idempotency were merged in Core PR #64 and PR #65.
 
 Capabilities:
 
@@ -2672,11 +2822,15 @@ Require:
 
 ---
 
-# PHASE 13 — Unified Marketplace
+# PHASE 13 — Unified Marketplace [DEFERRED - LOWEST PRIORITY]
 
-Do not build a broad consumer marketplace before sufficient supply and sellers exist.
+**Strategic Roadmap Status**: DEFERRED TO LOWEST PRIORITY until P0 Seller Stores and P0 Supplier Stores ecosystems are substantially complete and operationally validated in production.
 
-Start with curated discovery:
+*Historical Status*: Foundational marketplace capabilities merged through Core PR #70 (curated discovery collection read models in PR #68, platform service authentication in PR #69, marketplace listing resolution and single-store checkout attribution in PR #70) remain fully supported in `matjeroapps/core`.
+
+However, all NEW consumer marketplace features—including multi-seller catalog discovery UI, cross-store search, merchandising, AI/ML ranking algorithms, seller recommendations, and consumer marketplace storefront extensions—are explicitly deferred to the lowest priority.
+
+When consumer marketplace capabilities are eventually resumed, development will build upon the existing curated collection boundaries:
 
 ```text
 Trending
@@ -2687,7 +2841,7 @@ Offers
 Fast Delivery
 ```
 
-Marketplace-generated orders may carry additional commission.
+Marketplace-generated orders may carry additional commission recorded in the financial ledger.
 
 ---
 
@@ -3292,46 +3446,33 @@ The MVP should remain smaller than the complete roadmap.
 ```text
 P0 Engineering Foundation
 
-P1 Identity
-   Arabic / English
-   RTL / LTR
-   Markets
+P1 Identity, Localization (Arabic/English, RTL/LTR) & Markets
 
 P2 Commerce Core
-   Suppliers
-   Sellers
-   Stores
-   Catalog
-   Supplier Offers
-   Listings
-   Fulfillment Locations
-   Inventory
+   Suppliers, Sellers, Stores, Catalog, Offers, Listings, Inventory
 
-P3 Admin / Seller / Supplier Dashboards
+P3 P0 Seller Stores & P0 Supplier Stores Completeness
+   Operational Storefront & Seller Management
+   Operational Supplier Management & Wholesale Catalog
 
-P4 Native Storefront
-   Basic Theme Engine
-   Free Themes
+P4 Staged Product Import Lifecycle
+   Import -> Validate -> Map -> Review -> Create/Update Product -> Variants/SKUs -> Media -> Pricing -> Inventory -> Publish
 
-P5 Cart / Checkout / Orders
+P5 Storefront Theme Ecosystem
+   Multiple Configurable Storefront Themes
+   UI SDK Integration & Strict RTL/LTR Support
+
+P6 Complete Checkout, Orders & Inventory Lifecycle
    Atomic Inventory Reservations
+   COD & Electronic Payment Processing
+   Shipment State Machine & Fulfillment Workflow
 
-P6 Shipping
-   One provider
+P7 Double-Entry Financial Ledger & Settlements
 
-P7 Payments
-   COD
-   One electronic provider
+P8 External Integration Foundation
+   Supplier & Seller Connectors
 
-P8 Double-Entry Ledger
-   Seller/Supplier financial state
-   Basic settlements
-
-P9 Integration Foundation
-
-P10 First Supplier Integration
-
-P11 First Seller Integration
+P9 Public Integration API
 ```
 
 ---
@@ -3346,7 +3487,7 @@ Premium Theme
 Additional payment provider
 Additional shipping provider
 Second external integration
-Simple marketplace discovery
+Curated marketplace discovery read models (foundational APIs from PR #68-#70 supported; further development deferred)
 ```
 
 ---
@@ -3356,7 +3497,7 @@ Simple marketplace discovery
 Do not block MVP on:
 
 ```text
-Large-scale consumer marketplace
+Unified Marketplace discovery, search, merchandising, ranking algorithms, recommendations, and cross-store aggregation
 AI product recommendations
 ML ranking
 Protected catalog
@@ -3382,8 +3523,6 @@ Additional Supplier Integrations
 
 Additional Seller Integrations
 
-Unified Marketplace
-
 Reviews and Reputation
 
 Product Intelligence
@@ -3403,6 +3542,8 @@ Advanced Analytics
 Search Infrastructure
 
 Large-Scale Optimization
+
+Unified Marketplace (Consumer Discovery, Search, Merchandising, Ranking, Cross-Store) — Deferred to lowest priority until Seller and Supplier ecosystems are substantially complete
 ```
 
 ---
@@ -3569,6 +3710,14 @@ RabbitMQ is the sole asynchronous messaging backbone; synchronous inter-service 
 ## Rule 23
 
 Scaling decisions must be based on measured operational evidence.
+
+## Rule 24
+
+UI design and implementation across MatjerHub applications must use https://github.com/nextlevelbuilder/ui-ux-pro-max-skill and initialize with `uipro init --ai antigravity`. Shared UI primitives must originate from `@matjerhub/ui-sdk`. Stitch is restricted to MatjerHub Platform UI previously designed with Stitch, and must NOT be used for Seller Storefront Themes unless explicitly requested. Storefront themes may depend on `@matjerhub/ui-sdk` shared components and design tokens, but must NEVER depend on other themes. Business logic must reside outside theme rendering components. Full RTL/LTR and multi-language support remain mandatory across all interfaces.
+
+## Rule 25
+
+All changes across MatjerHub repositories must follow the mandatory delivery workflow: (1) Review prior implementation report, PR diff, and architecture decisions. (2) Fetch latest origin/main and branch directly from origin/main (never from orchestrator or stale feature branches). (3) Write an implementation report in `docs/implementation/<feature>-report.md`. (4) Execute full local test, lint, typecheck, and build commands before pushing. (5) Create a GitHub PR against main. (6) Audit the report against the actual PR diff. (7) Keep blockers and deferred work explicit. (8) Never auto-merge PRs.
 
 ---
 
