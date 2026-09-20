@@ -25,18 +25,25 @@ func setupSupplierRetailAPI(t *testing.T) (context.Context, commerce.Repository,
 	}
 	db := testdb.Open(t, dsn)
 
-	applyMigrationFile(t, db, filepath.Join("..", "..", "migrations", "000001_event_delivery_foundation.up.sql"))
-	applyMigrationFile(t, db, filepath.Join("..", "..", "migrations", "000002_market_reference_data.up.sql"))
-	applyMigrationFile(t, db, filepath.Join("..", "..", "migrations", "000003_commerce_domain_schema.up.sql"))
-	applyMigrationFile(t, db, filepath.Join("..", "..", "migrations", "000004_admin_supplier_seller_platforms.up.sql"))
-	applyMigrationFile(t, db, filepath.Join("..", "..", "migrations", "000005_store_domain_lifecycle.up.sql"))
-	applyMigrationFile(t, db, filepath.Join("..", "..", "migrations", "000006_store_domain_integrity.up.sql"))
-	applyMigrationFile(t, db, filepath.Join("..", "..", "migrations", "000007_theme_engine_schema.up.sql"))
-	applyMigrationFile(t, db, filepath.Join("..", "..", "migrations", "000008_storefront_revisions.up.sql"))
-	applyMigrationFile(t, db, filepath.Join("..", "..", "migrations", "000009_supplier_retail_capability.up.sql"))
-	applyMigrationFile(t, db, filepath.Join("..", "..", "migrations", "000010_customer_cart_domain.up.sql"))
-	applyMigrationFile(t, db, filepath.Join("..", "..", "migrations", "000011_checkout_sessions.up.sql"))
-	applyMigrationFile(t, db, filepath.Join("..", "..", "migrations", "000018_supplier_retail_affiliation.up.sql"))
+	migrationNames := []string{
+		"000001_event_delivery_foundation",
+		"000002_market_reference_data",
+		"000003_commerce_domain_schema",
+		"000004_admin_supplier_seller_platforms",
+		"000005_store_domain_lifecycle",
+		"000006_store_domain_integrity",
+		"000007_theme_engine_schema",
+		"000008_storefront_revisions",
+		"000009_supplier_retail_capability",
+		"000010_customer_cart_domain",
+		"000011_checkout_sessions",
+		"000018_supplier_retail_affiliation",
+	}
+	migrationPaths := make([]string, 0, len(migrationNames))
+	for _, name := range migrationNames {
+		migrationPaths = append(migrationPaths, filepath.Join("..", "..", "migrations", name+".up.sql"))
+	}
+	testdb.ApplyMigrations(t, db, migrationPaths...)
 
 	repo := commerce.NewRepository(db.Pool)
 	svc := commerce.NewService(repo)

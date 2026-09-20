@@ -6,6 +6,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 
 	"core/internal/integration"
+	"core/internal/marketplace"
 	"core/modules/commerce"
 	"core/modules/contracts"
 	"core/modules/markets"
@@ -112,6 +113,7 @@ func internalTags() []openapi3.Tag {
 		{Name: "Balance Projection", Description: "Financial account balance projections"},
 		{Name: "Settlement Calculation", Description: "Settlement calculation foundation and snapshots"},
 		{Name: "Marketplace Financial Rules", Description: "Configurable revenue distribution rules and settlement allocations"},
+		{Name: "Marketplace Discovery", Description: "Deterministic curated marketplace collections"},
 		{Name: "Platform Administration", Description: "Platform moderation and operational overview"},
 		{Name: "Integration Foundation", Description: "External entity mappings, API keys, sync cursors, and webhook subscriptions"},
 	}
@@ -179,6 +181,22 @@ func internalRoutes() []openapi.RouteSpec {
 			Summary: "Get a market", Tags: []string{"Markets"},
 			Parameters: []openapi.ParameterSpec{pathParam("code", "Market code")},
 			Responses:  readResponses("Market", markets.Market{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/markets/{market_code}/marketplace/collections/{collection_type}", OperationID: "internalGetMarketplaceCollection",
+			Summary: "Get a curated marketplace collection", Tags: []string{"Marketplace Discovery"},
+			Description: "Returns a market-isolated, deterministically ordered curated collection. " +
+				"Offers and trending are currently unavailable because Core has no authoritative discount or engagement metric source.",
+			Parameters: []openapi.ParameterSpec{
+				pathParam("market_code", "Market code"),
+				pathParam("collection_type", "Collection type"),
+				openapi.StringParam("cursor", "Opaque seek cursor", false),
+				openapi.LimitParam(),
+			},
+			Responses: []openapi.ResponseSpec{
+				openapi.OKResponse("Marketplace collection", marketplace.Collection{}),
+				badRequest, unauthorized, forbidden, unavailable, serverError,
+			},
 		},
 
 		// --- Storefront ---

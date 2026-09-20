@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sync"
 	"testing"
 
@@ -25,7 +23,7 @@ type testEnv struct {
 func setupTestEnv(t *testing.T, dsn string) *testEnv {
 	t.Helper()
 	db := testdb.Open(t, dsn)
-	for _, m := range []string{
+	migrationNames := []string{
 		"000001_event_delivery_foundation",
 		"000002_market_reference_data",
 		"000003_commerce_domain_schema",
@@ -38,9 +36,8 @@ func setupTestEnv(t *testing.T, dsn string) *testEnv {
 		"000010_customer_cart_domain",
 		"000011_checkout_sessions",
 		"000024_store_lifecycle_and_entitlements",
-	} {
-		applySQLFile(t, db, filepath.Join("..", "..", "migrations", m+".up.sql"))
 	}
+	applyExternalMigrationBatch(t, db, migrationNames...)
 	ctx := context.Background()
 
 	repo := commerce.NewRepository(db.Pool)
@@ -52,19 +49,6 @@ func setupTestEnv(t *testing.T, dsn string) *testEnv {
 		repo:    repo,
 		service: svc,
 		ctx:     ctx,
-	}
-}
-
-func applySQLFile(t *testing.T, db *database.Pool, path string) {
-	t.Helper()
-
-	sqlBytes, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read migration: %v", err)
-	}
-
-	if _, err := db.Exec(context.Background(), string(sqlBytes)); err != nil {
-		t.Fatalf("apply migration: %v", err)
 	}
 }
 

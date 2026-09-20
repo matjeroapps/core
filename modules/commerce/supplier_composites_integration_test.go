@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"core/internal/testdb"
@@ -26,7 +25,7 @@ func setupCompositeTest(t *testing.T) (context.Context, Repository, *database.Po
 		dsn = "postgres://commerce:commerce@localhost:5432/commerce?sslmode=disable"
 	}
 	db := testdb.Open(t, dsn)
-	for _, name := range []string{
+	migrationNames := []string{
 		"000002_market_reference_data",
 		"000003_commerce_domain_schema",
 		"000004_admin_supplier_seller_platforms",
@@ -34,9 +33,8 @@ func setupCompositeTest(t *testing.T) (context.Context, Repository, *database.Po
 		"000009_supplier_retail_capability",
 		"000010_customer_cart_domain",
 		"000011_checkout_sessions",
-	} {
-		applyCompositeMigration(t, db, filepath.Join("..", "..", "migrations", name+".up.sql"))
 	}
+	applyMigrationBatch(t, db, migrationNames...)
 	return context.Background(), NewRepository(db.Pool), db
 }
 

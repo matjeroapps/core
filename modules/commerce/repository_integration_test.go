@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -23,19 +22,21 @@ func TestRepositoryCommerceFoundations(t *testing.T) {
 	ctx := context.Background()
 	db := testdb.Open(t, dsn)
 
-	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000002_market_reference_data.up.sql"))
-	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000003_commerce_domain_schema.up.sql"))
-	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000004_admin_supplier_seller_platforms.up.sql"))
-	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000005_store_domain_lifecycle.up.sql"))
-	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000006_store_domain_integrity.up.sql"))
-	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000008_storefront_revisions.up.sql"))
-	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000009_supplier_retail_capability.up.sql"))
-	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000010_customer_cart_domain.up.sql"))
-	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000011_checkout_sessions.up.sql"))
-	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000014_seller_catalog_authoring.up.sql"))
-	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000015_media_upload_intent.up.sql"))
-	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000025_seller_catalog_phase_b.up.sql"))
-	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000026_seller_catalog_phase_c.up.sql"))
+	applyMigrationBatch(t, db,
+		"000002_market_reference_data",
+		"000003_commerce_domain_schema",
+		"000004_admin_supplier_seller_platforms",
+		"000005_store_domain_lifecycle",
+		"000006_store_domain_integrity",
+		"000008_storefront_revisions",
+		"000009_supplier_retail_capability",
+		"000010_customer_cart_domain",
+		"000011_checkout_sessions",
+		"000014_seller_catalog_authoring",
+		"000015_media_upload_intent",
+		"000025_seller_catalog_phase_b",
+		"000026_seller_catalog_phase_c",
+	)
 
 	repo := NewRepository(db.Pool)
 	service := NewService(repo)

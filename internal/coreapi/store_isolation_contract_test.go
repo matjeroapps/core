@@ -75,7 +75,7 @@ func setupIsolationContractEnv(t *testing.T) isolationTestEnv {
 	ctx := context.Background()
 	db := testdb.Open(t, dsn)
 
-	for _, name := range []string{
+	migrationNames := []string{
 		"000001_event_delivery_foundation",
 		"000002_market_reference_data",
 		"000003_commerce_domain_schema",
@@ -94,15 +94,12 @@ func setupIsolationContractEnv(t *testing.T) isolationTestEnv {
 		"000016_catalog_invariants",
 		"000025_seller_catalog_phase_b",
 		"000026_seller_catalog_phase_c",
-	} {
-		content, err := os.ReadFile(filepath.Join("..", "..", "migrations", name+".up.sql"))
-		if err != nil {
-			t.Fatalf("read migration %s: %v", name, err)
-		}
-		if _, err := db.Pool.Exec(ctx, string(content)); err != nil {
-			t.Fatalf("apply migration %s: %v", name, err)
-		}
 	}
+	migrationPaths := make([]string, 0, len(migrationNames))
+	for _, name := range migrationNames {
+		migrationPaths = append(migrationPaths, filepath.Join("..", "..", "migrations", name+".up.sql"))
+	}
+	testdb.ApplyMigrations(t, db, migrationPaths...)
 
 	repo := commerce.NewRepository(db.Pool)
 	service := commerce.NewService(repo)

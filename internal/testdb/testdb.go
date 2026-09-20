@@ -3,6 +3,7 @@ package testdb
 import (
 	"context"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -118,6 +119,23 @@ func Open(t testing.TB, dsn string) *database.Pool {
 	}
 
 	return &database.Pool{Pool: pool}
+}
+
+func ApplyMigrations(t testing.TB, db *database.Pool, paths ...string) {
+	t.Helper()
+
+	var batch strings.Builder
+	for _, path := range paths {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read migration %s: %v", path, err)
+		}
+		batch.Write(body)
+		batch.WriteString("\n")
+	}
+	if _, err := db.Exec(context.Background(), batch.String()); err != nil {
+		t.Fatalf("apply migrations: %v", err)
+	}
 }
 
 func schemaName(name string) string {

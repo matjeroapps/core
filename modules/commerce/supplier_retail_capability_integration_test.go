@@ -15,15 +15,17 @@ import (
 
 func applyAllMigrations(t *testing.T, db *database.Pool) {
 	t.Helper()
-	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000001_event_delivery_foundation.up.sql"))
-	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000002_market_reference_data.up.sql"))
-	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000003_commerce_domain_schema.up.sql"))
-	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000004_admin_supplier_seller_platforms.up.sql"))
-	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000005_store_domain_lifecycle.up.sql"))
-	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000006_store_domain_integrity.up.sql"))
-	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000007_theme_engine_schema.up.sql"))
-	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000008_storefront_revisions.up.sql"))
-	applySQLFile(t, db, filepath.Join("..", "..", "migrations", "000009_supplier_retail_capability.up.sql"))
+	applyMigrationBatch(t, db,
+		"000001_event_delivery_foundation",
+		"000002_market_reference_data",
+		"000003_commerce_domain_schema",
+		"000004_admin_supplier_seller_platforms",
+		"000005_store_domain_lifecycle",
+		"000006_store_domain_integrity",
+		"000007_theme_engine_schema",
+		"000008_storefront_revisions",
+		"000009_supplier_retail_capability",
+	)
 }
 
 func openSupplierRetailTestDB(t *testing.T) (*database.Pool, Repository, Service) {
