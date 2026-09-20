@@ -173,6 +173,25 @@ func (r Repository) GetCartByToken(ctx context.Context, storeID, token string) (
 	return cart, nil
 }
 
+func (r Repository) GetCartByTokenAnyStore(ctx context.Context, token string) (Cart, error) {
+	if strings.TrimSpace(token) == "" {
+		return Cart{}, ErrInvalidInput
+	}
+	var cart Cart
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, store_id, market_code, customer_id, status, expires_at, created_at, updated_at
+		FROM carts
+		WHERE cart_token_digest = $1
+	`, bearerDigest(token)).Scan(&cart.ID, &cart.StoreID, &cart.MarketCode, &cart.CustomerID, &cart.Status, &cart.ExpiresAt, &cart.CreatedAt, &cart.UpdatedAt)
+	if err != nil {
+		return Cart{}, translatePGError(err, "get cart by token any store")
+	}
+	if err := loadCartItems(ctx, r.pool, &cart); err != nil {
+		return Cart{}, err
+	}
+	return cart, nil
+}
+
 func (r Repository) getCart(ctx context.Context, tx pgx.Tx, storeID, digest string) (Cart, error) {
 	query := `SELECT id, store_id, market_code, customer_id, status, expires_at, created_at, updated_at FROM carts WHERE store_id = $1 AND cart_token_digest = $2`
 	var cart Cart

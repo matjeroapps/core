@@ -184,6 +184,12 @@ func NewRouter(deps Dependencies) chi.Router {
 			r.Post("/markets/{market_code}/marketplace/listings/{listing_id}/resolve", server.handleResolveMarketplaceListing)
 		})
 
+		// Marketplace Cart handoff (Platform-service only).
+		r.Group(func(r chi.Router) {
+			r.Use(requireCallers(serviceauth.CallerPlatform))
+			r.Post("/markets/{market_code}/marketplace/carts/items", server.handleAddMarketplaceCartItem)
+		})
+
 		// Store-owned fulfillment locations. Seller identity is resolved from the
 		// forwarded subject and the Store path; no body field can choose ownership.
 		r.Group(func(r chi.Router) {

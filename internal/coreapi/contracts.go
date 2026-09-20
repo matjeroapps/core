@@ -809,3 +809,32 @@ type ResolveMarketplaceListingResponse struct {
 	SKUCode               string                         `json:"sku_code,omitempty"`
 	Attribution           MarketplaceAttributionResponse `json:"attribution"`
 }
+
+type MarketplaceCartAddItemRequest struct {
+	SellerListingID  string  `json:"seller_listing_id,omitempty"`
+	ListingID        string  `json:"listing_id,omitempty"`
+	SKUID            string  `json:"sku_id,omitempty"`
+	Quantity         int64   `json:"quantity"`
+	SourceCollection *string `json:"source_collection,omitempty"`
+	CartToken        string  `json:"cart_token,omitempty"`
+	Locale           string  `json:"locale,omitempty"`
+}
+
+type MarketplaceCartLineResponse struct {
+	ID              string `json:"id"`
+	SellerListingID string `json:"seller_listing_id"`
+	SKUID           string `json:"sku_id"`
+	Quantity        int64  `json:"quantity"`
+	UnitPriceMinor  int64  `json:"unit_price_minor"`
+	CurrencyCode    string `json:"currency_code"`
+}
+
+type MarketplaceCartHandoffResponse struct {
+	CartID      string                          `json:"cart_id"`
+	CartToken   string                          `json:"cart_token,omitempty"`
+	StoreID     string                          `json:"store_id"`
+	MarketCode  string                          `json:"market_code"`
+	Status      string                          `json:"status"`
+	Items       []MarketplaceCartLineResponse   `json:"items"`
+	Attribution *MarketplaceAttributionResponse `json:"attribution,omitempty"`
+}
