@@ -11,7 +11,7 @@
 
 Following the completion of the integration foundation, supplier/seller integrations, and Public Integration API hardening (Phases 9–12), this plan establishes the architecture and implementation roadmap for the **Unified Marketplace** (Phase 13).
 
-Per Section 66 of [`master-plan.md`](file:///Users/zidan/.ao/data/worktrees/matjerhub/matjerhub-41/core/docs/plans/master-plan.md#L2675-L2692), the platform must **not** build a broad consumer marketplace or multi-seller order routing system before sufficient curated supply and seller activity exist.
+Per Section 66 of [`master-plan.md`](/core/docs/plans/master-plan.md), the platform must **not** build a broad consumer marketplace or multi-seller order routing system before sufficient curated supply and seller activity exist.
 
 This phase focuses exclusively on **Curated Discovery** across six core product discovery buckets:
 1. **Trending**: Listings with high recent customer engagement and sales velocity.
@@ -191,7 +191,7 @@ X-Caller-ID: platform-service
 
 ## 6. Local Validation Commands
 
-Validation must follow mandatory guidelines in [`matjerhub-engineering-workflow`](file:///Users/zidan/.ao/data/worktrees/matjerhub/matjerhub-41/.agents/skill/matjerhub-engineering-workflow/SKILL.md):
+Validation must follow mandatory guidelines in [`matjerhub-engineering-workflow`](/.agents/skill/matjerhub-engineering-workflow/SKILL.md):
 
 ### 1. Shared Infrastructure
 ```bash

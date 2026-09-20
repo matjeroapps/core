@@ -2,7 +2,7 @@
 
 ## Summary
 
-This report documents the strategic roadmap alignment and scope clarification updates made to [`docs/plans/master-plan.md`](file:///Users/zidan/www/personal/Matjerhub/core/docs/plans/master-plan.md) and [`docs/plans/2026-09-16-seller-catalog-operations-integration.md`](file:///Users/zidan/www/personal/Matjerhub/core/docs/plans/2026-09-16-seller-catalog-operations-integration.md) in `matjeroapps/core`.
+This report documents the strategic roadmap alignment and scope clarification updates made to [`docs/plans/master-plan.md`](/core/docs/plans/master-plan.md) and [`docs/plans/2026-09-16-seller-catalog-operations-integration.md`](/core/docs/plans/2026-09-16-seller-catalog-operations-integration.md) in `matjeroapps/core`.
 
 The update records and clarifies the approved MatjerHub execution priority:
 `P0 Seller Stores + P0 Supplier Portal / Wholesale Commerce Operations → Product Import Lifecycle → Multiple Themes → Complete Checkout/Order Lifecycle → Operational Store Experience`.
@@ -18,11 +18,11 @@ Under this priority decision:
 The update was performed after reviewing authoritative codebase state, recent commit history, merged Core PRs through #70, and relevant implementation reports:
 
 1. **Merged Core PRs & Implementation Reports**:
-   - **PRs #66-#67**: Unified Marketplace Curated Discovery Plan ([`docs/plans/2026-09-19-unified-marketplace-curated-discovery.md`](file:///Users/zidan/www/personal/Matjerhub/core/docs/plans/2026-09-19-unified-marketplace-curated-discovery.md)).
-   - **PR #68**: Curated Marketplace Discovery API ([`docs/implementation/curated-marketplace-discovery-report.md`](file:///Users/zidan/www/personal/Matjerhub/core/docs/implementation/curated-marketplace-discovery-report.md)).
-   - **PR #69**: Platform Marketplace Service Auth ([`docs/implementation/marketplace-platform-service-auth-report.md`](file:///Users/zidan/www/personal/Matjerhub/core/docs/implementation/marketplace-platform-service-auth-report.md)).
-   - **PR #70**: Marketplace Listing Resolution and Single-Store Checkout Attribution ([`docs/implementation/marketplace-listing-resolution-attribution-report.md`](file:///Users/zidan/www/personal/Matjerhub/core/docs/implementation/marketplace-listing-resolution-attribution-report.md)).
-   - **PRs #62-#65**: Supplier Integration Connectors, Sync Jobs, Public Integration API, and Hardening ([`docs/implementation/supplier-retail-capability-report.md`](file:///Users/zidan/www/personal/Matjerhub/core/docs/implementation/supplier-retail-capability-report.md), [`docs/implementation/integration-api-hardening-report.md`](file:///Users/zidan/www/personal/Matjerhub/core/docs/implementation/integration-api-hardening-report.md)).
+   - **PRs #66-#67**: Unified Marketplace Curated Discovery Plan ([`docs/plans/2026-09-19-unified-marketplace-curated-discovery.md`](/core/docs/plans/2026-09-19-unified-marketplace-curated-discovery.md)).
+   - **PR #68**: Curated Marketplace Discovery API ([`docs/implementation/curated-marketplace-discovery-report.md`](/core/docs/implementation/curated-marketplace-discovery-report.md)).
+   - **PR #69**: Platform Marketplace Service Auth ([`docs/implementation/marketplace-platform-service-auth-report.md`](/core/docs/implementation/marketplace-platform-service-auth-report.md)).
+   - **PR #70**: Marketplace Listing Resolution and Single-Store Checkout Attribution ([`docs/implementation/marketplace-listing-resolution-attribution-report.md`](/core/docs/implementation/marketplace-listing-resolution-attribution-report.md)).
+   - **PRs #62-#65**: Supplier Integration Connectors, Sync Jobs, Public Integration API, and Hardening ([`docs/implementation/supplier-retail-capability-report.md`](/core/docs/implementation/supplier-retail-capability-report.md), [`docs/implementation/integration-api-hardening-report.md`](/core/docs/implementation/integration-api-hardening-report.md)).
    - **PRs #40-#58**: Native Storefront Theme Engine, Cart/Checkout/Orders/Outbox, Financial Ledger, and Seller Catalog Operations.
 
 2. **Core Architectural Boundaries & Rules**:
@@ -33,7 +33,7 @@ The update was performed after reviewing authoritative codebase state, recent co
 
 The following planning documents in `matjeroapps/core` were updated:
 
-1. **[`docs/plans/master-plan.md`](file:///Users/zidan/www/personal/Matjerhub/core/docs/plans/master-plan.md)**:
+1. **[`docs/plans/master-plan.md`](/core/docs/plans/master-plan.md)**:
    - **Section 3 (Implementation Strategy)**:
      - Revised the Primary Dependency Chain diagram to `P0 Seller Stores + P0 Supplier Portal / Wholesale Commerce Operations`.
    - **Section 3.1 (Approved Execution Priority & Strategic Roadmap Alignment)**:
@@ -64,7 +64,7 @@ The following planning documents in `matjeroapps/core` were updated:
      - Added **Rule 24 (UI/UX Workflow & Design System Rules)**.
      - Added **Rule 25 (Mandatory Delivery Workflow Rules)**.
 
-2. **[`docs/plans/2026-09-16-seller-catalog-operations-integration.md`](file:///Users/zidan/www/personal/Matjerhub/core/docs/plans/2026-09-16-seller-catalog-operations-integration.md)**:
+2. **[`docs/plans/2026-09-16-seller-catalog-operations-integration.md`](/core/docs/plans/2026-09-16-seller-catalog-operations-integration.md)**:
    - **Section 1 (Outcome)**: Added explicit statement defining Supplier Portal wholesale catalog/market-offer scope versus Seller Store retail environment, confirming supplier direct-retail capability is secondary and avoids duplicating retail architecture.
    - **Section 3 (Scope - Excluded)**: Clarified that supplier authoring changes are excluded and only existing eligible offers from wholesale catalog operations are consumed.
    - **Section 5.1 (Core Policy)**: Clarified that supplier direct/affiliated retail stores reuse standard seller-backed store policies without duplicating retail backend architecture.
@@ -97,4 +97,4 @@ The following items are explicitly deferred to lowest priority per strategic roa
 
 ## Unresolved Assumptions & Open Items
 
-- None. The roadmap prioritization decision is clear, fully reconciled, and documented across all relevant sections of [`docs/plans/master-plan.md`](file:///Users/zidan/.ao/data/worktrees/matjerhub/matjerhub-42/docs/plans/master-plan.md).
+- None. The roadmap prioritization decision is clear, fully reconciled, and documented across all relevant sections of [`docs/plans/master-plan.md`](/core/docs/plans/master-plan.md).
