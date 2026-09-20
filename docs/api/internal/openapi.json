@@ -12078,6 +12078,371 @@
         ]
       }
     },
+    "/internal/v1/markets/{market_code}/marketplace/listings/{listing_id}/resolve": {
+      "post": {
+        "description": "Validates a published marketplace listing, active product, current price, active variant/SKU, and inventory availability, returning authoritative checkout handoff values and marketplace attribution. Does not accept client authority for store or price.",
+        "operationId": "internalResolveMarketplaceListing",
+        "parameters": [
+          {
+            "description": "Override locale resolution",
+            "in": "query",
+            "name": "locale",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Market code",
+            "in": "path",
+            "name": "market_code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Seller listing ID",
+            "in": "path",
+            "name": "listing_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "locale": {
+                    "type": "string"
+                  },
+                  "quantity": {
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "sku_id": {
+                    "type": "string"
+                  },
+                  "source_collection": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "quantity"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "attribution": {
+                      "properties": {
+                        "market_code": {
+                          "type": "string"
+                        },
+                        "seller_listing_id": {
+                          "type": "string"
+                        },
+                        "source_collection": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "store_id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "market_code",
+                        "seller_listing_id",
+                        "store_id"
+                      ],
+                      "type": "object"
+                    },
+                    "currency_code": {
+                      "type": "string"
+                    },
+                    "fulfillment_location_id": {
+                      "type": "string"
+                    },
+                    "market_code": {
+                      "type": "string"
+                    },
+                    "product_id": {
+                      "type": "string"
+                    },
+                    "product_title": {
+                      "type": "string"
+                    },
+                    "quantity": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "seller_listing_id": {
+                      "type": "string"
+                    },
+                    "sku_code": {
+                      "type": "string"
+                    },
+                    "sku_id": {
+                      "type": "string"
+                    },
+                    "store_id": {
+                      "type": "string"
+                    },
+                    "unit_price_minor": {
+                      "format": "int64",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "attribution",
+                    "currency_code",
+                    "fulfillment_location_id",
+                    "market_code",
+                    "product_id",
+                    "quantity",
+                    "seller_listing_id",
+                    "sku_id",
+                    "store_id",
+                    "unit_price_minor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Resolved marketplace listing"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Resolve a marketplace listing for checkout handoff",
+        "tags": [
+          "Marketplace Discovery"
+        ]
+      }
+    },
     "/internal/v1/offers": {
       "get": {
         "operationId": "internalListOffers",
@@ -21025,6 +21390,28 @@
             "application/json": {
               "schema": {
                 "properties": {
+                  "attribution": {
+                    "nullable": true,
+                    "properties": {
+                      "market_code": {
+                        "type": "string"
+                      },
+                      "seller_listing_id": {
+                        "type": "string"
+                      },
+                      "source_collection": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "store_id": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "seller_listing_id"
+                    ],
+                    "type": "object"
+                  },
                   "contact_email": {
                     "type": "string"
                   },
@@ -21140,6 +21527,43 @@
                     "aggregate_version": {
                       "format": "int64",
                       "type": "integer"
+                    },
+                    "attribution": {
+                      "nullable": true,
+                      "properties": {
+                        "checkout_session_id": {
+                          "type": "string"
+                        },
+                        "created_at": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "market_code": {
+                          "type": "string"
+                        },
+                        "order_id": {
+                          "type": "string"
+                        },
+                        "seller_listing_id": {
+                          "type": "string"
+                        },
+                        "source_collection": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "store_id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "market_code",
+                        "seller_listing_id",
+                        "store_id"
+                      ],
+                      "type": "object"
                     },
                     "cancellation_reason": {
                       "nullable": true,
@@ -21569,6 +21993,43 @@
                       "format": "int64",
                       "type": "integer"
                     },
+                    "attribution": {
+                      "nullable": true,
+                      "properties": {
+                        "checkout_session_id": {
+                          "type": "string"
+                        },
+                        "created_at": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "market_code": {
+                          "type": "string"
+                        },
+                        "order_id": {
+                          "type": "string"
+                        },
+                        "seller_listing_id": {
+                          "type": "string"
+                        },
+                        "source_collection": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "store_id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "market_code",
+                        "seller_listing_id",
+                        "store_id"
+                      ],
+                      "type": "object"
+                    },
                     "cancellation_reason": {
                       "nullable": true,
                       "type": "string"
@@ -21936,6 +22397,43 @@
                     "aggregate_version": {
                       "format": "int64",
                       "type": "integer"
+                    },
+                    "attribution": {
+                      "nullable": true,
+                      "properties": {
+                        "checkout_session_id": {
+                          "type": "string"
+                        },
+                        "created_at": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "market_code": {
+                          "type": "string"
+                        },
+                        "order_id": {
+                          "type": "string"
+                        },
+                        "seller_listing_id": {
+                          "type": "string"
+                        },
+                        "source_collection": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "store_id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "market_code",
+                        "seller_listing_id",
+                        "store_id"
+                      ],
+                      "type": "object"
                     },
                     "cancellation_reason": {
                       "nullable": true,

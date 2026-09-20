@@ -24,5 +24,6 @@ var (
 	ErrUploadInProgress         = errors.New("upload in progress")
 	ErrChecksumMismatch         = errors.New("checksum mismatch")
 	ErrMediaInUse               = errors.New("media in use")
+	ErrStoreMismatch            = errors.New("store mismatch")
 	ErrInternalError            = errors.New("internal error")
 )

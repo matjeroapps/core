@@ -198,6 +198,21 @@ func internalRoutes() []openapi.RouteSpec {
 				badRequest, unauthorized, forbidden, unavailable, serverError,
 			},
 		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/markets/{market_code}/marketplace/listings/{listing_id}/resolve", OperationID: "internalResolveMarketplaceListing",
+			Summary: "Resolve a marketplace listing for checkout handoff", Tags: []string{"Marketplace Discovery"},
+			Description: "Validates a published marketplace listing, active product, current price, active variant/SKU, and inventory availability, " +
+				"returning authoritative checkout handoff values and marketplace attribution. Does not accept client authority for store or price.",
+			Parameters: []openapi.ParameterSpec{
+				pathParam("market_code", "Market code"),
+				pathParam("listing_id", "Seller listing ID"),
+			},
+			RequestBody: ResolveMarketplaceListingRequest{},
+			Responses: []openapi.ResponseSpec{
+				openapi.OKResponse("Resolved marketplace listing", ResolveMarketplaceListingResponse{}),
+				badRequest, unauthorized, forbidden, notFound, conflict, unavailable, serverError,
+			},
+		},
 
 		// --- Storefront ---
 		{

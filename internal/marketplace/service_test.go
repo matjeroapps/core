@@ -8,16 +8,23 @@ import (
 )
 
 type fakeRepository struct {
-	gotRequest PageRequest
-	gotCursor  *Cursor
-	result     Collection
-	err        error
+	gotRequest       PageRequest
+	gotCursor        *Cursor
+	result           Collection
+	gotResolveParams ResolveListingParams
+	resolveResult    ResolvedListing
+	err              error
 }
 
 func (f *fakeRepository) ListCollection(_ context.Context, _ CollectionType, request PageRequest, cursor *Cursor) (Collection, error) {
 	f.gotRequest = request
 	f.gotCursor = cursor
 	return f.result, f.err
+}
+
+func (f *fakeRepository) ResolveListing(_ context.Context, params ResolveListingParams) (ResolvedListing, error) {
+	f.gotResolveParams = params
+	return f.resolveResult, f.err
 }
 
 func TestServiceReturnsEmptyCollection(t *testing.T) {
@@ -98,6 +105,116 @@ func TestServiceRejectsMalformedCursor(t *testing.T) {
 	)
 	if err == nil || !containsError(err, ErrInvalidInput) {
 		t.Fatalf("error = %v, want ErrInvalidInput", err)
+	}
+}
+
+func TestServiceResolveListingValidParams(t *testing.T) {
+	repo := &fakeRepository{
+		resolveResult: ResolvedListing{
+			SellerListingID: "listing-1",
+			StoreID:         "store-1",
+			MarketCode:      "EG",
+			SKUID:           "sku-1",
+			Quantity:        2,
+		},
+	}
+	svc := NewService(repo)
+
+	got, err := svc.ResolveListing(context.Background(), ResolveListingParams{
+		MarketCode:       "eg",
+		SellerListingID:  "listing-1",
+		Quantity:         2,
+		SourceCollection: CollectionFastDelivery,
+	})
+	if err != nil {
+		t.Fatalf("ResolveListing failed: %v", err)
+	}
+	if got.SellerListingID != "listing-1" {
+		t.Fatalf("got listing id = %q, want listing-1", got.SellerListingID)
+	}
+	if repo.gotResolveParams.MarketCode != "EG" {
+		t.Fatalf("normalized market = %q, want EG", repo.gotResolveParams.MarketCode)
+	}
+	if repo.gotResolveParams.Quantity != 2 {
+		t.Fatalf("quantity = %d, want 2", repo.gotResolveParams.Quantity)
+	}
+	if repo.gotResolveParams.Locale != i18n.Default() {
+		t.Fatalf("default locale = %q, want %q", repo.gotResolveParams.Locale, i18n.Default())
+	}
+}
+
+func TestServiceResolveListingDefaultQuantity(t *testing.T) {
+	repo := &fakeRepository{
+		resolveResult: ResolvedListing{
+			SellerListingID: "listing-1",
+			Quantity:        1,
+		},
+	}
+	svc := NewService(repo)
+
+	_, err := svc.ResolveListing(context.Background(), ResolveListingParams{
+		MarketCode:      "EG",
+		SellerListingID: "listing-1",
+	})
+	if err != nil {
+		t.Fatalf("ResolveListing failed: %v", err)
+	}
+	if repo.gotResolveParams.Quantity != 1 {
+		t.Fatalf("default quantity = %d, want 1", repo.gotResolveParams.Quantity)
+	}
+}
+
+func TestServiceResolveListingRejectsInvalidQuantity(t *testing.T) {
+	svc := NewService(&fakeRepository{})
+
+	for _, qty := range []int64{-1, -100, 10001, 50000} {
+		_, err := svc.ResolveListing(context.Background(), ResolveListingParams{
+			MarketCode:      "EG",
+			SellerListingID: "listing-1",
+			Quantity:        qty,
+		})
+		if err == nil || !containsError(err, ErrQuantityInvalid) {
+			t.Fatalf("qty %d: error = %v, want ErrQuantityInvalid", qty, err)
+		}
+	}
+}
+
+func TestServiceResolveListingRejectsInvalidMarketCode(t *testing.T) {
+	svc := NewService(&fakeRepository{})
+
+	for _, market := range []string{"", "E", "EGP", "123"} {
+		_, err := svc.ResolveListing(context.Background(), ResolveListingParams{
+			MarketCode:      market,
+			SellerListingID: "listing-1",
+		})
+		if err == nil || !containsError(err, ErrInvalidInput) {
+			t.Fatalf("market %q: error = %v, want ErrInvalidInput", market, err)
+		}
+	}
+}
+
+func TestServiceResolveListingRejectsEmptyListingID(t *testing.T) {
+	svc := NewService(&fakeRepository{})
+
+	_, err := svc.ResolveListing(context.Background(), ResolveListingParams{
+		MarketCode:      "EG",
+		SellerListingID: "   ",
+	})
+	if err == nil || !containsError(err, ErrInvalidInput) {
+		t.Fatalf("error = %v, want ErrInvalidInput", err)
+	}
+}
+
+func TestServiceResolveListingRejectsInvalidSourceCollection(t *testing.T) {
+	svc := NewService(&fakeRepository{})
+
+	_, err := svc.ResolveListing(context.Background(), ResolveListingParams{
+		MarketCode:       "EG",
+		SellerListingID:  "listing-1",
+		SourceCollection: CollectionType("invalid-collection"),
+	})
+	if err == nil || !containsError(err, ErrInvalidCollectionType) {
+		t.Fatalf("error = %v, want ErrInvalidCollectionType", err)
 	}
 }
 

@@ -50,10 +50,18 @@ type CheckoutSession struct {
 	UpdatedAt                   time.Time       `json:"updated_at"`
 }
 
+type MarketplaceAttributionInput struct {
+	SellerListingID  string  `json:"seller_listing_id"`
+	StoreID          string  `json:"store_id,omitempty"`
+	MarketCode       string  `json:"market_code,omitempty"`
+	SourceCollection *string `json:"source_collection,omitempty"`
+}
+
 type FinalizeRequest struct {
 	SessionID       string
 	ShippingAddress ShippingAddress
 	ContactEmail    string
+	Attribution     *MarketplaceAttributionInput
 }
 
 type CheckoutDecision struct {
@@ -72,12 +80,13 @@ type fingerprintLine struct {
 }
 
 type canonicalFinalizeInput struct {
-	CheckoutSessionID string            `json:"checkout_session_id"`
-	CartID            string            `json:"cart_id"`
-	CustomerID        *string           `json:"customer_id"`
-	ShippingAddress   ShippingAddress   `json:"shipping_address"`
-	ContactEmail      string            `json:"contact_email"`
-	CartLines         []fingerprintLine `json:"cart_lines"`
+	CheckoutSessionID string                       `json:"checkout_session_id"`
+	CartID            string                       `json:"cart_id"`
+	CustomerID        *string                      `json:"customer_id"`
+	ShippingAddress   ShippingAddress              `json:"shipping_address"`
+	ContactEmail      string                       `json:"contact_email"`
+	Attribution       *MarketplaceAttributionInput `json:"attribution,omitempty"`
+	CartLines         []fingerprintLine            `json:"cart_lines"`
 }
 
 // ComputeFinalizeFingerprint serializes a typed, field-ordered semantic
@@ -106,6 +115,7 @@ func ComputeFinalizeFingerprint(session CheckoutSession, cart Cart, request Fina
 		CustomerID:        session.CustomerID,
 		ShippingAddress:   request.ShippingAddress,
 		ContactEmail:      request.ContactEmail,
+		Attribution:       request.Attribution,
 		CartLines:         lines,
 	})
 	if err != nil {
@@ -701,6 +711,40 @@ func (r Repository) FinalizeCheckout(ctx context.Context, storeID string, reques
 			CreatedAt:     orderCreatedAt,
 		}
 
+		var orderAttribution *MarketplaceAttribution
+		if request.Attribution != nil {
+			attr := request.Attribution
+			if strings.TrimSpace(attr.SellerListingID) == "" {
+				return ErrInvalidInput
+			}
+			if attr.StoreID != "" && attr.StoreID != storeID {
+				return ErrStoreMismatch
+			}
+			if attr.MarketCode != "" && strings.ToUpper(strings.TrimSpace(attr.MarketCode)) != cart.MarketCode {
+				return ErrMarketMismatch
+			}
+			var matchesListing bool
+			for _, item := range cart.Items {
+				if item.SellerListingID == attr.SellerListingID {
+					matchesListing = true
+					break
+				}
+			}
+			if !matchesListing {
+				return ErrListingUnavailable
+			}
+			orderAttribution = &MarketplaceAttribution{
+				ID:                uuid.NewString(),
+				OrderID:           orderID,
+				CheckoutSessionID: session.ID,
+				StoreID:           storeID,
+				MarketCode:        cart.MarketCode,
+				SellerListingID:   attr.SellerListingID,
+				SourceCollection:  attr.SourceCollection,
+				CreatedAt:         orderCreatedAt,
+			}
+		}
+
 		orderToCreate := Order{
 			ID:                          orderID,
 			OrderNumber:                 orderNumber,
@@ -719,6 +763,7 @@ func (r Repository) FinalizeCheckout(ctx context.Context, storeID string, reques
 			UpdatedAt:                   orderCreatedAt,
 			Items:                       orderItems,
 			Address:                     &orderAddr,
+			Attribution:                 orderAttribution,
 		}
 
 		createdOrder, err := r.CreateOrder(ctx, tx, orderToCreate)

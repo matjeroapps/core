@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -199,6 +200,38 @@ func (r Repository) createOrderExec(ctx context.Context, db DBExecutor, order Or
 		order.Address = addr
 	}
 
+	if order.Attribution != nil {
+		attr := order.Attribution
+		if strings.TrimSpace(attr.ID) == "" {
+			attr.ID = uuid.NewString()
+		}
+		attr.OrderID = order.ID
+		if strings.TrimSpace(attr.CheckoutSessionID) == "" {
+			attr.CheckoutSessionID = order.CheckoutSessionID
+		}
+		if strings.TrimSpace(attr.StoreID) == "" {
+			attr.StoreID = order.StoreID
+		}
+		if strings.TrimSpace(attr.MarketCode) == "" {
+			attr.MarketCode = order.MarketCode
+		}
+		if attr.CreatedAt.IsZero() {
+			attr.CreatedAt = order.CreatedAt
+		}
+
+		_, err := db.Exec(ctx, `
+			INSERT INTO marketplace_order_attributions (
+				id, order_id, checkout_session_id, store_id, market_code,
+				seller_listing_id, source_collection, created_at
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		`, attr.ID, attr.OrderID, attr.CheckoutSessionID, attr.StoreID, attr.MarketCode,
+			attr.SellerListingID, attr.SourceCollection, attr.CreatedAt)
+		if err != nil {
+			return Order{}, translatePGError(err, "insert marketplace order attribution")
+		}
+		order.Attribution = attr
+	}
+
 	return order, nil
 }
 
@@ -239,6 +272,14 @@ func (r Repository) GetOrderByID(ctx context.Context, exec DBExecutor, storeID, 
 	}
 	if err == nil {
 		order.Address = &addr
+	}
+
+	attr, err := r.loadOrderAttribution(ctx, db, order.ID)
+	if err != nil && err != ErrNotFound {
+		return Order{}, err
+	}
+	if err == nil {
+		order.Attribution = &attr
 	}
 
 	return order, nil
@@ -289,6 +330,14 @@ func (r Repository) GetGuestOrder(ctx context.Context, exec DBExecutor, storeID,
 	}
 	if err == nil {
 		order.Address = &addr
+	}
+
+	attr, err := r.loadOrderAttribution(ctx, db, order.ID)
+	if err != nil && err != ErrNotFound {
+		return Order{}, err
+	}
+	if err == nil {
+		order.Attribution = &attr
 	}
 
 	return order, nil
@@ -379,7 +428,36 @@ func (r Repository) GetOrderByNumber(ctx context.Context, exec DBExecutor, store
 		order.Address = &addr
 	}
 
+	attr, err := r.loadOrderAttribution(ctx, db, order.ID)
+	if err != nil && err != ErrNotFound {
+		return Order{}, err
+	}
+	if err == nil {
+		order.Attribution = &attr
+	}
+
 	return order, nil
+}
+
+func (r Repository) loadOrderAttribution(ctx context.Context, db DBExecutor, orderID string) (MarketplaceAttribution, error) {
+	var attr MarketplaceAttribution
+	err := db.QueryRow(ctx, `
+		SELECT id, order_id, checkout_session_id, store_id, market_code,
+		       seller_listing_id, source_collection, created_at
+		FROM marketplace_order_attributions
+		WHERE order_id = $1
+	`, orderID).Scan(
+		&attr.ID, &attr.OrderID, &attr.CheckoutSessionID, &attr.StoreID, &attr.MarketCode,
+		&attr.SellerListingID, &attr.SourceCollection, &attr.CreatedAt,
+	)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "42P01" {
+			return MarketplaceAttribution{}, ErrNotFound
+		}
+		return MarketplaceAttribution{}, translatePGError(err, "load marketplace order attribution")
+	}
+	return attr, nil
 }
 
 func (r Repository) loadOrderItems(ctx context.Context, db DBExecutor, orderID string) ([]OrderItem, error) {

@@ -37,6 +37,8 @@ func setupP53Database(t *testing.T) (*database.Pool, Repository, context.Context
 		"000010_customer_cart_domain",
 		"000011_checkout_sessions",
 		"000012_order_aggregate_schema",
+		"000013_outbox_publish_claims",
+		"000032_marketplace_attribution",
 	}
 	applyMigrationBatch(t, db, migrationNames...)
 	return db, NewRepository(db.Pool), context.Background()
@@ -855,5 +857,210 @@ func TestMigration000012_UpAndDown(t *testing.T) {
 
 	if _, err := db.Exec(ctx, string(upSQL)); err != nil {
 		t.Fatalf("failed to re-apply migration 12 up: %v", err)
+	}
+}
+
+func TestMarketplaceAttributionCheckoutIntegration(t *testing.T) {
+	db, repo, ctx := setupP53Database(t)
+	suffix := uuid.NewString()[:8]
+
+	seller, err := repo.CreateSeller(ctx, "seller-attr-"+suffix, "Seller Attr "+suffix, "active", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	store, _, err := repo.CreateStoreWithDomain(ctx, seller.ID, "EG", "store-attr-"+suffix, "Store Attr "+suffix, "active", nil, suffix+"-attr.test", "platform", "active", true, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	productID := uuid.NewString()
+	if _, err := db.Exec(ctx, `INSERT INTO products (id, slug, status) VALUES ($1, $2, 'active')`, productID, "prod-attr-"+suffix); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(ctx, `INSERT INTO product_translations (product_id, locale, name, description) VALUES ($1, 'ar', 'منتج تجريبي', 'وصف')`, productID); err != nil {
+		t.Fatal(err)
+	}
+
+	variantID := uuid.NewString()
+	if _, err := db.Exec(ctx, `INSERT INTO variants (id, product_id, code, status) VALUES ($1, $2, $3, 'active')`, variantID, productID, "VAR-ATTR-"+suffix); err != nil {
+		t.Fatal(err)
+	}
+
+	skuID := uuid.NewString()
+	if _, err := db.Exec(ctx, `INSERT INTO skus (id, variant_id, code, status) VALUES ($1, $2, $3, 'active')`, skuID, variantID, "SKU-ATTR-"+suffix); err != nil {
+		t.Fatal(err)
+	}
+
+	listingID := uuid.NewString()
+	if _, err := db.Exec(ctx, `INSERT INTO seller_listings (id, store_id, product_id, supplier_offer_id, market_code, status) VALUES ($1, $2, $3, NULL, 'EG', 'published')`, listingID, store.ID, productID); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := db.Exec(ctx, `INSERT INTO seller_listing_prices (id, seller_listing_id, amount_minor, currency_code, is_current) VALUES ($1, $2, 12000, 'EGP', true)`, uuid.NewString(), listingID); err != nil {
+		t.Fatal(err)
+	}
+
+	locID := uuid.NewString()
+	if _, err := db.Exec(ctx, `INSERT INTO fulfillment_locations (id, store_id, supplier_id, market_code, code, name, location_type, status) VALUES ($1, $2, NULL, 'EG', $3, 'Loc', 'warehouse', 'active')`, locID, store.ID, "LOC-ATTR-"+suffix); err != nil {
+		t.Fatal(err)
+	}
+
+	snapID := uuid.NewString()
+	if _, err := db.Exec(ctx, `INSERT INTO inventory_snapshots (id, fulfillment_location_id, sku_id, on_hand_qty, reserved_qty, version) VALUES ($1, $2, $3, 10, 0, 1)`, snapID, locID, skuID); err != nil {
+		t.Fatal(err)
+	}
+
+	_, cartToken, err := repo.CreateCart(ctx, store.ID, "EG", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = repo.AddCartItem(ctx, store.ID, cartToken, skuID, 2)
+	if err != nil {
+		t.Fatalf("AddCartItem failed: %v", err)
+	}
+
+	session, _, err := repo.CreateCheckoutSession(ctx, store.ID, cartToken, nil, time.Hour)
+	if err != nil {
+		t.Fatalf("CreateCheckoutSession failed: %v", err)
+	}
+
+	sourceCol := "fast_delivery"
+	req := FinalizeRequest{
+		SessionID: session.ID,
+		ShippingAddress: ShippingAddress{
+			RecipientName: "Ahmed Ali",
+			AddressLine1:  "123 Nile St",
+			City:          "Cairo",
+			CountryCode:   "EG",
+		},
+		ContactEmail: "customer@example.com",
+		Attribution: &MarketplaceAttributionInput{
+			SellerListingID:  listingID,
+			StoreID:          store.ID,
+			MarketCode:       "EG",
+			SourceCollection: &sourceCol,
+		},
+	}
+
+	order, err := repo.FinalizeCheckout(ctx, store.ID, req, "corr-attr-test")
+	if err != nil {
+		t.Fatalf("FinalizeCheckout with attribution failed: %v", err)
+	}
+
+	if order.Attribution == nil {
+		t.Fatal("expected order.Attribution to be populated")
+	}
+	if order.Attribution.SellerListingID != listingID {
+		t.Fatalf("attribution listing = %s, want %s", order.Attribution.SellerListingID, listingID)
+	}
+	if order.Attribution.StoreID != store.ID {
+		t.Fatalf("attribution store = %s, want %s", order.Attribution.StoreID, store.ID)
+	}
+	if order.Attribution.MarketCode != "EG" {
+		t.Fatalf("attribution market = %s, want EG", order.Attribution.MarketCode)
+	}
+	if order.Attribution.SourceCollection == nil || *order.Attribution.SourceCollection != "fast_delivery" {
+		t.Fatalf("attribution source_collection = %v, want fast_delivery", order.Attribution.SourceCollection)
+	}
+
+	// Verify persistence in marketplace_order_attributions
+	var count int
+	err = db.QueryRow(ctx, `SELECT count(*) FROM marketplace_order_attributions WHERE order_id = $1 AND seller_listing_id = $2`, order.ID, listingID).Scan(&count)
+	if err != nil || count != 1 {
+		t.Fatalf("marketplace_order_attributions count = %d, err = %v", count, err)
+	}
+
+	// Test GetOrderByID loads attribution
+	loadedOrder, err := repo.GetOrderByID(ctx, nil, store.ID, order.ID)
+	if err != nil {
+		t.Fatalf("GetOrderByID failed: %v", err)
+	}
+	if loadedOrder.Attribution == nil || loadedOrder.Attribution.SellerListingID != listingID {
+		t.Fatalf("loadedOrder.Attribution = %+v, want listing %s", loadedOrder.Attribution, listingID)
+	}
+
+	// Test Idempotent Replay preserves attribution
+	replayOrder, err := repo.FinalizeCheckout(ctx, store.ID, req, "corr-attr-replay")
+	if err != nil {
+		t.Fatalf("FinalizeCheckout replay failed: %v", err)
+	}
+	if replayOrder.ID != order.ID || replayOrder.Attribution == nil || replayOrder.Attribution.SellerListingID != listingID {
+		t.Fatalf("replayed order mismatch: %+v", replayOrder)
+	}
+
+	// Test Conflicting Attribution rejection on a new session
+	_, cartToken2, _ := repo.CreateCart(ctx, store.ID, "EG", nil)
+	_, _ = repo.AddCartItem(ctx, store.ID, cartToken2, skuID, 1)
+	session2, _, _ := repo.CreateCheckoutSession(ctx, store.ID, cartToken2, nil, time.Hour)
+
+	reqMismatchStore := req
+	reqMismatchStore.SessionID = session2.ID
+	reqMismatchStore.Attribution = &MarketplaceAttributionInput{
+		SellerListingID: listingID,
+		StoreID:         uuid.NewString(), // mismatched store
+		MarketCode:      "EG",
+	}
+	_, err = repo.FinalizeCheckout(ctx, store.ID, reqMismatchStore, "corr-mismatch")
+	if err != ErrStoreMismatch {
+		t.Fatalf("expected ErrStoreMismatch, got: %v", err)
+	}
+
+	reqMismatchListing := req
+	reqMismatchListing.SessionID = session2.ID
+	reqMismatchListing.Attribution = &MarketplaceAttributionInput{
+		SellerListingID: uuid.NewString(), // listing not in cart
+		StoreID:         store.ID,
+		MarketCode:      "EG",
+	}
+	_, err = repo.FinalizeCheckout(ctx, store.ID, reqMismatchListing, "corr-mismatch-listing")
+	if err != ErrListingUnavailable {
+		t.Fatalf("expected ErrListingUnavailable, got: %v", err)
+	}
+}
+
+func TestMigration000032_UpAndDown(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgres://commerce:commerce@localhost:5432/commerce?sslmode=disable"
+	}
+	db := testdb.Open(t, dsn)
+	ctx := context.Background()
+
+	migrationNames := []string{
+		"000001_event_delivery_foundation",
+		"000002_market_reference_data",
+		"000003_commerce_domain_schema",
+		"000004_admin_supplier_seller_platforms",
+		"000005_store_domain_lifecycle",
+		"000006_store_domain_integrity",
+		"000007_theme_engine_schema",
+		"000008_storefront_revisions",
+		"000009_supplier_retail_capability",
+		"000010_customer_cart_domain",
+		"000011_checkout_sessions",
+		"000012_order_aggregate_schema",
+	}
+	applyMigrationBatch(t, db, migrationNames...)
+
+	upSQL, err := os.ReadFile(filepath.Join("..", "..", "migrations", "000032_marketplace_attribution.up.sql"))
+	if err != nil {
+		t.Fatalf("failed to read migration 32 up: %v", err)
+	}
+	if _, err := db.Exec(ctx, string(upSQL)); err != nil {
+		t.Fatalf("failed to apply migration 32 up: %v", err)
+	}
+
+	downSQL, err := os.ReadFile(filepath.Join("..", "..", "migrations", "000032_marketplace_attribution.down.sql"))
+	if err != nil {
+		t.Fatalf("failed to read migration 32 down: %v", err)
+	}
+	if _, err := db.Exec(ctx, string(downSQL)); err != nil {
+		t.Fatalf("failed to apply migration 32 down: %v", err)
+	}
+
+	if _, err := db.Exec(ctx, string(upSQL)); err != nil {
+		t.Fatalf("failed to re-apply migration 32 up: %v", err)
 	}
 }

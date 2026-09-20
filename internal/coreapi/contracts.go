@@ -159,9 +159,17 @@ type ShippingAddressRequest struct {
 	CountryCode   string  `json:"country_code"`
 }
 
+type MarketplaceAttributionRequest struct {
+	SellerListingID  string  `json:"seller_listing_id"`
+	StoreID          string  `json:"store_id,omitempty"`
+	MarketCode       string  `json:"market_code,omitempty"`
+	SourceCollection *string `json:"source_collection,omitempty"`
+}
+
 type CheckoutFinalizeRequest struct {
-	ShippingAddress ShippingAddressRequest `json:"shipping_address"`
-	ContactEmail    string                 `json:"contact_email"`
+	ShippingAddress ShippingAddressRequest         `json:"shipping_address"`
+	ContactEmail    string                         `json:"contact_email"`
+	Attribution     *MarketplaceAttributionRequest `json:"attribution,omitempty"`
 }
 
 type CheckoutSessionResponse struct {
@@ -771,4 +779,33 @@ type WebhookSubscriptionResponse struct {
 	Status           string    `json:"status"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+type ResolveMarketplaceListingRequest struct {
+	Quantity         int64  `json:"quantity"`
+	SKUID            string `json:"sku_id,omitempty"`
+	SourceCollection string `json:"source_collection,omitempty"`
+	Locale           string `json:"locale,omitempty"`
+}
+
+type MarketplaceAttributionResponse struct {
+	SellerListingID  string  `json:"seller_listing_id"`
+	StoreID          string  `json:"store_id"`
+	MarketCode       string  `json:"market_code"`
+	SourceCollection *string `json:"source_collection,omitempty"`
+}
+
+type ResolveMarketplaceListingResponse struct {
+	SellerListingID       string                         `json:"seller_listing_id"`
+	ProductID             string                         `json:"product_id"`
+	StoreID               string                         `json:"store_id"`
+	MarketCode            string                         `json:"market_code"`
+	SKUID                 string                         `json:"sku_id"`
+	Quantity              int64                          `json:"quantity"`
+	UnitPriceMinor        int64                          `json:"unit_price_minor"`
+	CurrencyCode          string                         `json:"currency_code"`
+	FulfillmentLocationID string                         `json:"fulfillment_location_id"`
+	ProductTitle          string                         `json:"product_title,omitempty"`
+	SKUCode               string                         `json:"sku_code,omitempty"`
+	Attribution           MarketplaceAttributionResponse `json:"attribution"`
 }
