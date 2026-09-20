@@ -213,6 +213,20 @@ func internalRoutes() []openapi.RouteSpec {
 				badRequest, unauthorized, forbidden, notFound, conflict, unavailable, serverError,
 			},
 		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/markets/{market_code}/marketplace/carts/items", OperationID: "internalAddMarketplaceCartItem",
+			Summary: "Add an item to a marketplace cart with listing resolution and attribution handoff", Tags: []string{"Marketplace Discovery"},
+			Description: "Resolves the listing authoritatively, enforces single-store and market invariants, creates or updates a cart, and returns the cart handoff payload with verified attribution.",
+			Parameters: []openapi.ParameterSpec{
+				pathParam("market_code", "Market code"),
+				{Name: HeaderCartToken, In: "header", Required: false, Description: "Optional Cart bearer capability", Schema: ""},
+			},
+			RequestBody: MarketplaceCartAddItemRequest{},
+			Responses: []openapi.ResponseSpec{
+				openapi.OKResponse("Marketplace cart handoff", MarketplaceCartHandoffResponse{}),
+				badRequest, unauthorized, forbidden, notFound, conflict, unavailable, serverError,
+			},
+		},
 
 		// --- Storefront ---
 		{
