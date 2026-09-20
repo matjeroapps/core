@@ -177,10 +177,11 @@ func NewRouter(deps Dependencies) chi.Router {
 			r.Post("/storefront/orders/{orderID}/cancel", server.handleCancelGuestOrder)
 		})
 
-		// Curated marketplace discovery is an authenticated Core read model.
+		// Curated marketplace discovery and listing resolution.
 		r.Group(func(r chi.Router) {
 			r.Use(requireCallers(serviceauth.CallerPlatform, serviceauth.CallerSeller, serviceauth.CallerAdmin, serviceauth.CallerSupplier))
 			r.Get("/markets/{market_code}/marketplace/collections/{collection_type}", server.handleMarketplaceCollection)
+			r.Post("/markets/{market_code}/marketplace/listings/{listing_id}/resolve", server.handleResolveMarketplaceListing)
 		})
 
 		// Store-owned fulfillment locations. Seller identity is resolved from the

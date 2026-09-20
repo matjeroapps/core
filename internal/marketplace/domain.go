@@ -84,3 +84,34 @@ const (
 	BadgeUnique          = "UNIQUE"
 	BadgeFastDelivery    = "FAST_DELIVERY"
 )
+
+type ResolveListingParams struct {
+	MarketCode       string
+	SellerListingID  string
+	Quantity         int64
+	SKUID            string
+	SourceCollection CollectionType
+	Locale           i18n.Locale
+}
+
+type MarketplaceAttribution struct {
+	SellerListingID  string  `json:"seller_listing_id"`
+	StoreID          string  `json:"store_id"`
+	MarketCode       string  `json:"market_code"`
+	SourceCollection *string `json:"source_collection,omitempty"`
+}
+
+type ResolvedListing struct {
+	SellerListingID       string                 `json:"seller_listing_id"`
+	ProductID             string                 `json:"product_id"`
+	StoreID               string                 `json:"store_id"`
+	MarketCode            string                 `json:"market_code"`
+	SKUID                 string                 `json:"sku_id"`
+	Quantity              int64                  `json:"quantity"`
+	UnitPriceMinor        int64                  `json:"unit_price_minor"`
+	CurrencyCode          string                 `json:"currency_code"`
+	FulfillmentLocationID string                 `json:"fulfillment_location_id"`
+	ProductTitle          string                 `json:"product_title,omitempty"`
+	SKUCode               string                 `json:"sku_code,omitempty"`
+	Attribution           MarketplaceAttribution `json:"attribution"`
+}

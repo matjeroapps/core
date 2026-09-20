@@ -309,3 +309,279 @@ func badgesFor(collectionType CollectionType) []string {
 }
 
 var _ RepositoryReader = Repository{}
+
+func (r Repository) ResolveListing(ctx context.Context, params ResolveListingParams) (ResolvedListing, error) {
+	if r.pool == nil {
+		return ResolvedListing{}, errors.New("marketplace repository is not configured")
+	}
+
+	var (
+		listingID       string
+		storeID         string
+		productID       string
+		supplierOfferID *string
+		marketCode      string
+		listingStatus   string
+		storeStatus     string
+		productStatus   string
+		productSlug     string
+		productTitle    string
+		priceAmount     *int64
+		priceCurrency   *string
+		marketCurrency  string
+	)
+
+	query := `
+		SELECT
+			sl.id,
+			sl.store_id,
+			sl.product_id,
+			sl.supplier_offer_id,
+			sl.market_code,
+			sl.status AS listing_status,
+			st.status AS store_status,
+			p.status AS product_status,
+			p.slug AS product_slug,
+			COALESCE(t.name, tf.name, p.slug) AS product_title,
+			slp.amount_minor,
+			slp.currency_code,
+			m.currency_code AS market_currency
+		FROM seller_listings sl
+		JOIN stores st ON st.id = sl.store_id AND st.market_code = sl.market_code
+		JOIN markets m ON m.code = sl.market_code
+		JOIN products p ON p.id = sl.product_id
+		LEFT JOIN seller_listing_prices slp ON slp.seller_listing_id = sl.id AND slp.is_current = true
+		LEFT JOIN product_translations t ON t.product_id = p.id AND t.locale = $2
+		LEFT JOIN product_translations tf ON tf.product_id = p.id AND tf.locale = $3
+		WHERE sl.id = $1
+	`
+
+	err := r.pool.QueryRow(ctx, query, params.SellerListingID, string(params.Locale), string(fallbackLocale(params.Locale))).Scan(
+		&listingID,
+		&storeID,
+		&productID,
+		&supplierOfferID,
+		&marketCode,
+		&listingStatus,
+		&storeStatus,
+		&productStatus,
+		&productSlug,
+		&productTitle,
+		&priceAmount,
+		&priceCurrency,
+		&marketCurrency,
+	)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			var existingMarket string
+			checkErr := r.pool.QueryRow(ctx, `SELECT market_code FROM seller_listings WHERE id = $1`, params.SellerListingID).Scan(&existingMarket)
+			if checkErr == nil {
+				if strings.ToUpper(strings.TrimSpace(existingMarket)) != params.MarketCode {
+					return ResolvedListing{}, ErrCrossMarketAccess
+				}
+			}
+			return ResolvedListing{}, ErrListingNotFound
+		}
+		return ResolvedListing{}, fmt.Errorf("query listing for resolution: %w", err)
+	}
+
+	if marketCode != params.MarketCode {
+		return ResolvedListing{}, ErrCrossMarketAccess
+	}
+	if listingStatus != "published" {
+		return ResolvedListing{}, ErrListingNotPublished
+	}
+	if storeStatus != "active" {
+		return ResolvedListing{}, ErrListingNotPublished
+	}
+	if productStatus != "active" {
+		return ResolvedListing{}, ErrProductUnavailable
+	}
+	if priceAmount == nil || priceCurrency == nil || *priceAmount < 0 || strings.TrimSpace(*priceCurrency) != strings.TrimSpace(marketCurrency) {
+		return ResolvedListing{}, ErrPriceUnavailable
+	}
+
+	type activeSKU struct {
+		variantID string
+		skuID     string
+		skuCode   string
+	}
+
+	skuRows, err := r.pool.Query(ctx, `
+		SELECT v.id, sk.id, sk.code
+		FROM variants v
+		JOIN skus sk ON sk.variant_id = v.id
+		WHERE v.product_id = $1
+		  AND v.status = 'active'
+		  AND sk.status = 'active'
+		ORDER BY sk.created_at ASC, sk.id ASC
+	`, productID)
+	if err != nil {
+		return ResolvedListing{}, fmt.Errorf("query active skus: %w", err)
+	}
+	defer skuRows.Close()
+
+	var candidateSKUs []activeSKU
+	for skuRows.Next() {
+		var s activeSKU
+		if err := skuRows.Scan(&s.variantID, &s.skuID, &s.skuCode); err != nil {
+			return ResolvedListing{}, fmt.Errorf("scan active sku: %w", err)
+		}
+		candidateSKUs = append(candidateSKUs, s)
+	}
+	if err := skuRows.Err(); err != nil {
+		return ResolvedListing{}, fmt.Errorf("iterate active skus: %w", err)
+	}
+
+	if len(candidateSKUs) == 0 {
+		return ResolvedListing{}, ErrProductUnavailable
+	}
+
+	if params.SKUID != "" {
+		var matched *activeSKU
+		for _, s := range candidateSKUs {
+			if s.skuID == params.SKUID {
+				matched = &s
+				break
+			}
+		}
+		if matched == nil {
+			return ResolvedListing{}, ErrProductUnavailable
+		}
+		candidateSKUs = []activeSKU{*matched}
+	}
+
+	var sourceSupplierID *string
+	if supplierOfferID != nil {
+		var (
+			soSupplierID string
+			soStatus     string
+			soMarket     string
+			spID         *string
+			soAvailable  bool
+		)
+		err := r.pool.QueryRow(ctx, `
+			SELECT so.supplier_id, so.status, so.market_code, sp.id, COALESCE(soa.is_available, true)
+			FROM supplier_offers so
+			JOIN supplier_products sp ON sp.id = so.supplier_product_id AND sp.supplier_id = so.supplier_id AND sp.product_id = $2
+			LEFT JOIN supplier_offer_availability soa ON soa.supplier_offer_id = so.id
+			WHERE so.id = $1
+		`, *supplierOfferID, productID).Scan(&soSupplierID, &soStatus, &soMarket, &spID, &soAvailable)
+		if err != nil || soStatus != "active" || soMarket != marketCode || spID == nil || !soAvailable {
+			return ResolvedListing{}, ErrListingNotPublished
+		}
+		sourceSupplierID = &soSupplierID
+	}
+
+	type locCandidate struct {
+		sku          activeSKU
+		locationID   string
+		availableQty int64
+	}
+
+	var eligibleCandidates []locCandidate
+	var anyLocationExists bool
+
+	for _, sku := range candidateSKUs {
+		var locRows pgx.Rows
+		var err error
+
+		if params.SourceCollection == CollectionFastDelivery {
+			locRows, err = r.pool.Query(ctx, `
+				SELECT fl.id, (inv.on_hand_qty - inv.reserved_qty) AS available_qty
+				FROM fulfillment_locations fl
+				JOIN inventory_snapshots inv ON inv.fulfillment_location_id = fl.id AND inv.sku_id = $1
+				WHERE fl.store_id = $2
+				  AND fl.supplier_id IS NULL
+				  AND fl.status = 'active'
+				  AND fl.market_code = $3
+				ORDER BY (inv.on_hand_qty - inv.reserved_qty) DESC, fl.id ASC
+			`, sku.skuID, storeID, marketCode)
+		} else if sourceSupplierID != nil {
+			locRows, err = r.pool.Query(ctx, `
+				SELECT fl.id, (inv.on_hand_qty - inv.reserved_qty) AS available_qty
+				FROM fulfillment_locations fl
+				JOIN inventory_snapshots inv ON inv.fulfillment_location_id = fl.id AND inv.sku_id = $1
+				WHERE fl.supplier_id = $2
+				  AND fl.store_id IS NULL
+				  AND fl.status = 'active'
+				  AND fl.market_code = $3
+				ORDER BY (inv.on_hand_qty - inv.reserved_qty) DESC, fl.id ASC
+			`, sku.skuID, *sourceSupplierID, marketCode)
+		} else {
+			locRows, err = r.pool.Query(ctx, `
+				SELECT fl.id, (inv.on_hand_qty - inv.reserved_qty) AS available_qty
+				FROM fulfillment_locations fl
+				JOIN inventory_snapshots inv ON inv.fulfillment_location_id = fl.id AND inv.sku_id = $1
+				WHERE fl.store_id = $2
+				  AND fl.supplier_id IS NULL
+				  AND fl.status = 'active'
+				  AND fl.market_code = $3
+				ORDER BY (inv.on_hand_qty - inv.reserved_qty) DESC, fl.id ASC
+			`, sku.skuID, storeID, marketCode)
+		}
+
+		if err != nil {
+			return ResolvedListing{}, fmt.Errorf("query fulfillment locations: %w", err)
+		}
+
+		for locRows.Next() {
+			var locID string
+			var availQty int64
+			if err := locRows.Scan(&locID, &availQty); err != nil {
+				locRows.Close()
+				return ResolvedListing{}, fmt.Errorf("scan fulfillment location: %w", err)
+			}
+			anyLocationExists = true
+			if availQty >= params.Quantity {
+				eligibleCandidates = append(eligibleCandidates, locCandidate{
+					sku:          sku,
+					locationID:   locID,
+					availableQty: availQty,
+				})
+			}
+		}
+		locRows.Close()
+	}
+
+	if !anyLocationExists {
+		return ResolvedListing{}, ErrNoEligibleLocation
+	}
+	if len(eligibleCandidates) == 0 {
+		return ResolvedListing{}, ErrInventoryUnavailable
+	}
+
+	selected := eligibleCandidates[0]
+	for _, cand := range eligibleCandidates[1:] {
+		if cand.availableQty > selected.availableQty {
+			selected = cand
+		}
+	}
+
+	var sourceCollectionPtr *string
+	if params.SourceCollection != "" {
+		s := string(params.SourceCollection)
+		sourceCollectionPtr = &s
+	}
+
+	return ResolvedListing{
+		SellerListingID:       listingID,
+		ProductID:             productID,
+		StoreID:               storeID,
+		MarketCode:            marketCode,
+		SKUID:                 selected.sku.skuID,
+		Quantity:              params.Quantity,
+		UnitPriceMinor:        *priceAmount,
+		CurrencyCode:          strings.TrimSpace(*priceCurrency),
+		FulfillmentLocationID: selected.locationID,
+		ProductTitle:          productTitle,
+		SKUCode:               selected.sku.skuCode,
+		Attribution: MarketplaceAttribution{
+			SellerListingID:  listingID,
+			StoreID:          storeID,
+			MarketCode:       marketCode,
+			SourceCollection: sourceCollectionPtr,
+		},
+	}, nil
+}

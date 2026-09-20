@@ -38,25 +38,37 @@ const (
 	NoteVisibilityInternal = "internal"
 )
 
+type MarketplaceAttribution struct {
+	ID                string    `json:"id,omitempty"`
+	OrderID           string    `json:"order_id,omitempty"`
+	CheckoutSessionID string    `json:"checkout_session_id,omitempty"`
+	StoreID           string    `json:"store_id"`
+	MarketCode        string    `json:"market_code"`
+	SellerListingID   string    `json:"seller_listing_id"`
+	SourceCollection  *string   `json:"source_collection,omitempty"`
+	CreatedAt         time.Time `json:"created_at,omitempty"`
+}
+
 type Order struct {
-	ID                          string        `json:"id"`
-	OrderNumber                 string        `json:"order_number"`
-	StoreID                     string        `json:"store_id"`
-	MarketCode                  string        `json:"market_code"`
-	CustomerID                  *string       `json:"customer_id,omitempty"`
-	CheckoutSessionID           string        `json:"checkout_session_id"`
-	Status                      string        `json:"status"`
-	CurrencyCode                string        `json:"currency_code"`
-	GuestOrderAccessTokenDigest []byte        `json:"-"`
-	SubtotalMinor               int64         `json:"subtotal_minor"`
-	TotalMinor                  int64         `json:"total_minor"`
-	ConfirmationDeadlineAt      time.Time     `json:"confirmation_deadline_at"`
-	CancellationReason          *string       `json:"cancellation_reason,omitempty"`
-	AggregateVersion            int64         `json:"aggregate_version"`
-	CreatedAt                   time.Time     `json:"created_at"`
-	UpdatedAt                   time.Time     `json:"updated_at"`
-	Items                       []OrderItem   `json:"items,omitempty"`
-	Address                     *OrderAddress `json:"address,omitempty"`
+	ID                          string                  `json:"id"`
+	OrderNumber                 string                  `json:"order_number"`
+	StoreID                     string                  `json:"store_id"`
+	MarketCode                  string                  `json:"market_code"`
+	CustomerID                  *string                 `json:"customer_id,omitempty"`
+	CheckoutSessionID           string                  `json:"checkout_session_id"`
+	Status                      string                  `json:"status"`
+	CurrencyCode                string                  `json:"currency_code"`
+	GuestOrderAccessTokenDigest []byte                  `json:"-"`
+	SubtotalMinor               int64                   `json:"subtotal_minor"`
+	TotalMinor                  int64                   `json:"total_minor"`
+	ConfirmationDeadlineAt      time.Time               `json:"confirmation_deadline_at"`
+	CancellationReason          *string                 `json:"cancellation_reason,omitempty"`
+	AggregateVersion            int64                   `json:"aggregate_version"`
+	CreatedAt                   time.Time               `json:"created_at"`
+	UpdatedAt                   time.Time               `json:"updated_at"`
+	Items                       []OrderItem             `json:"items,omitempty"`
+	Address                     *OrderAddress           `json:"address,omitempty"`
+	Attribution                 *MarketplaceAttribution `json:"attribution,omitempty"`
 }
 
 type OrderItem struct {
@@ -134,23 +146,24 @@ type PublicOrderItem struct {
 }
 
 type PublicOrder struct {
-	ID                     string            `json:"id"`
-	OrderNumber            string            `json:"order_number"`
-	StoreID                string            `json:"store_id"`
-	MarketCode             string            `json:"market_code"`
-	CustomerID             *string           `json:"customer_id,omitempty"`
-	CheckoutSessionID      string            `json:"checkout_session_id"`
-	Status                 string            `json:"status"`
-	CurrencyCode           string            `json:"currency_code"`
-	SubtotalMinor          int64             `json:"subtotal_minor"`
-	TotalMinor             int64             `json:"total_minor"`
-	ConfirmationDeadlineAt time.Time         `json:"confirmation_deadline_at"`
-	CancellationReason     *string           `json:"cancellation_reason,omitempty"`
-	AggregateVersion       int64             `json:"aggregate_version"`
-	CreatedAt              time.Time         `json:"created_at"`
-	UpdatedAt              time.Time         `json:"updated_at"`
-	Items                  []PublicOrderItem `json:"items,omitempty"`
-	Address                *OrderAddress     `json:"address,omitempty"`
+	ID                     string                  `json:"id"`
+	OrderNumber            string                  `json:"order_number"`
+	StoreID                string                  `json:"store_id"`
+	MarketCode             string                  `json:"market_code"`
+	CustomerID             *string                 `json:"customer_id,omitempty"`
+	CheckoutSessionID      string                  `json:"checkout_session_id"`
+	Status                 string                  `json:"status"`
+	CurrencyCode           string                  `json:"currency_code"`
+	SubtotalMinor          int64                   `json:"subtotal_minor"`
+	TotalMinor             int64                   `json:"total_minor"`
+	ConfirmationDeadlineAt time.Time               `json:"confirmation_deadline_at"`
+	CancellationReason     *string                 `json:"cancellation_reason,omitempty"`
+	AggregateVersion       int64                   `json:"aggregate_version"`
+	CreatedAt              time.Time               `json:"created_at"`
+	UpdatedAt              time.Time               `json:"updated_at"`
+	Items                  []PublicOrderItem       `json:"items,omitempty"`
+	Address                *OrderAddress           `json:"address,omitempty"`
+	Attribution            *MarketplaceAttribution `json:"attribution,omitempty"`
 }
 
 func (o Order) ToPublic() PublicOrder {
@@ -190,6 +203,7 @@ func (o Order) ToPublic() PublicOrder {
 		UpdatedAt:              o.UpdatedAt,
 		Items:                  items,
 		Address:                o.Address,
+		Attribution:            o.Attribution,
 	}
 }
 

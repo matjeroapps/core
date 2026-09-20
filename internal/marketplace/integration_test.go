@@ -56,7 +56,9 @@ func setupDiscoveryFixture(t *testing.T) discoveryFixture {
 		"000020_create_ledger_schema",
 		"000021_create_balance_projection_schema",
 		"000026_seller_catalog_phase_c",
+		"000032_marketplace_attribution",
 	}
+
 	migrationPaths := make([]string, 0, len(migrationNames))
 	for _, migrationName := range migrationNames {
 		migrationPaths = append(migrationPaths, filepath.Join("..", "..", "migrations", migrationName+".up.sql"))
@@ -323,6 +325,141 @@ func TestRepositoryCollections(t *testing.T) {
 		}
 		if len(second.Items) != 1 || second.Items[0].ListingID == first.Items[0].ListingID {
 			t.Fatalf("second page = %+v, cursor repeated or missing", second)
+		}
+	})
+}
+
+func TestIntegrationResolveListing(t *testing.T) {
+	fixture := setupDiscoveryFixture(t)
+	svc := NewService(fixture.repository)
+	ctx := context.Background()
+
+	t.Run("resolves published listing with stock successfully", func(t *testing.T) {
+		resolved, err := svc.ResolveListing(ctx, ResolveListingParams{
+			MarketCode:      "EG",
+			SellerListingID: fixture.egListingOne,
+			Quantity:        2,
+			Locale:          i18n.LocaleArabic,
+		})
+		if err != nil {
+			t.Fatalf("ResolveListing failed: %v", err)
+		}
+		if resolved.SellerListingID != fixture.egListingOne {
+			t.Fatalf("listing id = %s, want %s", resolved.SellerListingID, fixture.egListingOne)
+		}
+		if resolved.MarketCode != "EG" {
+			t.Fatalf("market code = %s, want EG", resolved.MarketCode)
+		}
+		if resolved.Quantity != 2 {
+			t.Fatalf("quantity = %d, want 2", resolved.Quantity)
+		}
+		if resolved.UnitPriceMinor != 1000 {
+			t.Fatalf("unit price = %d, want 1000", resolved.UnitPriceMinor)
+		}
+		if resolved.CurrencyCode != "EGP" {
+			t.Fatalf("currency = %s, want EGP", resolved.CurrencyCode)
+		}
+		if resolved.StoreID == "" || resolved.ProductID == "" || resolved.SKUID == "" || resolved.FulfillmentLocationID == "" {
+			t.Fatalf("resolved fields must not be empty: %+v", resolved)
+		}
+		if resolved.ProductTitle != "عربي Arabic Product" {
+			t.Fatalf("product title = %q, want Arabic title", resolved.ProductTitle)
+		}
+		if resolved.Attribution.SellerListingID != fixture.egListingOne || resolved.Attribution.MarketCode != "EG" || resolved.Attribution.StoreID != resolved.StoreID {
+			t.Fatalf("invalid attribution: %+v", resolved.Attribution)
+		}
+	})
+
+	t.Run("resolves fast delivery listing with attribution", func(t *testing.T) {
+		resolved, err := svc.ResolveListing(ctx, ResolveListingParams{
+			MarketCode:       "EG",
+			SellerListingID:  fixture.egListingOne,
+			Quantity:         1,
+			SourceCollection: CollectionFastDelivery,
+		})
+		if err != nil {
+			t.Fatalf("ResolveListing fast delivery failed: %v", err)
+		}
+		if resolved.Attribution.SourceCollection == nil || *resolved.Attribution.SourceCollection != string(CollectionFastDelivery) {
+			t.Fatalf("source collection = %v, want %s", resolved.Attribution.SourceCollection, CollectionFastDelivery)
+		}
+	})
+
+	t.Run("rejects cross market resolution", func(t *testing.T) {
+		_, err := svc.ResolveListing(ctx, ResolveListingParams{
+			MarketCode:      "SA",
+			SellerListingID: fixture.egListingOne,
+			Quantity:        1,
+		})
+		if err == nil || !containsError(err, ErrCrossMarketAccess) {
+			t.Fatalf("error = %v, want ErrCrossMarketAccess", err)
+		}
+	})
+
+	t.Run("rejects not found listing", func(t *testing.T) {
+		_, err := svc.ResolveListing(ctx, ResolveListingParams{
+			MarketCode:      "EG",
+			SellerListingID: uuid.NewString(),
+			Quantity:        1,
+		})
+		if err == nil || !containsError(err, ErrListingNotFound) {
+			t.Fatalf("error = %v, want ErrListingNotFound", err)
+		}
+	})
+
+	t.Run("rejects unpublished listing", func(t *testing.T) {
+		_, err := svc.ResolveListing(ctx, ResolveListingParams{
+			MarketCode:      "EG",
+			SellerListingID: fixture.unpublishedListing,
+			Quantity:        1,
+		})
+		if err == nil || !containsError(err, ErrListingNotPublished) {
+			t.Fatalf("error = %v, want ErrListingNotPublished", err)
+		}
+	})
+
+	t.Run("rejects inactive product", func(t *testing.T) {
+		_, err := svc.ResolveListing(ctx, ResolveListingParams{
+			MarketCode:      "EG",
+			SellerListingID: fixture.inactiveListing,
+			Quantity:        1,
+		})
+		if err == nil || !containsError(err, ErrProductUnavailable) {
+			t.Fatalf("error = %v, want ErrProductUnavailable", err)
+		}
+	})
+
+	t.Run("rejects missing current price", func(t *testing.T) {
+		_, err := svc.ResolveListing(ctx, ResolveListingParams{
+			MarketCode:      "EG",
+			SellerListingID: fixture.noPriceListing,
+			Quantity:        1,
+		})
+		if err == nil || !containsError(err, ErrPriceUnavailable) {
+			t.Fatalf("error = %v, want ErrPriceUnavailable", err)
+		}
+	})
+
+	t.Run("rejects insufficient inventory", func(t *testing.T) {
+		_, err := svc.ResolveListing(ctx, ResolveListingParams{
+			MarketCode:      "EG",
+			SellerListingID: fixture.egListingOne,
+			Quantity:        9999,
+		})
+		if err == nil || !containsError(err, ErrInventoryUnavailable) {
+			t.Fatalf("error = %v, want ErrInventoryUnavailable", err)
+		}
+	})
+
+	t.Run("fast delivery rejects when no eligible store location has inventory", func(t *testing.T) {
+		_, err := svc.ResolveListing(ctx, ResolveListingParams{
+			MarketCode:       "EG",
+			SellerListingID:  fixture.egListingEmpty,
+			Quantity:         1,
+			SourceCollection: CollectionFastDelivery,
+		})
+		if err == nil || (!containsError(err, ErrInventoryUnavailable) && !containsError(err, ErrNoEligibleLocation)) {
+			t.Fatalf("error = %v, want ErrInventoryUnavailable or ErrNoEligibleLocation", err)
 		}
 	})
 }

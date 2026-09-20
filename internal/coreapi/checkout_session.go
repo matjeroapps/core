@@ -41,6 +41,15 @@ func (s *server) handleEvaluateCheckoutSession(w http.ResponseWriter, r *http.Re
 	if !decodeJSON(w, r, &body) {
 		return
 	}
+	var attrInput *commerce.MarketplaceAttributionInput
+	if body.Attribution != nil {
+		attrInput = &commerce.MarketplaceAttributionInput{
+			SellerListingID:  body.Attribution.SellerListingID,
+			StoreID:          body.Attribution.StoreID,
+			MarketCode:       body.Attribution.MarketCode,
+			SourceCollection: body.Attribution.SourceCollection,
+		}
+	}
 	request := commerce.FinalizeRequest{
 		SessionID: rPathSessionID(r),
 		ShippingAddress: commerce.ShippingAddress{
@@ -53,6 +62,7 @@ func (s *server) handleEvaluateCheckoutSession(w http.ResponseWriter, r *http.Re
 			CountryCode:   body.ShippingAddress.CountryCode,
 		},
 		ContactEmail: body.ContactEmail,
+		Attribution:  attrInput,
 	}
 	correlationID := httpx.CorrelationID(r.Context())
 	order, err := s.deps.Repo.FinalizeCheckout(r.Context(), scope.StoreID(), request, correlationID)
@@ -61,6 +71,7 @@ func (s *server) handleEvaluateCheckoutSession(w http.ResponseWriter, r *http.Re
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, order.ToPublic())
+
 }
 
 func rPathSessionID(r *http.Request) string {

@@ -249,20 +249,32 @@ type OrderCreatedItemPayload struct {
 	CreatedAt            time.Time `json:"created_at"`
 }
 
+type MarketplaceAttributionPayload struct {
+	ID                string    `json:"id,omitempty"`
+	OrderID           string    `json:"order_id,omitempty"`
+	CheckoutSessionID string    `json:"checkout_session_id,omitempty"`
+	StoreID           string    `json:"store_id"`
+	MarketCode        string    `json:"market_code"`
+	SellerListingID   string    `json:"seller_listing_id"`
+	SourceCollection  *string   `json:"source_collection,omitempty"`
+	CreatedAt         time.Time `json:"created_at,omitempty"`
+}
+
 type OrderCreatedPayload struct {
-	OrderID                string                    `json:"order_id"`
-	OrderNumber            string                    `json:"order_number"`
-	StoreID                string                    `json:"store_id"`
-	MarketCode             string                    `json:"market_code"`
-	CustomerID             *string                   `json:"customer_id,omitempty"`
-	CheckoutSessionID      string                    `json:"checkout_session_id"`
-	Status                 string                    `json:"status"`
-	CurrencyCode           string                    `json:"currency_code"`
-	SubtotalMinor          int64                     `json:"subtotal_minor"`
-	TotalMinor             int64                     `json:"total_minor"`
-	ConfirmationDeadlineAt time.Time                 `json:"confirmation_deadline_at"`
-	CreatedAt              time.Time                 `json:"created_at"`
-	Items                  []OrderCreatedItemPayload `json:"items"`
+	OrderID                string                         `json:"order_id"`
+	OrderNumber            string                         `json:"order_number"`
+	StoreID                string                         `json:"store_id"`
+	MarketCode             string                         `json:"market_code"`
+	CustomerID             *string                        `json:"customer_id,omitempty"`
+	CheckoutSessionID      string                         `json:"checkout_session_id"`
+	Status                 string                         `json:"status"`
+	CurrencyCode           string                         `json:"currency_code"`
+	SubtotalMinor          int64                          `json:"subtotal_minor"`
+	TotalMinor             int64                          `json:"total_minor"`
+	ConfirmationDeadlineAt time.Time                      `json:"confirmation_deadline_at"`
+	CreatedAt              time.Time                      `json:"created_at"`
+	Items                  []OrderCreatedItemPayload      `json:"items"`
+	Attribution            *MarketplaceAttributionPayload `json:"attribution,omitempty"`
 }
 
 func NewOrderCreatedEvent(order Order, correlationID, causationID string, occurredAt time.Time) (events.EventEnvelope, error) {
@@ -287,6 +299,21 @@ func NewOrderCreatedEvent(order Order, correlationID, causationID string, occurr
 			CreatedAt:            item.CreatedAt,
 		})
 	}
+
+	var attrPayload *MarketplaceAttributionPayload
+	if order.Attribution != nil {
+		attrPayload = &MarketplaceAttributionPayload{
+			ID:                order.Attribution.ID,
+			OrderID:           order.Attribution.OrderID,
+			CheckoutSessionID: order.Attribution.CheckoutSessionID,
+			StoreID:           order.Attribution.StoreID,
+			MarketCode:        order.Attribution.MarketCode,
+			SellerListingID:   order.Attribution.SellerListingID,
+			SourceCollection:  order.Attribution.SourceCollection,
+			CreatedAt:         order.Attribution.CreatedAt,
+		}
+	}
+
 	payload := OrderCreatedPayload{
 		OrderID:                order.ID,
 		OrderNumber:            order.OrderNumber,
@@ -301,6 +328,7 @@ func NewOrderCreatedEvent(order Order, correlationID, causationID string, occurr
 		ConfirmationDeadlineAt: order.ConfirmationDeadlineAt,
 		CreatedAt:              order.CreatedAt,
 		Items:                  items,
+		Attribution:            attrPayload,
 	}
 
 	payloadMap, err := payloadToMap(payload)

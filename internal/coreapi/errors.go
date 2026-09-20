@@ -181,13 +181,18 @@ func codeFor(err error) string {
 		errors.Is(err, settlement.ErrSettlementPeriodNotFound),
 		errors.Is(err, marketplace_finance.ErrRuleNotFound),
 		errors.Is(err, marketplace_finance.ErrSettlementNotFound),
-		errors.Is(err, suppliers.ErrNotFound):
+		errors.Is(err, suppliers.ErrNotFound),
+		errors.Is(err, marketplace.ErrListingNotFound):
 		return CodeNotFound
 	case errors.Is(err, marketplace.ErrInvalidInput),
-		errors.Is(err, marketplace.ErrInvalidCollectionType):
+		errors.Is(err, marketplace.ErrInvalidCollectionType),
+		errors.Is(err, marketplace.ErrQuantityInvalid):
 		return CodeInvalidArgument
 	case errors.Is(err, marketplace.ErrCollectionUnavailable):
 		return CodeUnavailable
+	case errors.Is(err, marketplace.ErrCrossMarketAccess):
+		return CodeMarketMismatch
+
 	case errors.Is(err, storefront.ErrStoreNotFound),
 		errors.Is(err, storefront.ErrDomainInactive),
 		errors.Is(err, storefront.ErrStoreInactive):
@@ -234,7 +239,8 @@ func codeFor(err error) string {
 	case errors.Is(err, commerce.ErrMarketMismatch):
 
 		return CodeMarketMismatch
-	case errors.Is(err, commerce.ErrInsufficientInventory):
+	case errors.Is(err, commerce.ErrInsufficientInventory),
+		errors.Is(err, marketplace.ErrInventoryUnavailable):
 		return CodeInsufficientInventory
 	case errors.Is(err, commerce.ErrConflict),
 		errors.Is(err, themes.ErrConflict),
@@ -252,8 +258,11 @@ func codeFor(err error) string {
 		errors.Is(err, marketplace_finance.ErrAllocationTotalMismatch),
 		errors.Is(err, marketplace_finance.ErrNegativeAllocation),
 		errors.Is(err, marketplace_finance.ErrDuplicateAllocation),
-		errors.Is(err, suppliers.ErrAlreadyExists):
+		errors.Is(err, suppliers.ErrAlreadyExists),
+		errors.Is(err, commerce.ErrStoreMismatch),
+		errors.Is(err, marketplace.ErrStoreMismatch):
 		return CodeConflict
+
 	case errors.Is(err, commerce.ErrCheckoutExpired):
 		return CodeCheckoutExpired
 	case errors.Is(err, commerce.ErrIdempotencyConflict):
@@ -264,10 +273,15 @@ func codeFor(err error) string {
 		return CodeInvalidShipmentTransition
 	case errors.Is(err, payments.ErrInvalidTransition):
 		return CodeInvalidPaymentTransition
-	case errors.Is(err, commerce.ErrPriceChanged):
+	case errors.Is(err, commerce.ErrPriceChanged),
+		errors.Is(err, marketplace.ErrPriceUnavailable):
 		return CodePriceChanged
-	case errors.Is(err, commerce.ErrListingUnavailable):
+	case errors.Is(err, commerce.ErrListingUnavailable),
+		errors.Is(err, marketplace.ErrListingNotPublished),
+		errors.Is(err, marketplace.ErrProductUnavailable),
+		errors.Is(err, marketplace.ErrNoEligibleLocation):
 		return CodeListingUnavailable
+
 	case errors.Is(err, commerce.ErrPublishNotReady):
 		return CodePublishNotReady
 	case errors.Is(err, commerce.ErrOfferUnavailable):

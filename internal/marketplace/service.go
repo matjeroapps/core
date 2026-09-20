@@ -17,10 +17,12 @@ const (
 
 type RepositoryReader interface {
 	ListCollection(ctx context.Context, collectionType CollectionType, request PageRequest, cursor *Cursor) (Collection, error)
+	ResolveListing(ctx context.Context, params ResolveListingParams) (ResolvedListing, error)
 }
 
 type Service interface {
 	GetCollection(ctx context.Context, request PageRequest, collectionType CollectionType) (Collection, error)
+	ResolveListing(ctx context.Context, params ResolveListingParams) (ResolvedListing, error)
 }
 
 type service struct {
@@ -44,6 +46,14 @@ func (s service) GetCollection(ctx context.Context, request PageRequest, collect
 		return Collection{}, err
 	}
 	return s.repository.ListCollection(ctx, collectionType, request, cursor)
+}
+
+func (s service) ResolveListing(ctx context.Context, params ResolveListingParams) (ResolvedListing, error) {
+	params, err := normalizeResolveParams(params)
+	if err != nil {
+		return ResolvedListing{}, err
+	}
+	return s.repository.ResolveListing(ctx, params)
 }
 
 func validateCollectionType(collectionType CollectionType) error {
@@ -74,6 +84,35 @@ func normalizeRequest(request PageRequest) (PageRequest, error) {
 		return PageRequest{}, fmt.Errorf("%w: limit", ErrInvalidInput)
 	}
 	return request, nil
+}
+
+func normalizeResolveParams(params ResolveListingParams) (ResolveListingParams, error) {
+	params.MarketCode = strings.ToUpper(strings.TrimSpace(params.MarketCode))
+	if len(params.MarketCode) != 2 {
+		return ResolveListingParams{}, fmt.Errorf("%w: market code", ErrInvalidInput)
+	}
+	params.SellerListingID = strings.TrimSpace(params.SellerListingID)
+	if params.SellerListingID == "" {
+		return ResolveListingParams{}, fmt.Errorf("%w: seller listing id", ErrInvalidInput)
+	}
+	if params.Quantity == 0 {
+		params.Quantity = 1
+	}
+	if params.Quantity <= 0 || params.Quantity > 10000 {
+		return ResolveListingParams{}, fmt.Errorf("%w: quantity must be between 1 and 10000", ErrQuantityInvalid)
+	}
+	if params.SourceCollection != "" {
+		if !params.SourceCollection.Valid() {
+			return ResolveListingParams{}, fmt.Errorf("%w: %q", ErrInvalidCollectionType, params.SourceCollection)
+		}
+	}
+	if params.Locale == "" {
+		params.Locale = i18n.Default()
+	}
+	if params.Locale != i18n.LocaleArabic && params.Locale != i18n.LocaleEnglish {
+		return ResolveListingParams{}, fmt.Errorf("%w: locale", ErrInvalidInput)
+	}
+	return params, nil
 }
 
 func encodeCursor(cursor Cursor) (string, error) {
