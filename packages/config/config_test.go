@@ -43,6 +43,19 @@ func TestLoadCustomStoreDefaultMaxActiveStores(t *testing.T) {
 	}
 }
 
+func TestLoadReadsPlatformInternalToken(t *testing.T) {
+	t.Setenv("CORE_INTERNAL_PLATFORM_TOKEN", "platform-token")
+
+	cfg, err := config.Load("test-service")
+	if err != nil {
+		t.Fatalf("expected clean config load, got: %v", err)
+	}
+
+	if cfg.InternalPlatformToken != "platform-token" {
+		t.Fatalf("InternalPlatformToken = %q, want %q", cfg.InternalPlatformToken, "platform-token")
+	}
+}
+
 func TestLoadRejectsInvalidStoreDefaultMaxActiveStores(t *testing.T) {
 	invalidValues := []string{"not-an-int", "0", "-1", "-5"}
 	for _, val := range invalidValues {
@@ -203,6 +216,7 @@ func TestProductionConfigValidation(t *testing.T) {
 		t.Setenv("DATABASE_URL", "postgres://user:pass@prod-db.internal:5432/commerce?sslmode=require")
 		t.Setenv("RABBITMQ_URL", "amqp://user:pass@prod-mq.internal:5672/")
 		t.Setenv("ZITADEL_ISSUER", "https://auth.matjero.com")
+		t.Setenv("CORE_INTERNAL_PLATFORM_TOKEN", "secret-platform")
 		t.Setenv("CORE_INTERNAL_SELLER_TOKEN", "secret-seller")
 		t.Setenv("CORE_INTERNAL_ADMIN_TOKEN", "secret-admin")
 		t.Setenv("CORE_INTERNAL_SUPPLIER_TOKEN", "secret-supplier")
@@ -255,6 +269,44 @@ func TestProductionConfigValidation(t *testing.T) {
 	}
 	if cfg.Environment != "production" {
 		t.Errorf("expected Environment 'production', got %s", cfg.Environment)
+	}
+}
+
+func TestProductionConfigValidationRequiresAllInternalTokens(t *testing.T) {
+	baseConfig := config.Config{
+		Environment:            "production",
+		DatabaseURL:            "postgres://user:pass@prod-db.internal:5432/commerce?sslmode=require",
+		RabbitMQURL:            "amqp://user:pass@prod-mq.internal:5672/",
+		ZitadelIssuer:          "https://auth.matjero.com",
+		InternalPlatformToken:  "secret-platform",
+		InternalSellerToken:    "secret-seller",
+		InternalAdminToken:     "secret-admin",
+		InternalSupplierToken:  "secret-supplier",
+		ThemePreviewSecret:     "secret-theme-preview",
+		MediaS3Bucket:          "prod-media",
+		MediaS3AccessKeyID:     "key",
+		MediaS3SecretAccessKey: "secret",
+		MediaPublicBaseURL:     "https://cdn.matjero.com",
+	}
+
+	tokenFields := []struct {
+		name  string
+		clear func(*config.Config)
+	}{
+		{name: "platform", clear: func(cfg *config.Config) { cfg.InternalPlatformToken = "" }},
+		{name: "seller", clear: func(cfg *config.Config) { cfg.InternalSellerToken = "" }},
+		{name: "admin", clear: func(cfg *config.Config) { cfg.InternalAdminToken = "" }},
+		{name: "supplier", clear: func(cfg *config.Config) { cfg.InternalSupplierToken = "" }},
+	}
+
+	for _, tokenField := range tokenFields {
+		t.Run(tokenField.name, func(t *testing.T) {
+			cfg := baseConfig
+			tokenField.clear(&cfg)
+			if err := cfg.Validate(); err == nil {
+				t.Fatalf("expected missing %s token to fail production validation", tokenField.name)
+			}
+		})
 	}
 }
 

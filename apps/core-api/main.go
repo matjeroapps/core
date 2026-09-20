@@ -157,6 +157,7 @@ func run(ctx context.Context) error {
 func serviceAuthConfig(cfg config.Config) serviceauth.Config {
 	return serviceauth.Config{
 		Tokens: map[serviceauth.Caller]string{
+			serviceauth.CallerPlatform: cfg.InternalPlatformToken,
 			serviceauth.CallerSeller:   cfg.InternalSellerToken,
 			serviceauth.CallerAdmin:    cfg.InternalAdminToken,
 			serviceauth.CallerSupplier: cfg.InternalSupplierToken,

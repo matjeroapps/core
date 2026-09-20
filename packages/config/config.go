@@ -55,6 +55,7 @@ type Config struct {
 	// actor service presents its own bearer token; a caller with no configured
 	// token cannot authenticate. These are secrets and must never be committed,
 	// logged, or embedded in an image layer.
+	InternalPlatformToken string
 	InternalSellerToken   string
 	InternalAdminToken    string
 	InternalSupplierToken string
@@ -172,6 +173,7 @@ func Load(serviceName string) (Config, error) {
 		MediaUploadMaxBytes:         mediaUploadMaxBytes,
 		MediaPresignTTL:             mediaPresignTTL,
 
+		InternalPlatformToken: stringEnv("CORE_INTERNAL_PLATFORM_TOKEN", ""),
 		InternalSellerToken:   stringEnv("CORE_INTERNAL_SELLER_TOKEN", ""),
 		InternalAdminToken:    stringEnv("CORE_INTERNAL_ADMIN_TOKEN", ""),
 		InternalSupplierToken: stringEnv("CORE_INTERNAL_SUPPLIER_TOKEN", ""),
@@ -202,6 +204,9 @@ func (c Config) Validate() error {
 	}
 	if c.ZitadelIssuer == "" || strings.Contains(c.ZitadelIssuer, "localhost") {
 		return fmt.Errorf("production ZITADEL_ISSUER must be explicitly configured with a non-localhost URL")
+	}
+	if c.InternalPlatformToken == "" {
+		return fmt.Errorf("production CORE_INTERNAL_PLATFORM_TOKEN is required")
 	}
 	if c.InternalSellerToken == "" {
 		return fmt.Errorf("production CORE_INTERNAL_SELLER_TOKEN is required")

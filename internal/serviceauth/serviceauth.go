@@ -30,6 +30,7 @@ type Caller string
 
 const (
 	CallerAdmin    Caller = "admin"
+	CallerPlatform Caller = "platform"
 	CallerSeller   Caller = "seller"
 	CallerSupplier Caller = "supplier"
 )
@@ -142,7 +143,7 @@ func Authenticate(r *http.Request, cfg Config) (Caller, error) {
 // Valid reports whether the value names a known actor service.
 func (c Caller) Valid() bool {
 	switch c {
-	case CallerAdmin, CallerSeller, CallerSupplier:
+	case CallerAdmin, CallerPlatform, CallerSeller, CallerSupplier:
 		return true
 	default:
 		return false

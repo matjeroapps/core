@@ -80,6 +80,7 @@ func (s *stubRevisions) RevisionFor(ctx context.Context, scope storefront.Catalo
 // --- helpers ---
 
 const (
+	testPlatformToken = "platform-token-value"
 	testSellerToken   = "seller-token-value"
 	testAdminToken    = "admin-token-value"
 	testSupplierToken = "supplier-token-value"
@@ -87,6 +88,7 @@ const (
 
 func testAuthConfig() serviceauth.Config {
 	return serviceauth.Config{Tokens: map[serviceauth.Caller]string{
+		serviceauth.CallerPlatform: testPlatformToken,
 		serviceauth.CallerSeller:   testSellerToken,
 		serviceauth.CallerAdmin:    testAdminToken,
 		serviceauth.CallerSupplier: testSupplierToken,
