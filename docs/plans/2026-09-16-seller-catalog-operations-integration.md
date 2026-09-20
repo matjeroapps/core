@@ -19,6 +19,8 @@ Deliver one production path for a seller to select an owned store and operate it
 5. evaluate readiness and publish or unpublish a listing; and
 6. observe the published result in the canonical storefront.
 
+The Supplier Portal consumes and manages the supplier-side wholesale catalog and market-offer lifecycle. The Seller Store remains the primary customer-facing retail environment. Supplier direct-retail capability, where supported, is secondary and must not create a parallel retail commerce architecture.
+
 Every operation is explicitly store-scoped. A seller may own multiple stores, while Core enforces a configurable entitlement whose default permits one active store. The implementation extends the existing Core `/internal/v1` API and Seller `/v1/seller` API rather than creating another business backend.
 
 The canonical customer storefront remains `seller/web/storefront`. The older mock storefront under `seller/web/seller/app/store/[slug]` is deprecated and removed after equivalent navigation is directed to the canonical storefront.
@@ -60,7 +62,7 @@ The current media implementation is not the target library: an object belongs di
 - Kubernetes manifests, Helm charts, operators, or cluster deployment design.
 - Image transformation, transcoding, virus scanning, CDN provisioning, and DAM-style folders/tags.
 - External seller-channel connectors in `seller-hub`.
-- Supplier product-authoring changes; this plan only consumes existing eligible supplier offers.
+- Supplier product-authoring changes; this plan only consumes existing eligible supplier offers published by suppliers in their wholesale catalog operations.
 
 The active-store limit is an entitlement check, not billing logic. This phase configures the limit but does not sell or charge for a higher limit.
 
@@ -156,7 +158,7 @@ Required behavior:
 - Concurrent activations cannot exceed the limit; the transaction locks the seller row or uses an equivalent per-seller advisory lock before counting.
 - Admin moderation may force a store inactive, but activation still goes through the policy.
 - An entitlement denial returns `409 store_entitlement_exceeded` and includes no information about another seller.
-- Supplier-retail stores use the same seller-backed policy because they are persisted as stores owned by the affiliated seller.
+- Supplier direct/affiliated retail stores, where supported, use the same seller-backed policy because they are persisted as stores owned by the affiliated seller, avoiding any duplicate retail backend architecture.
 
 The policy must not limit total store rows, draft stores, inactive stores, products, listings, media, or traffic. `DefaultMaxActiveStores=1` means exactly one simultaneously active store by default, not one lifetime store.
 

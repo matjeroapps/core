@@ -88,7 +88,7 @@ Identity + Localization + Markets
         ↓
 Commerce Domain Foundation
         ↓
-P0 Seller Stores + P0 Supplier Stores Completeness
+P0 Seller Stores + P0 Supplier Portal / Wholesale Commerce Operations
         ↓
 Staged Product Import Lifecycle
         ↓
@@ -129,7 +129,7 @@ Parallel work is allowed only when there are no unresolved dependencies.
 The approved MatjerHub execution priority is strictly ordered as:
 
 ```text
-P0 Seller Stores + P0 Supplier Stores
+P0 Seller Stores + P0 Supplier Portal / Wholesale Commerce Operations
         ↓
 Product Import Lifecycle
         ↓
@@ -140,17 +140,46 @@ Complete Checkout / Order Lifecycle
 Operational Store Experience
 ```
 
-**Unified Marketplace Deferral**: Any new Unified Marketplace discovery, search, merchandising, ranking, recommendations, and cross-store features are explicitly deferred to the lowest priority until Seller and Supplier ecosystems are substantially complete and production-ready in live operational environments. Merged foundational marketplace capabilities (such as curated discovery read models in PR #68, platform service authentication in PR #69, and marketplace listing resolution with checkout attribution in PR #70) remain fully supported in `matjeroapps/core`, but further consumer marketplace feature development is paused unless required as a genuine prerequisite or for security/regression fixes.
+### Strategic Interpretation of Platform Ecosystems
+
+The platform operates through two distinct, decoupled operational ecosystems:
+
+1. **Seller Store Ecosystem (Primary Retail Commerce Environment)**:
+   This is the primary customer-facing retail commerce environment. It includes seller store creation and configuration, custom domains/subdomains, store settings, catalog management, seller-owned products, supplier-backed products imported into seller stores, variants/SKUs, media assets, retail pricing, inventory management, multiple storefront themes, storefront publishing, customer browsing, cart, checkout, payment/COD, orders, fulfillment, shipping, and financial lifecycle.
+   The Seller Store is the main retail implementation priority.
+
+2. **Supplier Portal / Wholesale Commerce Ecosystem (Primary Wholesale Supply Operation)**:
+   This is primarily the supplier-side wholesale and supply operation. It includes supplier onboarding, supplier markets, wholesale products, variants/SKUs, wholesale pricing, supplier inventory across fulfillment locations, supplier media, Market Offers (with MOQ, effective dating, and market currency constraints), offer availability, offer publishing, seller discovery/import of supplier offers, supplier order/fulfillment operations, dropship workflows, stock synchronization, and supplier operational management.
+   The Supplier Portal's primary commerce responsibility is wholesale supply and fulfillment. The Supplier Portal MAY have an affiliated/direct retail-store capability where the architecture already supports it, but this capability is strictly secondary and must NOT be interpreted as requiring the Supplier Portal to become a second full retail-store platform at the same priority as Seller Stores.
+
+Conceptually, the Supplier Portal structure follows:
+```text
+Supplier Portal
+├── Wholesale Catalog & Market Offers      PRIMARY
+├── Inventory / Availability               PRIMARY
+├── Fulfillment / Dropship Operations      PRIMARY
+├── Supplier Operations / Settings
+└── Affiliated Retail Store                SECONDARY
+```
+No second independent retail commerce architecture is created for suppliers.
+
+**Unified Marketplace Deferral**: Any new Unified Marketplace discovery, search, merchandising, ranking, recommendations, and cross-store consumer features are explicitly deferred to the lowest priority until Seller and Supplier ecosystems are substantially complete and production-ready in live operational environments. Foundational marketplace infrastructure merged through Core PR #70 (such as curated discovery read models in PR #68, platform service authentication in PR #69, and marketplace listing resolution with checkout attribution in PR #70) remains fully supported in `matjeroapps/core` as architectural dependencies, but further consumer marketplace feature development is paused.
 
 ### Immediate Product Goal
-A Seller or Supplier can operate a production-ready store with Core integration, product creation/import, variants/SKUs, media management, pricing, inventory tracking, multiple storefront themes where applicable, checkout execution, order management, multi-language/RTL localization, security, and complete operational lifecycle.
+* **Seller Retail Store Operations**: A Seller can operate a production-ready customer-facing store with Core integration, native product creation, importing/linking supplier offers into store listings, variants/SKUs, media management, retail pricing, inventory tracking, multiple storefront themes, single-store cart, checkout execution, order management, multi-language/RTL localization, security, and complete retail operational lifecycle.
+* **Supplier Wholesale Operations**: A Supplier can operate production-ready wholesale commerce and supply operations with Core integration, wholesale product authoring, variants/SKUs, wholesale pricing, inventory availability across fulfillment locations, market-specific offer publishing (with MOQ and effective dating), dropship order routing and fulfillment, stock synchronization, and financial ledger settlements (with direct/affiliated retail store capabilities remaining secondary).
 
 ### Required End-to-End Operational Flows
 
-#### 1. End-to-End Seller Flow
+#### 1. End-to-End Seller Retail Flow
+The complete operational retail cycle for Seller Stores:
+```text
+Seller → Store → Catalog → Product / Listing → Variants / SKUs → Media → Pricing → Inventory → Theme → Storefront → Cart → Checkout → Payment/COD → Order → Fulfillment → Shipping → Delivery → Financial lifecycle
+```
+
 1. **Seller Registration & Tenant Onboarding**: Seller registers, creates a store, and receives a store-scoped tenant context with role-based access control.
 2. **Store Setup & Custom Domain Configuration**: Seller configures store profile, custom domain mapping or platform subdomain (`seller.matjerhub.com`), currency, and localization (Arabic/English, RTL/LTR).
-3. **Catalog Setup & Product Management**: Seller creates products directly via Seller Dashboard or initiates a staged bulk product import.
+3. **Catalog Setup & Product Management**: Seller creates native products directly via Seller Dashboard or initiates a staged bulk product import.
 4. **Variants, SKUs, Media, Pricing & Inventory**: Seller configures product options (color, size), unique SKUs/barcodes, attaches media assets to products/variants, sets retail pricing, and allocates stock to store fulfillment locations.
 5. **Storefront Theme Selection & Publishing**: Seller chooses and configures a storefront theme, customizing logo, colors, and layout, and publishes active seller listings.
 6. **Customer Browsing & Cart Execution**: Buyer visits seller store on Next.js storefront, browses localized product catalog, selects variants, and adds items to single-store cart.
@@ -159,10 +188,15 @@ A Seller or Supplier can operate a production-ready store with Core integration,
 9. **Seller Order Operations & Fulfillment**: Seller views incoming order in Seller Dashboard, updates fulfillment state machine (processing -> shipped -> delivered), and tracks balance/payout in financial ledger.
 
 #### 2. End-to-End Supplier-to-Seller Flow
+The supplier-backed product flow preserves existing reference and ownership semantics:
+```text
+Supplier Product → Supplier Offer → Seller discovers offer → Seller imports/links offer → Seller creates store-specific listing → Seller sets retail price/presentation → Seller publishes listing → Customer purchases through Seller Store
+```
+
 1. **Supplier Registration & Tenant Onboarding**: Supplier registers, establishes supplier tenant context, and configures fulfillment capabilities.
-2. **Supplier Catalog & Market Offer Creation**: Supplier defines products, variants, SKUs, wholesale cost pricing, minimum order quantities (MOQ), and market offers with effective dating.
+2. **Supplier Catalog & Market Offer Creation**: Supplier defines wholesale products, variants, SKUs, wholesale cost pricing, minimum order quantities (MOQ), and market offers with effective dating.
 3. **Offer Publishing to Market Catalog**: Supplier publishes active offers to the Core market catalog, making them discoverable to verified sellers.
-4. **Seller Discovery & Offer Linking**: Seller browses available supplier offers in Seller Dashboard, selects offers, links them to seller store listings, and defines retail pricing markups.
+4. **Seller Discovery & Offer Linking**: Seller browses available supplier offers in Seller Dashboard, selects offers, links them to seller store listings, and defines retail pricing markups and presentation without copying or modifying supplier-owned product facts.
 5. **Inventory & Price Synchronization**: Real-time or batch synchronization reflects supplier stock availability and wholesale price updates on linked seller listings.
 6. **Customer Purchase on Seller Storefront**: Buyer purchases the seller listing on the seller's storefront.
 7. **Atomic Order Finalization & Inventory Reservation**: Core validates supplier offer validity, stock, and reserves inventory atomically across supplier fulfillment locations.
@@ -176,6 +210,13 @@ Product creation via bulk import or integration feeds must adhere strictly to th
 ```text
 Import → Validate → Map → Review → Create/Update Product → Variants/SKUs → Media → Pricing → Inventory → Publish
 ```
+
+The platform strictly distinguishes between:
+* **Supplier-side wholesale product/catalog ingestion**: Ingesting supplier product facts, SKUs, inventory locations, and wholesale market offers into the supplier catalog.
+* **Seller-side retail product creation**: Authoring seller-owned products, SKUs, store inventory, and retail listings.
+* **Seller importing/linking supplier offers into a Seller Store**: Creating store-scoped seller listings linked to active supplier offers using reference semantics without copying supplier-owned product data into seller product entities.
+
+These three distinct operations must never be collapsed into an ambiguous "import products" feature.
 
 1. **Import**: Receive raw feed/file (CSV, JSON, Excel) or API payload into isolated staging tables (`import_jobs`, `import_records`).
 2. **Validate**: Perform strict schema validation, check required fields (title, SKU, price), verify market currency, and detect duplicates.
@@ -196,7 +237,7 @@ Repository boundaries must be strictly preserved across all operational capabili
 
 * **`matjeroapps/core`**: Owns all domain models, persistence schemas, business invariants, authorization, tenant isolation, financial ledger, and outbox event publishing. Serves private HTTP/JSON API (`/internal/v1`) behind service-auth tokens (`X-Matjero-Service`, `Authorization: Bearer`).
 * **`matjeroapps/seller`**: Seller actor application (Next.js / React). Communicates with Core solely via internal APIs. No direct database access or Core package imports.
-* **`matjeroapps/supplier`**: Supplier actor application. Communicates with Core solely via internal APIs.
+* **`matjeroapps/supplier`**: Supplier actor application (React). Communicates with Core solely via internal APIs.
 * **`matjeroapps/platform`**: Public Platform application and native Seller Storefront (Next.js). Resolves stores via trusted host mapping and communicates with Core internal APIs.
 * **`matjeroapps/admin`**: Platform Admin application. Communicates with Core internal APIs.
 * **`matjeroapps/ui-sdk`**: Shared `@matjerhub/ui-sdk` package containing design tokens, shared UI components, and accessibility primitives.
@@ -209,7 +250,7 @@ Foundational marketplace capabilities merged through Core PR #70 remain supporte
 * Marketplace listing resolution (`POST /internal/v1/markets/{market_code}/marketplace/listings/{listing_id}/resolve` in PR #70).
 * Single-store checkout attribution stored in `marketplace_order_attributions` and published on `order.created` (PR #70).
 
-All future consumer marketplace discovery, multi-seller catalog aggregation, cross-store search, merchandising, ranking algorithms, and recommendations are deferred until Seller Stores and Supplier Stores achieve complete operational readiness.
+All future consumer marketplace discovery, multi-seller catalog aggregation, cross-store search, merchandising, ranking algorithms, and recommendations are deferred until Seller Stores and Supplier Portal / Wholesale Commerce ecosystems achieve complete operational readiness.
 
 ---
 
@@ -226,7 +267,7 @@ To verify completion of the immediate operational priorities, the following meas
 * [ ] **Core Integration**: All mutations emit versioned outbox events (`seller.created`, `product.updated`, `order.updated`); unit, vet, lint, and build suites pass cleanly.
 
 ### 2. Supplier Completeness Exit Criteria
-* [ ] **Supplier Onboarding & Catalog**: Suppliers can register, create wholesale catalogs, define product variants, SKUs, and wholesale cost pricing.
+* [ ] **Supplier Onboarding & Wholesale Catalog**: Suppliers can register, establish wholesale supplier tenant context, create wholesale catalogs, define product variants, SKUs, and wholesale cost pricing.
 * [ ] **Market Offers**: Suppliers can publish market offers with effective dating, minimum order quantities (MOQ), and market currency constraints.
 * [ ] **Fulfillment & Dropship Routing**: Suppliers receive routed dropship orders from linked seller sales, confirm fulfillment, submit tracking information, and emit `supplier_order.fulfilled` events.
 * [ ] **Stock Feeds**: Real-time or batch inventory snapshot updates reflect accurately across all linked seller listings.
@@ -235,7 +276,7 @@ To verify completion of the immediate operational priorities, the following meas
 ### 3. Product Import Lifecycle Exit Criteria
 * [ ] **Full 10-Stage Pipeline**: CSV, JSON, and API feed imports execute through all 10 stages (`Import -> Validate -> Map -> Review -> Create/Update Product -> Variants/SKUs -> Media -> Pricing -> Inventory -> Publish`).
 * [ ] **Validation & Error Reporting**: Staging tables capture schema errors, missing required fields, and mapping failures with line-by-line diagnostic reports.
-* [ ] **Review Interface**: Sellers/Suppliers can inspect staged import records, review mapping warnings, and approve batch creation.
+* [ ] **Review Interface**: Sellers and Suppliers can inspect staged import records, review mapping warnings, and approve batch creation in their respective workspaces.
 * [ ] **Transactional Safety & Idempotency**: Re-running imports with identical feed identifiers updates existing products without creating duplicate SKUs or orphaned database records.
 
 ### 4. Storefront & Themes Exit Criteria
@@ -1603,69 +1644,97 @@ Implement:
 
 ---
 
-## Supplier Dashboard
+## Supplier Portal / Dashboard (Primary: Wholesale Commerce & Market Offers)
+
+The Supplier Portal's primary workspace is wholesale catalog management and market offer publishing. Suppliers are responsible for wholesale supply, inventory availability, and order fulfillment. Direct/affiliated retail-store management is secondary.
 
 Implement:
 
-* Supplier profile
-* Supplier markets
-* Fulfillment locations
-* Products
-* Variants
-* Pricing
-* Inventory
-* Media
-* Settings
-* Members
+* **Wholesale Catalog & Market Offers (PRIMARY)**:
+  * Supplier profile & operational settings
+  * Supplier markets
+  * Fulfillment locations
+  * Wholesale products & product authoring
+  * Variants and unique SKUs/barcodes
+  * Wholesale cost pricing
+  * Inventory availability tracking across fulfillment locations
+  * Market Offers (with MOQ, effective dating, and market currency constraints)
+  * Offer publishing and lifecycle management
+  * Supplier media assets
+* **Fulfillment & Dropship Operations (PRIMARY)**:
+  * Inbound dropship order routing from linked seller sales
+  * Package fulfillment state machine and tracking updates
+  * Double-entry settlement tracking
+* **Supplier Members & Security**:
+  * Role-based access (`supplier_owner`, `supplier_manager`, `supplier_staff`)
+* **Affiliated Retail Store (SECONDARY)**:
+  * Optional access to an affiliated seller retail store where supported by architecture, reusing standard seller store infrastructure without creating a parallel retail platform.
 
-Manual product management must work before supplier integrations exist.
+Manual wholesale product and offer management must work before external supplier integrations exist.
 
 ---
 
-## Seller Dashboard
+## Seller Dashboard (Primary: Customer-Facing Retail Store Operations)
+
+The Seller Dashboard's primary workspace is operating the customer-facing retail store.
 
 Implement:
 
-* Seller profile
-* Store management
-* Browse supplier products
-* Filter by market
-* Import products
-* Selling price configuration
-* Listing management
-* Basic analytics
-* Members
-* Settings
+* **Store Management & Configuration**:
+  * Seller profile & store settings
+  * Custom domain / platform subdomain mapping
+  * Multi-store management and store switcher (with Core entitlement enforcement)
+  * Storefront theme selection and customization
+* **Unified Catalog & Merchandising**:
+  * Native seller-owned product authoring (translations, categories, variants, SKUs, retail pricing, presentation)
+  * Store-scoped media library (presigned uploads, SHA-256 deduplication, reusable references)
+  * Browse supplier wholesale catalog & market offers filtered by market
+  * Idempotent import / linking of supplier offers into store listings (preserving reference semantics and supplier ownership of source facts)
+  * Retail pricing markups and store-specific presentation
+  * Listing lifecycle management (`DRAFT <-> PUBLISHED <-> UNPUBLISHED -> ARCHIVED`)
+  * Publish readiness evaluation
+* **Store Inventory & Operations**:
+  * Store fulfillment locations and stock allocation for seller-owned SKUs
+  * Real-time availability synchronization for supplier-backed listings
+  * Order management and retail fulfillment lifecycle
+  * Basic analytics
+  * Store members (`seller_owner`, `seller_manager`, `seller_staff`)
 
 ---
 
 ## Exit Criteria
 
-This flow works without external integrations:
+This operational flow works end-to-end without external integrations:
 
 ```text
 Create Supplier
       ↓
 Create Fulfillment Location
       ↓
-Create Product
+Create Wholesale Product & SKUs
       ↓
-Create Inventory
+Set Inventory Availability
+      ↓
+Publish Market Offer
       ↓
 Create Seller
       ↓
 Create Store
       ↓
-Browse Supplier Catalog
+Browse Supplier Market Offers
       ↓
-Import Product
+Import/Link Offer to Store Listing
       ↓
-Publish Listing
+Set Retail Price & Presentation
+      ↓
+Publish Store Listing
 ```
 
 ---
 
 # PHASE 4 — Native Storefront and Theme Engine
+
+Seller Store storefront themes are a core, high-priority part of the customer-facing retail store experience.
 
 ## Storefront Architecture
 
@@ -1749,6 +1818,8 @@ Prefer:
 ---
 
 # 35. Theme Engine
+
+Multiple configurable storefront themes are high priority for Seller Stores.
 
 Sellers can:
 
@@ -1835,6 +1906,10 @@ Third-party theme development may be introduced only after a safe extension mode
 ---
 
 # PHASE 5 — Cart, Checkout, Orders and Inventory Transactions
+
+The complete checkout and order lifecycle is a high-priority milestone for the Seller Store.
+
+*Strategic Context*: Customer checkout and retail order execution occur strictly within the Seller Store customer journey. Supplier participation in orders involving supplier-backed products occurs through backend dropship order routing, supplier fulfillment state machines, and financial ledger settlements—not by moving retail checkout or customer management into the Supplier Portal.
 
 *Historical Status*: Core domain models, transactional outbox publishing, atomic inventory reservation algorithms, order aggregate state machines, and single-store marketplace checkout attribution (merged in Core PR #70) have completed foundational backend implementation in `matjeroapps/core`. Production end-to-end checkout execution across multiple Seller Storefront themes remains an active operational focus.
 
@@ -2824,7 +2899,7 @@ Require:
 
 # PHASE 13 — Unified Marketplace [DEFERRED - LOWEST PRIORITY]
 
-**Strategic Roadmap Status**: DEFERRED TO LOWEST PRIORITY until P0 Seller Stores and P0 Supplier Stores ecosystems are substantially complete and operationally validated in production.
+**Strategic Roadmap Status**: DEFERRED TO LOWEST PRIORITY until P0 Seller Stores and P0 Supplier Portal / Wholesale Commerce Operations ecosystems are substantially complete and operationally validated in production.
 
 *Historical Status*: Foundational marketplace capabilities merged through Core PR #70 (curated discovery collection read models in PR #68, platform service authentication in PR #69, marketplace listing resolution and single-store checkout attribution in PR #70) remain fully supported in `matjeroapps/core`.
 
@@ -3451,9 +3526,9 @@ P1 Identity, Localization (Arabic/English, RTL/LTR) & Markets
 P2 Commerce Core
    Suppliers, Sellers, Stores, Catalog, Offers, Listings, Inventory
 
-P3 P0 Seller Stores & P0 Supplier Stores Completeness
-   Operational Storefront & Seller Management
-   Operational Supplier Management & Wholesale Catalog
+P3 P0 Seller Stores & P0 Supplier Portal / Wholesale Ecosystem Completeness
+   Operational Storefront & Seller Retail Store Management
+   Operational Supplier Wholesale Management, Catalog & Market Offers
 
 P4 Staged Product Import Lifecycle
    Import -> Validate -> Map -> Review -> Create/Update Product -> Variants/SKUs -> Media -> Pricing -> Inventory -> Publish
