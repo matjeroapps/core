@@ -226,9 +226,19 @@ type SupplierOfferCreateRequest struct {
 	SupplierMarketID  string       `json:"supplier_market_id"`
 	MarketCode        string       `json:"market_code"`
 	Status            string       `json:"status"`
+	MinimumOrderQty   int64        `json:"minimum_order_quantity,omitempty"`
 	Price             *moneyAmount `json:"price"`
 	IsAvailable       *bool        `json:"is_available"`
 	AvailableQty      *int64       `json:"available_qty"`
+}
+
+type SupplierMediaCreateRequest struct {
+	MediaType  string  `json:"media_type"`
+	URI        string  `json:"uri"`
+	AltText    string  `json:"alt_text"`
+	SortOrder  int     `json:"sort_order"`
+	StorageKey *string `json:"storage_key,omitempty"`
+	IsPrimary  bool    `json:"is_primary"`
 }
 
 // moneyAmount is the minor-unit/currency pair used for price mutations.

@@ -289,6 +289,7 @@ type SupplierOffer struct {
 	SupplierMarketID  string    `json:"supplier_market_id"`
 	MarketCode        string    `json:"market_code"`
 	Status            string    `json:"status"`
+	MinimumOrderQty   int64     `json:"minimum_order_quantity"`
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
 }
@@ -455,6 +456,14 @@ type SellerProductListView struct {
 type PublishReadiness struct {
 	IsReady bool     `json:"is_ready"`
 	Reasons []string `json:"reasons,omitempty"`
+}
+
+type SupplierPublication struct {
+	ProductID       string           `json:"product_id"`
+	SupplierProduct SupplierProduct  `json:"supplier_product"`
+	Readiness       PublishReadiness `json:"readiness"`
+	Status          string           `json:"status"`
+	PublishedOffers []SupplierOffer  `json:"published_offers,omitempty"`
 }
 
 type MediaUploadRequest struct {

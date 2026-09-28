@@ -234,6 +234,7 @@ func (s *server) handleCreateSupplierOffer(w http.ResponseWriter, r *http.Reques
 		SupplierMarketID:  body.SupplierMarketID,
 		MarketCode:        body.MarketCode,
 		Status:            body.Status,
+		MinimumOrderQty:   body.MinimumOrderQty,
 		IsAvailable:       body.IsAvailable,
 		AvailableQty:      body.AvailableQty,
 	}
@@ -252,6 +253,119 @@ func (s *server) handleCreateSupplierOffer(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	httpx.WriteJSON(w, http.StatusCreated, offer)
+}
+
+func (s *server) handleCreateSupplierProductVariant(w http.ResponseWriter, r *http.Request) {
+	subject, supplierID, ok := s.authorizeSupplierSubject(w, r)
+	if !ok {
+		return
+	}
+	var body VariantCreateRequest
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	variant, err := s.deps.Commerce.CreateSupplierVariantForSubject(r.Context(), subject, supplierID, chi.URLParam(r, "productID"), body.Code, body.Status)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, variant)
+}
+
+func (s *server) handleCreateSupplierVariantSKU(w http.ResponseWriter, r *http.Request) {
+	subject, supplierID, ok := s.authorizeSupplierSubject(w, r)
+	if !ok {
+		return
+	}
+	var body SKUCreateRequest
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	sku, err := s.deps.Commerce.CreateSupplierSKUForSubject(r.Context(), subject, supplierID, chi.URLParam(r, "productID"), chi.URLParam(r, "variantID"), body.Code, body.Barcode, body.Status)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, sku)
+}
+
+func (s *server) handleCreateSupplierProductMedia(w http.ResponseWriter, r *http.Request) {
+	subject, supplierID, ok := s.authorizeSupplierSubject(w, r)
+	if !ok {
+		return
+	}
+	var body SupplierMediaCreateRequest
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	media, err := s.deps.Commerce.CreateSupplierMediaForSubject(r.Context(), subject, supplierID, chi.URLParam(r, "productID"), commerce.MediaMetadata{
+		MediaType:  body.MediaType,
+		URI:        body.URI,
+		AltText:    body.AltText,
+		SortOrder:  body.SortOrder,
+		StorageKey: body.StorageKey,
+		IsPrimary:  body.IsPrimary,
+	})
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, media)
+}
+
+func (s *server) handleUpdateSupplierProductMedia(w http.ResponseWriter, r *http.Request) {
+	subject, supplierID, ok := s.authorizeSupplierSubject(w, r)
+	if !ok {
+		return
+	}
+	var body MediaMetadataUpdateRequest
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	media, err := s.deps.Commerce.UpdateSupplierMediaForSubject(r.Context(), subject, supplierID, chi.URLParam(r, "productID"), chi.URLParam(r, "mediaID"), body.AltText, body.SortOrder, body.IsPrimary)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, media)
+}
+
+func (s *server) handleDeleteSupplierProductMedia(w http.ResponseWriter, r *http.Request) {
+	subject, supplierID, ok := s.authorizeSupplierSubject(w, r)
+	if !ok {
+		return
+	}
+	if err := s.deps.Commerce.DeleteSupplierMediaForSubject(r.Context(), subject, supplierID, chi.URLParam(r, "productID"), chi.URLParam(r, "mediaID")); err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, StatusResponse{Status: "ok"})
+}
+
+func (s *server) handleGetSupplierProductReadiness(w http.ResponseWriter, r *http.Request) {
+	subject, supplierID, ok := s.authorizeSupplierSubject(w, r)
+	if !ok {
+		return
+	}
+	publication, err := s.deps.Commerce.GetSupplierPublicationReadinessForSubject(r.Context(), subject, supplierID, chi.URLParam(r, "productID"))
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, publication)
+}
+
+func (s *server) handlePublishSupplierProduct(w http.ResponseWriter, r *http.Request) {
+	subject, supplierID, ok := s.authorizeSupplierSubject(w, r)
+	if !ok {
+		return
+	}
+	publication, err := s.deps.Commerce.PublishSupplierProductForSubject(r.Context(), subject, supplierID, chi.URLParam(r, "productID"))
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, publication)
 }
 
 func (s *server) handleListInventorySnapshots(w http.ResponseWriter, r *http.Request) {
