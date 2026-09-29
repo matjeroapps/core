@@ -38,6 +38,11 @@ type SupplierCatalogItem struct {
 	CategoryID       string       `json:"category_id,omitempty"`
 	CategoryName     string       `json:"category_name,omitempty"`
 	Price            *money.Money `json:"price,omitempty"`
+	MinimumOrderQty  int64        `json:"minimum_order_quantity,omitempty"`
+	SKUID            string       `json:"sku_id,omitempty"`
+	SKUCode          string       `json:"sku_code,omitempty"`
+	PrimaryMediaID   string       `json:"primary_media_id,omitempty"`
+	PrimaryMediaURI  string       `json:"primary_media_uri,omitempty"`
 	IsAvailable      *bool        `json:"is_available,omitempty"`
 	AvailableQty     *int64       `json:"available_qty,omitempty"`
 	FulfillmentCount int64        `json:"fulfillment_count,omitempty"`

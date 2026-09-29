@@ -2731,13 +2731,14 @@ func (r Repository) ImportSupplierOfferAtomically(ctx context.Context, storeID, 
 			return translatePGError(err, "get store market code for import")
 		}
 
-		var offerStatus, offerMarket, globalProductID string
+		var offerStatus, offerMarket, supplierProductStatus, productStatus, globalProductID string
 		errOffer := tx.QueryRow(ctx, `
-			SELECT so.status, so.market_code, sp.product_id
+			SELECT so.status, so.market_code, sp.status, p.status, sp.product_id
 			FROM supplier_offers so
 			JOIN supplier_products sp ON sp.id = so.supplier_product_id
+			JOIN products p ON p.id = sp.product_id
 			WHERE so.id = $1
-		`, supplierOfferID).Scan(&offerStatus, &offerMarket, &globalProductID)
+		`, supplierOfferID).Scan(&offerStatus, &offerMarket, &supplierProductStatus, &productStatus, &globalProductID)
 		if errOffer != nil {
 			if errors.Is(errOffer, pgx.ErrNoRows) {
 				return ErrNotFound
@@ -2746,6 +2747,12 @@ func (r Repository) ImportSupplierOfferAtomically(ctx context.Context, storeID, 
 		}
 		if offerStatus != "active" {
 			return fmt.Errorf("%w: supplier offer %s is not active", ErrOfferUnavailable, supplierOfferID)
+		}
+		if supplierProductStatus != "active" {
+			return fmt.Errorf("%w: supplier product %s is not active", ErrOfferUnavailable, supplierOfferID)
+		}
+		if productStatus != "active" && productStatus != "published" {
+			return fmt.Errorf("%w: product %s is not published", ErrOfferUnavailable, globalProductID)
 		}
 		if offerMarket != storeMarketCode {
 			return fmt.Errorf("%w: supplier offer market %s does not match store market %s", ErrMarketMismatch, offerMarket, storeMarketCode)

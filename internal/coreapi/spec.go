@@ -492,6 +492,76 @@ func internalRoutes() []openapi.RouteSpec {
 			Responses:   writeResponses("Applied categories", ProductCategoriesResponse{}),
 		},
 		{
+			Method: http.MethodPost, Path: "/internal/v1/suppliers/{supplierID}/products/{productID}/variants", OperationID: "internalCreateSupplierProductVariant",
+			Summary: "Create a supplier-owned product variant", Tags: []string{"Suppliers"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("supplierID", "Supplier identifier"),
+				pathParam("productID", "Product identifier"),
+			},
+			RequestBody: VariantCreateRequest{},
+			Responses:   createResponses("Created variant", commerce.Variant{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/suppliers/{supplierID}/products/{productID}/variants/{variantID}/skus", OperationID: "internalCreateSupplierVariantSKU",
+			Summary: "Create a supplier-owned SKU", Tags: []string{"Suppliers"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("supplierID", "Supplier identifier"),
+				pathParam("productID", "Product identifier"),
+				pathParam("variantID", "Variant identifier"),
+			},
+			RequestBody: SKUCreateRequest{},
+			Responses:   createResponses("Created SKU", commerce.SKU{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/suppliers/{supplierID}/products/{productID}/media", OperationID: "internalCreateSupplierProductMedia",
+			Summary: "Create supplier product media metadata", Tags: []string{"Suppliers"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("supplierID", "Supplier identifier"),
+				pathParam("productID", "Product identifier"),
+			},
+			RequestBody: SupplierMediaCreateRequest{},
+			Responses:   createResponses("Created media metadata", commerce.MediaMetadata{}),
+		},
+		{
+			Method: http.MethodPut, Path: "/internal/v1/suppliers/{supplierID}/products/{productID}/media/{mediaID}", OperationID: "internalUpdateSupplierProductMedia",
+			Summary: "Update supplier product media metadata", Tags: []string{"Suppliers"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("supplierID", "Supplier identifier"),
+				pathParam("productID", "Product identifier"),
+				pathParam("mediaID", "Media identifier"),
+			},
+			RequestBody: MediaMetadataUpdateRequest{},
+			Responses:   writeResponses("Updated media metadata", commerce.MediaMetadata{}),
+		},
+		{
+			Method: http.MethodDelete, Path: "/internal/v1/suppliers/{supplierID}/products/{productID}/media/{mediaID}", OperationID: "internalDeleteSupplierProductMedia",
+			Summary: "Delete supplier product media metadata", Tags: []string{"Suppliers"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("supplierID", "Supplier identifier"),
+				pathParam("productID", "Product identifier"),
+				pathParam("mediaID", "Media identifier"),
+			},
+			Responses: writeResponses("Deleted media metadata", StatusResponse{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/suppliers/{supplierID}/products/{productID}/readiness", OperationID: "internalGetSupplierProductReadiness",
+			Summary: "Evaluate supplier publication readiness", Tags: []string{"Suppliers"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("supplierID", "Supplier identifier"),
+				pathParam("productID", "Product identifier"),
+			},
+			Responses: readResponses("Supplier publication readiness", commerce.SupplierPublication{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/suppliers/{supplierID}/products/{productID}/publish", OperationID: "internalPublishSupplierProduct",
+			Summary: "Publish supplier product after authoritative readiness checks", Tags: []string{"Suppliers"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("supplierID", "Supplier identifier"),
+				pathParam("productID", "Product identifier"),
+			},
+			Responses: writeResponses("Published supplier product", commerce.SupplierPublication{}),
+		},
+		{
 			Method: http.MethodGet, Path: "/internal/v1/suppliers/{supplierID}/offers", OperationID: "internalListSupplierOffers",
 			Summary: "List a supplier's offers", Tags: []string{"Suppliers"},
 			Parameters: append([]openapi.ParameterSpec{pathParam("supplierID", "Supplier identifier")}, pageParams...),

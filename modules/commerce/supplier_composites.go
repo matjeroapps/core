@@ -98,6 +98,7 @@ type OfferDraft struct {
 	SupplierMarketID  string
 	MarketCode        string
 	Status            string
+	MinimumOrderQty   int64
 	Price             *money.Money
 	IsAvailable       *bool
 	AvailableQty      *int64
@@ -120,15 +121,18 @@ func (r Repository) CreateSupplierOfferAtomically(ctx context.Context, supplierI
 	if draft.AvailableQty != nil && *draft.AvailableQty < 0 {
 		return SupplierOffer{}, ErrInvalidInput
 	}
+	if draft.MinimumOrderQty <= 0 {
+		draft.MinimumOrderQty = 1
+	}
 
 	var created SupplierOffer
 	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		offerID := uuid.NewString()
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO supplier_offers (id, supplier_id, supplier_product_id, supplier_market_id, market_code, status)
-			VALUES ($1, $2, $3, $4, $5, $6)
+			INSERT INTO supplier_offers (id, supplier_id, supplier_product_id, supplier_market_id, market_code, status, minimum_order_quantity)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)
 			RETURNING created_at, updated_at
-		`, offerID, supplierID, draft.SupplierProductID, draft.SupplierMarketID, draft.MarketCode, draft.Status).
+		`, offerID, supplierID, draft.SupplierProductID, draft.SupplierMarketID, draft.MarketCode, draft.Status, draft.MinimumOrderQty).
 			Scan(&created.CreatedAt, &created.UpdatedAt); err != nil {
 			return translatePGError(err, "create supplier offer")
 		}
@@ -138,6 +142,7 @@ func (r Repository) CreateSupplierOfferAtomically(ctx context.Context, supplierI
 		created.SupplierMarketID = draft.SupplierMarketID
 		created.MarketCode = draft.MarketCode
 		created.Status = draft.Status
+		created.MinimumOrderQty = draft.MinimumOrderQty
 
 		if draft.Price != nil {
 			if _, err := tx.Exec(ctx, `

@@ -633,13 +633,13 @@ func (r Repository) CreateSupplierOffer(ctx context.Context, supplierID, supplie
 	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		id := uuid.NewString()
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO supplier_offers (id, supplier_id, supplier_product_id, supplier_market_id, market_code, status)
-			VALUES ($1, $2, $3, $4, $5, $6)
+			INSERT INTO supplier_offers (id, supplier_id, supplier_product_id, supplier_market_id, market_code, status, minimum_order_quantity)
+			VALUES ($1, $2, $3, $4, $5, $6, 1)
 			RETURNING created_at, updated_at
 		`, id, supplierID, supplierProductID, supplierMarketID, marketCode, status).Scan(&created.CreatedAt, &created.UpdatedAt); err != nil {
 			return translatePGError(err, "create supplier offer")
 		}
-		created = SupplierOffer{ID: id, SupplierID: supplierID, SupplierProductID: supplierProductID, SupplierMarketID: supplierMarketID, MarketCode: marketCode, Status: status, CreatedAt: created.CreatedAt, UpdatedAt: created.UpdatedAt}
+		created = SupplierOffer{ID: id, SupplierID: supplierID, SupplierProductID: supplierProductID, SupplierMarketID: supplierMarketID, MarketCode: marketCode, Status: status, MinimumOrderQty: 1, CreatedAt: created.CreatedAt, UpdatedAt: created.UpdatedAt}
 		return nil
 	})
 	return created, err

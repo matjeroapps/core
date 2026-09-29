@@ -281,7 +281,7 @@ func (r Repository) ListSupplierOffers(ctx context.Context, supplierID string, p
 	}
 	page = normalizePage(page)
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, supplier_id, supplier_product_id, supplier_market_id, market_code, status, created_at, updated_at
+		SELECT id, supplier_id, supplier_product_id, supplier_market_id, market_code, status, minimum_order_quantity, created_at, updated_at
 		FROM supplier_offers
 		WHERE supplier_id = $1
 		ORDER BY created_at DESC, id DESC
@@ -294,7 +294,7 @@ func (r Repository) ListSupplierOffers(ctx context.Context, supplierID string, p
 	var items []SupplierOffer
 	for rows.Next() {
 		var item SupplierOffer
-		if err := rows.Scan(&item.ID, &item.SupplierID, &item.SupplierProductID, &item.SupplierMarketID, &item.MarketCode, &item.Status, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.SupplierID, &item.SupplierProductID, &item.SupplierMarketID, &item.MarketCode, &item.Status, &item.MinimumOrderQty, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan supplier offer: %w", err)
 		}
 		items = append(items, item)
@@ -691,7 +691,11 @@ func (r Repository) ListSupplierCatalog(ctx context.Context, filter SupplierCata
 	page := normalizePage(filter.Page)
 	locale := normalizeLocale(filter.Locale)
 	args := []any{}
-	where := []string{"1=1"}
+	where := []string{
+		"(p.status = 'active' OR p.status = 'published')",
+		"sp.status = 'active'",
+		"so.status = 'active'",
+	}
 
 	if filter.MarketCode != "" {
 		args = append(args, filter.MarketCode)
@@ -740,6 +744,9 @@ func (r Repository) ListSupplierCatalog(ctx context.Context, filter SupplierCata
 			COALESCE(cat.category_id::text, ''),
 			COALESCE(cat.name, cat.slug, ''),
 			price.amount_minor, price.currency_code,
+			so.minimum_order_quantity,
+			COALESCE(sku.id::text, ''), COALESCE(sku.code, ''),
+			COALESCE(media.id::text, ''), COALESCE(media.uri, ''),
 			av.is_available, av.available_qty,
 			so.updated_at
 		FROM supplier_offers so
@@ -774,6 +781,21 @@ func (r Repository) ListSupplierCatalog(ctx context.Context, filter SupplierCata
 			LIMIT 1
 		) price ON true
 		LEFT JOIN LATERAL (
+			SELECT sk.id, sk.code
+			FROM variants v
+			JOIN skus sk ON sk.variant_id = v.id AND sk.status = 'active'
+			WHERE v.product_id = p.id AND v.status = 'active'
+			ORDER BY sk.created_at ASC, sk.id ASC
+			LIMIT 1
+		) sku ON true
+		LEFT JOIN LATERAL (
+			SELECT m.id, m.uri
+			FROM media_metadata m
+			WHERE m.product_id = p.id AND m.is_primary = true
+			ORDER BY m.created_at DESC, m.id DESC
+			LIMIT 1
+		) media ON true
+		LEFT JOIN LATERAL (
 			SELECT is_available, available_qty
 			FROM supplier_offer_availability
 			WHERE supplier_offer_id = so.id
@@ -804,6 +826,9 @@ func (r Repository) ListSupplierCatalog(ctx context.Context, filter SupplierCata
 			&item.CategoryID,
 			&item.CategoryName,
 			&amountMinor, &currencyCode,
+			&item.MinimumOrderQty,
+			&item.SKUID, &item.SKUCode,
+			&item.PrimaryMediaID, &item.PrimaryMediaURI,
 			&item.IsAvailable, &item.AvailableQty,
 			&item.UpdatedAt,
 		); err != nil {
