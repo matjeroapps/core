@@ -96,6 +96,22 @@ func (s *server) handleListSupplierCatalog(w http.ResponseWriter, r *http.Reques
 		writeDomainError(w, err)
 		return
 	}
+	if caller, ok := serviceauth.CallerFrom(r.Context()); ok && caller == serviceauth.CallerSeller {
+		subject := serviceauth.SubjectFrom(r)
+		member, err := s.deps.Commerce.AuthorizeSellerAccess(r.Context(), subject, store.SellerID, commerce.RoleStaff)
+		if err != nil {
+			writeDomainError(w, err)
+			return
+		}
+		if commerce.NormalizeRole(member.Role) == commerce.RoleStaff {
+			for i := range items {
+				items[i].Price = nil
+				items[i].MinimumOrderQty = 0
+				items[i].IsAvailable = nil
+				items[i].AvailableQty = nil
+			}
+		}
+	}
 	httpx.WriteJSON(w, http.StatusOK, CollectionResponse[commerce.SupplierCatalogItem]{Items: items})
 }
 

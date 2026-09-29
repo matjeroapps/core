@@ -173,6 +173,59 @@ func jsonKeys(t *testing.T, path string, payload map[string]any, want ...string)
 	}
 }
 
+// TestSupplierAndSellerFieldSets mirrors the boundary matrix: supplier facts
+// are carried by discovery DTOs, while seller listings carry source lineage
+// and seller-owned lifecycle fields without supplier economics.
+func TestSupplierAndSellerFieldSets(t *testing.T) {
+	availableQty := int64(12)
+	supplierPrice := money.MustNew(10000, "EGP")
+	supplierItem := commerce.SupplierCatalogItem{
+		OfferID: "offer-1", OfferStatus: "active", MarketCode: "EG",
+		ProductID: "product-1", ProductSlug: "desk-lamp", ProductName: "Desk Lamp",
+		ProductStatus: "active", SupplierID: "supplier-1", SupplierCode: "SUP-LAMP",
+		SupplierName: "Supplier One", Price: &supplierPrice,
+		MinimumOrderQty: 2, IsAvailable: boolPtr(true), AvailableQty: &availableQty,
+	}
+	listing := commerce.SellerListing{
+		ID: "listing-1", StoreID: "store-1", ProductID: "product-1",
+		SupplierOfferID: stringPtr("offer-1"), MarketCode: "EG", Status: "draft",
+	}
+
+	supplierPayload := marshalMap(t, supplierItem)
+	jsonKeys(t, "supplier discovery", supplierPayload,
+		"offer_id", "offer_status", "market_code", "product_id", "product_name",
+		"supplier_id", "price", "minimum_order_quantity", "is_available", "available_qty")
+	sellerPayload := marshalMap(t, listing)
+	jsonKeys(t, "seller listing", sellerPayload,
+		"id", "store_id", "product_id", "supplier_offer_id", "market_code", "status")
+	for _, forbidden := range []string{"price", "minimum_order_quantity", "is_available", "available_qty"} {
+		if _, ok := sellerPayload[forbidden]; ok {
+			t.Fatalf("seller listing exposed supplier field %q: %v", forbidden, sellerPayload)
+		}
+	}
+}
+
+func marshalMap(t *testing.T, payload any) map[string]any {
+	t.Helper()
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal contract payload: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("decode contract payload: %v", err)
+	}
+	return decoded
+}
+
+func boolPtr(value bool) *bool {
+	return &value
+}
+
+func stringPtr(value string) *string {
+	return &value
+}
+
 // TestP58SellerContractShapes drives the real handlers and pins the exact
 // Seller API contract shapes. When P58_FIXTURE_DIR is set, the raw response
 // bodies are written there as cross-repository contract fixtures.

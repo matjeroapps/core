@@ -3,6 +3,7 @@ package storefront
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -315,6 +316,87 @@ func (e catalogEnv) listing(t *testing.T, storeID string, product commerce.Produ
 		t.Fatalf("set seller listing price: %v", err)
 	}
 	return listing
+}
+
+func TestSupplierOfferEligibilityNeverMutatesSellerPublishState(t *testing.T) {
+	env := setupCatalogTest(t)
+	ctx := env.ctx
+
+	var offerID, listingStatus string
+	if err := env.db.QueryRow(ctx, `
+		SELECT so.id, sl.status
+		FROM supplier_offers so
+		JOIN supplier_products sp ON sp.id = so.supplier_product_id
+		JOIN seller_listings sl ON sl.supplier_offer_id = so.id
+		JOIN products p ON p.id = sp.product_id
+		WHERE p.slug = 'store-a-desk-lamp'
+	`).Scan(&offerID, &listingStatus); err != nil {
+		t.Fatalf("find supplier-backed listing: %v", err)
+	}
+
+	t.Run("inactive offer is absent from public detail", func(t *testing.T) {
+		if err := env.commerce.UpdateSupplierOfferStatus(ctx, offerID, "inactive"); err != nil {
+			t.Fatalf("disable supplier offer: %v", err)
+		}
+		_, err := env.catalog.ProductBySlug(ctx, env.scope(t, env.domainA, i18n.LocaleEnglish), "store-a-desk-lamp")
+		if !errors.Is(err, ErrCatalogNotFound) {
+			t.Fatalf("inactive offer detail error = %v, want ErrCatalogNotFound", err)
+		}
+		var currentStatus string
+		if err := env.db.QueryRow(ctx, `SELECT status FROM seller_listings WHERE supplier_offer_id = $1`, offerID).Scan(&currentStatus); err != nil {
+			t.Fatalf("read seller listing status: %v", err)
+		}
+		if currentStatus != listingStatus {
+			t.Fatalf("supplier status changed seller listing status from %q to %q", listingStatus, currentStatus)
+		}
+	})
+
+	if err := env.commerce.UpdateSupplierOfferStatus(ctx, offerID, "active"); err != nil {
+		t.Fatalf("restore supplier offer: %v", err)
+	}
+	t.Run("archived offer is absent from public detail", func(t *testing.T) {
+		if err := env.commerce.UpdateSupplierOfferStatus(ctx, offerID, "archived"); err != nil {
+			t.Fatalf("archive supplier offer: %v", err)
+		}
+		_, err := env.catalog.ProductBySlug(ctx, env.scope(t, env.domainA, i18n.LocaleEnglish), "store-a-desk-lamp")
+		if !errors.Is(err, ErrCatalogNotFound) {
+			t.Fatalf("archived offer detail error = %v, want ErrCatalogNotFound", err)
+		}
+		var currentStatus string
+		if err := env.db.QueryRow(ctx, `SELECT status FROM seller_listings WHERE supplier_offer_id = $1`, offerID).Scan(&currentStatus); err != nil {
+			t.Fatalf("read seller listing status: %v", err)
+		}
+		if currentStatus != listingStatus {
+			t.Fatalf("archive changed seller listing status from %q to %q", listingStatus, currentStatus)
+		}
+	})
+
+	if err := env.commerce.UpdateSupplierOfferStatus(ctx, offerID, "active"); err != nil {
+		t.Fatalf("restore supplier offer after archive: %v", err)
+	}
+	t.Run("unavailable offer is absent from purchasable results", func(t *testing.T) {
+		if _, err := env.commerce.SetSupplierOfferAvailability(ctx, offerID, false, nil); err != nil {
+			t.Fatalf("mark offer unavailable: %v", err)
+		}
+		page, err := env.catalog.Products(ctx, env.scope(t, env.domainA, i18n.LocaleEnglish), ProductQuery{
+			Availability: AvailabilityInStock,
+		})
+		if err != nil {
+			t.Fatalf("purchasable products: %v", err)
+		}
+		for _, item := range page.Items {
+			if item.Slug == "store-a-desk-lamp" {
+				t.Fatalf("unavailable supplier offer remained purchasable: %+v", item)
+			}
+		}
+		var currentStatus string
+		if err := env.db.QueryRow(ctx, `SELECT status FROM seller_listings WHERE supplier_offer_id = $1`, offerID).Scan(&currentStatus); err != nil {
+			t.Fatalf("read seller listing status: %v", err)
+		}
+		if currentStatus != listingStatus {
+			t.Fatalf("availability change mutated seller listing status from %q to %q", listingStatus, currentStatus)
+		}
+	})
 }
 
 // scope resolves a tenant the way a public request does: from the trusted host.
