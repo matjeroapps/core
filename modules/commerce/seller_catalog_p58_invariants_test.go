@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -36,6 +37,108 @@ type p58Env struct {
 	service Service
 	repo    Repository
 	suffix  string
+}
+
+func TestSupplierImportPreservesSellerPresentationBoundary(t *testing.T) {
+	e, _ := setupP58TestDB(t)
+	ctx := context.Background()
+	suffix := e.suffix
+
+	seller, err := e.repo.CreateSeller(ctx, "boundary-seller-"+suffix, "Boundary Seller", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateSeller: %v", err)
+	}
+	subject := "boundary-owner-" + suffix
+	if _, err := e.repo.CreateSellerMember(ctx, seller.ID, subject, "owner", "active"); err != nil {
+		t.Fatalf("CreateSellerMember: %v", err)
+	}
+	store, err := e.repo.CreateStore(ctx, seller.ID, "EG", "boundary-store-"+suffix, "Boundary Store", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateStore: %v", err)
+	}
+
+	supplier, err := e.repo.CreateSupplier(ctx, "boundary-supplier-"+suffix, "Boundary Supplier", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateSupplier: %v", err)
+	}
+	market, err := e.repo.CreateSupplierMarket(ctx, supplier.ID, "EG", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateSupplierMarket: %v", err)
+	}
+	product, err := e.repo.CreateProduct(ctx, "boundary-product-"+suffix, "active")
+	if err != nil {
+		t.Fatalf("CreateProduct: %v", err)
+	}
+	if err := e.repo.UpsertProductTranslation(ctx, ProductTranslation{
+		ProductID: product.ID, Locale: "en", Name: "Supplier Title", Description: "Supplier Description",
+	}); err != nil {
+		t.Fatalf("UpsertProductTranslation: %v", err)
+	}
+	supplierProduct, err := e.repo.CreateSupplierProduct(ctx, supplier.ID, product.ID, "BOUNDARY-SKU", "active")
+	if err != nil {
+		t.Fatalf("CreateSupplierProduct: %v", err)
+	}
+	offer, err := e.repo.CreateSupplierOffer(ctx, supplier.ID, supplierProduct.ID, market.ID, "EG", "active")
+	if err != nil {
+		t.Fatalf("CreateSupplierOffer: %v", err)
+	}
+	if _, err := e.repo.SetSupplierOfferAvailability(ctx, offer.ID, true, nil); err != nil {
+		t.Fatalf("SetSupplierOfferAvailability: %v", err)
+	}
+
+	first, err := e.service.ImportSupplierOfferForSubject(ctx, subject, store.ID, offer.ID)
+	if err != nil {
+		t.Fatalf("first import: %v", err)
+	}
+	second, err := e.service.ImportSupplierOfferForSubject(ctx, subject, store.ID, offer.ID)
+	if err != nil {
+		t.Fatalf("second import: %v", err)
+	}
+	if first.ID != second.ID || first.SupplierOfferID == nil || *first.SupplierOfferID != offer.ID {
+		t.Fatalf("import lineage is not idempotent: first=%+v second=%+v", first, second)
+	}
+	if _, err := e.repo.GetSellerListingPrice(ctx, first.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("import created seller price: %v", err)
+	}
+	presentation, err := e.repo.GetSellerListingPresentation(ctx, first.ID)
+	if err != nil {
+		t.Fatalf("read imported presentation: %v", err)
+	}
+	if presentation.PurchaseBehavior != "inherit" || len(presentation.Sections) != 0 {
+		t.Fatalf("import created seller presentation content: %+v", presentation)
+	}
+
+	if _, err := e.repo.SetSellerListingPrice(ctx, first.ID, money.MustNew(27500, "EGP")); err != nil {
+		t.Fatalf("SetSellerListingPrice: %v", err)
+	}
+	if _, err := e.service.UpdateListingPresentationForSubject(ctx, subject, store.ID, first.ID, SellerListingPresentation{
+		PurchaseBehavior: "buy_now",
+		Sections: []ProductPageSection{{
+			ID: "boundary-section", Type: "description", Enabled: true, SortOrder: 1,
+			Content: map[string]any{"en": map[string]any{"heading": "Retail Heading"}},
+		}},
+	}); err != nil {
+		t.Fatalf("UpdateListingPresentationForSubject: %v", err)
+	}
+	if err := e.repo.UpsertProductTranslation(ctx, ProductTranslation{
+		ProductID: product.ID, Locale: "en", Name: "Supplier Title Updated", Description: "Supplier Description Updated",
+	}); err != nil {
+		t.Fatalf("update live-linked supplier content: %v", err)
+	}
+
+	detail, err := e.service.GetSellerProductDetailForSubject(ctx, subject, store.ID, product.ID)
+	if err != nil {
+		t.Fatalf("GetSellerProductDetailForSubject: %v", err)
+	}
+	if detail.Translations[0].Name != "Supplier Title Updated" {
+		t.Fatalf("supplier title did not remain live-linked: %+v", detail.Translations)
+	}
+	if detail.Price == nil || detail.Price.Price.AmountMinor != 27500 {
+		t.Fatalf("seller price changed after supplier update: %+v", detail.Price)
+	}
+	if detail.Presentation == nil || detail.Presentation.PurchaseBehavior != "buy_now" {
+		t.Fatalf("seller presentation changed after supplier update: %+v", detail.Presentation)
+	}
 }
 
 // buildSellerOwnedCatalog creates seller, store, product, variant, active SKU,

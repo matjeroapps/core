@@ -153,6 +153,9 @@ func (e *integrationEnv) seed(t *testing.T) {
 	if _, err := e.repo.CreateSellerMember(ctx, sellerA.ID, "subject-of-seller-a", "owner", "active"); err != nil {
 		t.Fatalf("create seller A member: %v", err)
 	}
+	if _, err := e.repo.CreateSellerMember(ctx, sellerA.ID, "subject-of-seller-a-staff", "staff", "active"); err != nil {
+		t.Fatalf("create seller A staff member: %v", err)
+	}
 	sellerB, err := e.repo.CreateSeller(ctx, "seller-b", "Seller B", "active", nil)
 	if err != nil {
 		t.Fatalf("create seller B: %v", err)
@@ -642,6 +645,45 @@ func TestIntegrationSupplierCatalogIsMarketScoped(t *testing.T) {
 		if item.MarketCode != "EG" {
 			t.Errorf("catalog item market = %q, want EG (the store's market)", item.MarketCode)
 		}
+	}
+}
+
+func TestIntegrationSupplierOfferEconomicsAreHiddenFromStaff(t *testing.T) {
+	env := setupIntegration(t)
+
+	ownerReq := authenticatedRequest(t, http.MethodGet, "/internal/v1/stores/"+env.storeA.ID+"/supplier-offers", "seller", testSellerToken)
+	ownerReq.Header.Set(serviceauth.HeaderSubject, "subject-of-seller-a")
+	ownerRec := httptest.NewRecorder()
+	env.handler.ServeHTTP(ownerRec, ownerReq)
+	if ownerRec.Code != http.StatusOK {
+		t.Fatalf("owner status = %d (body %q)", ownerRec.Code, ownerRec.Body.String())
+	}
+	ownerItems := decodeInto[CollectionResponse[commerce.SupplierCatalogItem]](t, ownerRec)
+	if len(ownerItems.Items) == 0 || ownerItems.Items[0].Price == nil {
+		t.Fatalf("owner response must include supplier economics: %+v", ownerItems.Items)
+	}
+
+	req := authenticatedRequest(t, http.MethodGet, "/internal/v1/stores/"+env.storeA.ID+"/supplier-offers", "seller", testSellerToken)
+	req.Header.Set(serviceauth.HeaderSubject, "subject-of-seller-a-staff")
+	rec := httptest.NewRecorder()
+	env.handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d (body %q)", rec.Code, rec.Body.String())
+	}
+	collection := decodeInto[CollectionResponse[commerce.SupplierCatalogItem]](t, rec)
+	if len(collection.Items) == 0 {
+		t.Fatal("expected supplier offers for staff discovery")
+	}
+	item := collection.Items[0]
+	if item.Price != nil {
+		t.Fatalf("staff response exposed supplier price: %+v", item.Price)
+	}
+	if item.MinimumOrderQty != 0 {
+		t.Fatalf("staff response exposed supplier MOQ: %d", item.MinimumOrderQty)
+	}
+	if item.IsAvailable != nil || item.AvailableQty != nil {
+		t.Fatalf("staff response exposed supplier availability details: available=%v quantity=%v", item.IsAvailable, item.AvailableQty)
 	}
 }
 
