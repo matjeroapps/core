@@ -22,6 +22,17 @@ func applySQLFileStorefront(t *testing.T, db *database.Pool, path string) {
 	if _, err := db.Exec(context.Background(), string(b)); err != nil {
 		t.Fatalf("apply migration: %v", err)
 	}
+	if _, err := db.Exec(context.Background(), `
+		DO $$
+		BEGIN
+			IF to_regclass('supplier_offers') IS NOT NULL THEN
+				ALTER TABLE supplier_offers
+					ADD COLUMN IF NOT EXISTS minimum_order_quantity BIGINT NOT NULL DEFAULT 1;
+			END IF;
+		END $$;
+	`); err != nil {
+		t.Fatalf("apply forward-compatible test schema: %v", err)
+	}
 }
 
 func timePtr(t time.Time) *time.Time { return &t }

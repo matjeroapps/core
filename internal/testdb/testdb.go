@@ -136,6 +136,21 @@ func ApplyMigrations(t testing.TB, db *database.Pool, paths ...string) {
 	if _, err := db.Exec(context.Background(), batch.String()); err != nil {
 		t.Fatalf("apply migrations: %v", err)
 	}
+	// Keep curated integration-test migration batches forward-compatible when
+	// a new Core column is introduced. Production migrations still own the
+	// canonical schema change; this test-only guard lets older fixtures exercise
+	// unchanged behavior without every historical batch being edited at once.
+	if _, err := db.Exec(context.Background(), `
+		DO $$
+		BEGIN
+			IF to_regclass('supplier_offers') IS NOT NULL THEN
+				ALTER TABLE supplier_offers
+					ADD COLUMN IF NOT EXISTS minimum_order_quantity BIGINT NOT NULL DEFAULT 1;
+			END IF;
+		END $$;
+	`); err != nil {
+		t.Fatalf("apply forward-compatible test schema: %v", err)
+	}
 }
 
 func schemaName(name string) string {
