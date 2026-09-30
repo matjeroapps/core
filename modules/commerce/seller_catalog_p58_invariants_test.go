@@ -799,3 +799,213 @@ func TestPublishRaceInvalidPresentation(t *testing.T) {
 		t.Fatalf("listing must remain inactive/draft/unpublished, got %s", listing.Status)
 	}
 }
+
+func TestConcurrentSupplierOfferImportIdempotency(t *testing.T) {
+	e, _ := setupP58TestDB(t)
+	ctx := context.Background()
+	suffix := e.suffix
+
+	seller, err := e.repo.CreateSeller(ctx, "concurrent-seller-"+suffix, "Concurrent Seller", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateSeller: %v", err)
+	}
+	subject := "concurrent-owner-" + suffix
+	if _, err := e.repo.CreateSellerMember(ctx, seller.ID, subject, "owner", "active"); err != nil {
+		t.Fatalf("CreateSellerMember: %v", err)
+	}
+	store, err := e.repo.CreateStore(ctx, seller.ID, "EG", "concurrent-store-"+suffix, "Concurrent Store", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateStore: %v", err)
+	}
+
+	supplier, err := e.repo.CreateSupplier(ctx, "concurrent-supplier-"+suffix, "Concurrent Supplier", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateSupplier: %v", err)
+	}
+	market, err := e.repo.CreateSupplierMarket(ctx, supplier.ID, "EG", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateSupplierMarket: %v", err)
+	}
+	product, err := e.repo.CreateProduct(ctx, "concurrent-product-"+suffix, "active")
+	if err != nil {
+		t.Fatalf("CreateProduct: %v", err)
+	}
+	supplierProduct, err := e.repo.CreateSupplierProduct(ctx, supplier.ID, product.ID, "CONCURRENT-SKU", "active")
+	if err != nil {
+		t.Fatalf("CreateSupplierProduct: %v", err)
+	}
+	offer, err := e.repo.CreateSupplierOffer(ctx, supplier.ID, supplierProduct.ID, market.ID, "EG", "active")
+	if err != nil {
+		t.Fatalf("CreateSupplierOffer: %v", err)
+	}
+
+	const concurrency = 10
+	var wg sync.WaitGroup
+	errs := make(chan error, concurrency)
+	results := make(chan string, concurrency)
+
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			listing, err := e.service.ImportSupplierOfferForSubject(ctx, subject, store.ID, offer.ID)
+			if err != nil {
+				errs <- err
+				return
+			}
+			results <- listing.ID
+		}()
+	}
+
+	wg.Wait()
+	close(errs)
+	close(results)
+
+	for err := range errs {
+		t.Fatalf("concurrent import failed: %v", err)
+	}
+
+	var firstListingID string
+	var count int
+	for id := range results {
+		count++
+		if firstListingID == "" {
+			firstListingID = id
+		} else if firstListingID != id {
+			t.Fatalf("concurrent imports returned different listing IDs: %s vs %s", firstListingID, id)
+		}
+	}
+
+	if count != concurrency {
+		t.Fatalf("expected %d successful import responses, got %d", concurrency, count)
+	}
+
+	// Verify only 1 listing exists in database
+	var dbCount int
+	if err := e.db.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM seller_listings WHERE store_id = $1 AND supplier_offer_id = $2", store.ID, offer.ID).Scan(&dbCount); err != nil {
+		t.Fatalf("count seller_listings: %v", err)
+	}
+	if dbCount != 1 {
+		t.Fatalf("expected 1 listing in DB, got %d", dbCount)
+	}
+}
+
+func TestSupplierOfferImportEligibilityValidation(t *testing.T) {
+	e, _ := setupP58TestDB(t)
+	ctx := context.Background()
+	suffix := e.suffix
+
+	seller, err := e.repo.CreateSeller(ctx, "elig-seller-"+suffix, "Eligibility Seller", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateSeller: %v", err)
+	}
+	ownerSubject := "elig-owner-" + suffix
+	if _, err := e.repo.CreateSellerMember(ctx, seller.ID, ownerSubject, "owner", "active"); err != nil {
+		t.Fatalf("CreateSellerMember: %v", err)
+	}
+	staffSubject := "elig-staff-" + suffix
+	if _, err := e.repo.CreateSellerMember(ctx, seller.ID, staffSubject, "staff", "active"); err != nil {
+		t.Fatalf("CreateSellerMember: %v", err)
+	}
+	storeEG, err := e.repo.CreateStore(ctx, seller.ID, "EG", "elig-store-eg-"+suffix, "EG Store", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateStore EG: %v", err)
+	}
+
+	sellerSA, err := e.repo.CreateSeller(ctx, "elig-seller-sa-"+suffix, "Eligibility Seller SA", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateSeller SA: %v", err)
+	}
+	ownerSubjectSA := "elig-owner-sa-" + suffix
+	if _, err := e.repo.CreateSellerMember(ctx, sellerSA.ID, ownerSubjectSA, "owner", "active"); err != nil {
+		t.Fatalf("CreateSellerMember SA: %v", err)
+	}
+	storeSA, err := e.repo.CreateStore(ctx, sellerSA.ID, "SA", "elig-store-sa-"+suffix, "SA Store", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateStore SA: %v", err)
+	}
+
+	supplier, err := e.repo.CreateSupplier(ctx, "elig-supplier-"+suffix, "Eligibility Supplier", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateSupplier: %v", err)
+	}
+	marketEG, err := e.repo.CreateSupplierMarket(ctx, supplier.ID, "EG", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateSupplierMarket: %v", err)
+	}
+
+	productDraft, err := e.repo.CreateProduct(ctx, "draft-product-"+suffix, "draft")
+	if err != nil {
+		t.Fatalf("CreateProduct draft: %v", err)
+	}
+	suppProdDraft, err := e.repo.CreateSupplierProduct(ctx, supplier.ID, productDraft.ID, "DRAFT-SKU", "active")
+	if err != nil {
+		t.Fatalf("CreateSupplierProduct: %v", err)
+	}
+	offerDraftProd, err := e.repo.CreateSupplierOffer(ctx, supplier.ID, suppProdDraft.ID, marketEG.ID, "EG", "active")
+	if err != nil {
+		t.Fatalf("CreateSupplierOffer: %v", err)
+	}
+
+	// 1. Staff role must be forbidden
+	_, err = e.service.ImportSupplierOfferForSubject(ctx, staffSubject, storeEG.ID, offerDraftProd.ID)
+	if !errors.Is(err, ErrUnauthorized) && !errors.Is(err, ErrForbidden) {
+		t.Fatalf("expected authorization error for staff import, got %v", err)
+	}
+
+	// 2. Draft product must fail
+	_, err = e.service.ImportSupplierOfferForSubject(ctx, ownerSubject, storeEG.ID, offerDraftProd.ID)
+	if !errors.Is(err, ErrOfferUnavailable) {
+		t.Fatalf("expected ErrOfferUnavailable for draft product offer, got %v", err)
+	}
+
+	// Active product
+	productActive, err := e.repo.CreateProduct(ctx, "active-product-"+suffix, "active")
+	if err != nil {
+		t.Fatalf("CreateProduct active: %v", err)
+	}
+	suppProdActive, err := e.repo.CreateSupplierProduct(ctx, supplier.ID, productActive.ID, "ACTIVE-SKU", "active")
+	if err != nil {
+		t.Fatalf("CreateSupplierProduct: %v", err)
+	}
+	offerEG, err := e.repo.CreateSupplierOffer(ctx, supplier.ID, suppProdActive.ID, marketEG.ID, "EG", "active")
+	if err != nil {
+		t.Fatalf("CreateSupplierOffer EG: %v", err)
+	}
+
+	// 3. Market mismatch (EG offer into SA store)
+	_, err = e.service.ImportSupplierOfferForSubject(ctx, ownerSubjectSA, storeSA.ID, offerEG.ID)
+	if !errors.Is(err, ErrMarketMismatch) {
+		t.Fatalf("expected ErrMarketMismatch for cross-market import, got %v", err)
+	}
+
+	// 4. Inactive supplier offer
+	productForInactive, err := e.repo.CreateProduct(ctx, "inactive-prod-"+suffix, "active")
+	if err != nil {
+		t.Fatalf("CreateProduct inactive: %v", err)
+	}
+	suppProdForInactive, err := e.repo.CreateSupplierProduct(ctx, supplier.ID, productForInactive.ID, "INACTIVE-SKU", "active")
+	if err != nil {
+		t.Fatalf("CreateSupplierProduct for inactive: %v", err)
+	}
+	offerInactive, err := e.repo.CreateSupplierOffer(ctx, supplier.ID, suppProdForInactive.ID, marketEG.ID, "EG", "draft")
+	if err != nil {
+		t.Fatalf("CreateSupplierOffer inactive: %v", err)
+	}
+	_, err = e.service.ImportSupplierOfferForSubject(ctx, ownerSubject, storeEG.ID, offerInactive.ID)
+	if !errors.Is(err, ErrOfferUnavailable) {
+		t.Fatalf("expected ErrOfferUnavailable for inactive offer, got %v", err)
+	}
+
+	// 5. Valid import succeeds
+	listing, err := e.service.ImportSupplierOfferForSubject(ctx, ownerSubject, storeEG.ID, offerEG.ID)
+	if err != nil {
+		t.Fatalf("valid import failed: %v", err)
+	}
+	if listing.Status != "draft" {
+		t.Fatalf("expected initial status draft, got %s", listing.Status)
+	}
+	if listing.SupplierOfferID == nil || *listing.SupplierOfferID != offerEG.ID {
+		t.Fatalf("expected supplier_offer_id %s, got %v", offerEG.ID, listing.SupplierOfferID)
+	}
+}

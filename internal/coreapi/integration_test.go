@@ -89,6 +89,7 @@ func setupIntegration(t *testing.T) integrationEnv {
 		"000019_create_payments_schema",
 		"000020_create_ledger_schema",
 		"000021_create_balance_projection_schema",
+		"000025_seller_catalog_phase_b",
 		"000026_seller_catalog_phase_c",
 	}
 	migrationPaths := make([]string, 0, len(migrationNames))
@@ -903,5 +904,87 @@ func TestBalanceProjectionAPI(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("list account balances status = %d (body %q)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestIntegrationSupplierOfferImportContract(t *testing.T) {
+	env := setupIntegration(t)
+	ctx := env.ctx
+
+	// Create a new active supplier product and offer not yet imported into Store A
+	product := env.product(t, "new-lamp-"+time.Now().Format("150405.000000"), "Modern Lamp", "مصباح حديث", "Modern desk lamp", "مصباح مكتبي حديث")
+	markets, err := env.repo.ListSupplierMarkets(ctx, env.supplier.ID, commerce.Page{Limit: 10})
+	if err != nil || len(markets) == 0 {
+		t.Fatalf("list supplier markets: %v", err)
+	}
+	marketID := markets[0].ID
+	suppProduct, err := env.repo.CreateSupplierProduct(ctx, env.supplier.ID, product.ID, "MODERN-LAMP-SKU", "active")
+	if err != nil {
+		t.Fatalf("create supplier product: %v", err)
+	}
+	offer, err := env.repo.CreateSupplierOffer(ctx, env.supplier.ID, suppProduct.ID, marketID, "EG", "active")
+	if err != nil {
+		t.Fatalf("create supplier offer: %v", err)
+	}
+	if _, err := env.repo.SetSupplierOfferAvailability(ctx, offer.ID, true, nil); err != nil {
+		t.Fatalf("set supplier offer availability: %v", err)
+	}
+
+	importPath := "/internal/v1/stores/" + env.storeA.ID + "/supplier-offers/" + offer.ID + "/imports"
+
+	// 1. Staff role must be rejected with 403
+	staffReq := authenticatedRequest(t, http.MethodPost, importPath, "seller", testSellerToken)
+	staffReq.Header.Set(serviceauth.HeaderSubject, "subject-of-seller-a-staff")
+	staffRec := httptest.NewRecorder()
+	env.handler.ServeHTTP(staffRec, staffReq)
+	if staffRec.Code != http.StatusForbidden && staffRec.Code != http.StatusUnauthorized {
+		t.Fatalf("staff import status = %d, want 403/401 (body %q)", staffRec.Code, staffRec.Body.String())
+	}
+
+	// 2. Owner imports offer -> 201 Created
+	ownerReq := authenticatedRequest(t, http.MethodPost, importPath, "seller", testSellerToken)
+	ownerReq.Header.Set(serviceauth.HeaderSubject, "subject-of-seller-a")
+	ownerRec := httptest.NewRecorder()
+	env.handler.ServeHTTP(ownerRec, ownerReq)
+	if ownerRec.Code != http.StatusCreated {
+		t.Fatalf("owner import status = %d, want 201 (body %q)", ownerRec.Code, ownerRec.Body.String())
+	}
+
+	var firstListing commerce.SellerListing
+	if err := json.NewDecoder(ownerRec.Body).Decode(&firstListing); err != nil {
+		t.Fatalf("decode first listing response: %v", err)
+	}
+	if firstListing.ID == "" || firstListing.StoreID != env.storeA.ID || firstListing.SupplierOfferID == nil || *firstListing.SupplierOfferID != offer.ID {
+		t.Fatalf("unexpected listing created: %+v", firstListing)
+	}
+	if firstListing.Status != "draft" {
+		t.Fatalf("expected initial listing status draft, got %s", firstListing.Status)
+	}
+
+	// 3. Repeated import -> 201 Created with exact same listing ID (idempotent)
+	repeatReq := authenticatedRequest(t, http.MethodPost, importPath, "seller", testSellerToken)
+	repeatReq.Header.Set(serviceauth.HeaderSubject, "subject-of-seller-a")
+	repeatRec := httptest.NewRecorder()
+	env.handler.ServeHTTP(repeatRec, repeatReq)
+	if repeatRec.Code != http.StatusCreated {
+		t.Fatalf("repeat import status = %d, want 201 (body %q)", repeatRec.Code, repeatRec.Body.String())
+	}
+
+	var secondListing commerce.SellerListing
+	if err := json.NewDecoder(repeatRec.Body).Decode(&secondListing); err != nil {
+		t.Fatalf("decode second listing response: %v", err)
+	}
+	if secondListing.ID != firstListing.ID {
+		t.Fatalf("idempotent import mismatch: first ID %s vs second ID %s", firstListing.ID, secondListing.ID)
+	}
+
+	// 4. Cross-store authorization failure (Seller A owner trying to import into Store B)
+	crossStorePath := "/internal/v1/stores/" + env.storeB.ID + "/supplier-offers/" + offer.ID + "/imports"
+	crossReq := authenticatedRequest(t, http.MethodPost, crossStorePath, "seller", testSellerToken)
+	crossReq.Header.Set(serviceauth.HeaderSubject, "subject-of-seller-a")
+	crossRec := httptest.NewRecorder()
+	env.handler.ServeHTTP(crossRec, crossReq)
+	if crossRec.Code != http.StatusForbidden && crossRec.Code != http.StatusUnauthorized && crossRec.Code != http.StatusNotFound {
+		t.Fatalf("cross-store import status = %d, want 403/401/404", crossRec.Code)
 	}
 }
