@@ -10,6 +10,7 @@ var (
 	ErrInvalidInput             = errors.New("invalid input")
 	ErrUnavailable              = errors.New("service unavailable")
 	ErrCheckoutExpired          = errors.New("checkout expired")
+	ErrCheckoutPaused           = errors.New("checkout paused")
 	ErrIdempotencyConflict      = errors.New("idempotency conflict")
 	ErrCheckoutCartInvariant    = errors.New("checkout cart status invariant")
 	ErrInvalidTransition        = errors.New("invalid order transition")

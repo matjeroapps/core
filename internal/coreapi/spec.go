@@ -71,7 +71,7 @@ private, no-store responses and do not carry X-Matjero-Storefront-Revision.
 Errors use a closed vocabulary (not_found, invalid_argument, validation_error,
 unauthorized, forbidden, conflict, market_mismatch, insufficient_inventory,
 schema_mismatch, unsafe_content, preview_unavailable, storefront_unavailable,
-unavailable, store_entitlement_exceeded, internal_error). Error responses never carry SQL text, stack
+unavailable, checkout_paused, store_entitlement_exceeded, internal_error). Error responses never carry SQL text, stack
 traces, internal table names or secret values.`
 
 // BuildInternalSpec builds the internal OpenAPI document from the route
@@ -654,6 +654,23 @@ func internalRoutes() []openapi.RouteSpec {
 			Tags:        []string{"Stores"},
 			Parameters:  []openapi.ParameterSpec{pathParam("storeID", "Store identifier")},
 			Responses:   readResponses("Storefront host", StorefrontHostResponse{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/operational-state", OperationID: "internalGetStoreOperationalState",
+			Summary:     "Get store checkout operational state",
+			Description: "Returns the store-scoped checkout accepting or paused state and its audit metadata. Catalog reads remain available while checkout is paused.",
+			Tags:        []string{"Stores"},
+			Parameters:  []openapi.ParameterSpec{pathParam("storeID", "Store identifier")},
+			Responses:   readResponses("Store operational state", commerce.StoreOperationalState{}),
+		},
+		{
+			Method: http.MethodPut, Path: "/internal/v1/stores/{storeID}/operational-state", OperationID: "internalUpdateStoreOperationalState",
+			Summary:     "Update store checkout operational state",
+			Description: "Pauses or resumes checkout for an authorized store. The change records the forwarded actor subject and update timestamp.",
+			Tags:        []string{"Stores"},
+			Parameters:  []openapi.ParameterSpec{pathParam("storeID", "Store identifier")},
+			RequestBody: StoreOperationalStateUpdateRequest{},
+			Responses:   writeResponses("Updated store operational state", commerce.StoreOperationalState{}),
 		},
 		{
 			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/domains", OperationID: "internalListStoreDomains",

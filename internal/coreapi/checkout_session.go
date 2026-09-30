@@ -1,6 +1,7 @@
 package coreapi
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -26,7 +27,7 @@ func (s *server) handleCreateCheckoutSession(w http.ResponseWriter, r *http.Requ
 		r.Context(), scope.StoreID(), cartTokenFromRequest(r), nil, s.deps.Commerce.CheckoutSessionLifetime,
 	)
 	if err != nil {
-		writeDomainError(w, err)
+		s.writeCheckoutError(w, r, scope.StoreID(), err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusCreated, checkoutSessionResponse(session, rawCapability))
@@ -67,11 +68,23 @@ func (s *server) handleEvaluateCheckoutSession(w http.ResponseWriter, r *http.Re
 	correlationID := httpx.CorrelationID(r.Context())
 	order, err := s.deps.Repo.FinalizeCheckout(r.Context(), scope.StoreID(), request, correlationID)
 	if err != nil {
-		writeDomainError(w, err)
+		s.writeCheckoutError(w, r, scope.StoreID(), err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, order.ToPublic())
 
+}
+
+func (s *server) writeCheckoutError(w http.ResponseWriter, r *http.Request, storeID string, err error) {
+	if !errors.Is(err, commerce.ErrCheckoutPaused) {
+		writeDomainError(w, err)
+		return
+	}
+	message := commerce.DefaultCheckoutPausedMessage
+	if state, stateErr := s.deps.Repo.GetStoreOperationalState(r.Context(), storeID); stateErr == nil && state.MaintenanceMessage != "" {
+		message = state.MaintenanceMessage
+	}
+	httpx.WriteError(w, http.StatusServiceUnavailable, CodeCheckoutPaused, message)
 }
 
 func rPathSessionID(r *http.Request) string {

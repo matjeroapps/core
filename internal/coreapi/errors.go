@@ -41,6 +41,7 @@ const (
 	CodeStorefrontUnavailable     = "storefront_unavailable"
 	CodeUnavailable               = "unavailable"
 	CodeCheckoutExpired           = "checkout_expired"
+	CodeCheckoutPaused            = "checkout_paused"
 	CodeIdempotencyConflict       = "idempotency_conflict"
 	CodeInvalidOrderTransition    = "invalid_order_transition"
 	CodePriceChanged              = "price_changed"
@@ -72,7 +73,7 @@ func statusFor(code string) int {
 		return http.StatusConflict
 	case CodePublishNotReady, CodeChecksumMismatch:
 		return http.StatusUnprocessableEntity
-	case CodeUnavailable, CodePreviewUnavailable:
+	case CodeUnavailable, CodePreviewUnavailable, CodeCheckoutPaused:
 		return http.StatusServiceUnavailable
 	default:
 		return http.StatusInternalServerError
@@ -110,6 +111,8 @@ func messageFor(code string) string {
 		return "insufficient inventory"
 	case CodeCheckoutExpired:
 		return "checkout session expired"
+	case CodeCheckoutPaused:
+		return "checkout is temporarily unavailable"
 	case CodeIdempotencyConflict:
 		return "checkout request conflicts with the finalized session"
 	case CodeInvalidOrderTransition:
@@ -265,6 +268,8 @@ func codeFor(err error) string {
 
 	case errors.Is(err, commerce.ErrCheckoutExpired):
 		return CodeCheckoutExpired
+	case errors.Is(err, commerce.ErrCheckoutPaused):
+		return CodeCheckoutPaused
 	case errors.Is(err, commerce.ErrIdempotencyConflict):
 		return CodeIdempotencyConflict
 	case errors.Is(err, commerce.ErrInvalidTransition):

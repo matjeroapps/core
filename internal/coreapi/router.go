@@ -258,6 +258,8 @@ func NewRouter(deps Dependencies) chi.Router {
 			r.Post("/stores/{storeID}/domains/{domainID}/verify", server.handleVerifyCustomDomain)
 			r.Post("/stores/{storeID}/domains/{domainID}/activate", server.handleActivateCustomDomain)
 			r.Post("/stores/{storeID}/status", server.handleUpdateStoreStatus)
+			r.Get("/stores/{storeID}/operational-state", server.handleGetStoreOperationalState)
+			r.Put("/stores/{storeID}/operational-state", server.handleUpdateStoreOperationalState)
 			r.Get("/stores/{storeID}/supplier-catalog", server.handleListSupplierCatalog)
 			r.Get("/stores/{storeID}/listings", server.handleListStoreListings)
 			r.Post("/stores/{storeID}/listings", server.handleImportSellerListing)

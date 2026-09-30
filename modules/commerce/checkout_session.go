@@ -163,6 +163,9 @@ func (r Repository) CreateCheckoutSession(ctx context.Context, storeID, cartToke
 		if customerID != nil && (cart.CustomerID == nil || *customerID != *cart.CustomerID) {
 			return ErrConflict
 		}
+		if err := ensureCheckoutAcceptingTx(ctx, tx, storeID); err != nil {
+			return err
+		}
 		id := uuid.NewString()
 		err = tx.QueryRow(ctx, `
 			INSERT INTO checkout_sessions (id, store_id, cart_id, customer_id, status, expires_at, guest_order_access_token_digest)
@@ -204,6 +207,9 @@ func (r Repository) EvaluateCheckoutSession(ctx context.Context, storeID string,
 		var decisionNow time.Time
 		if err := tx.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&decisionNow); err != nil {
 			return fmt.Errorf("capture checkout decision time: %w", err)
+		}
+		if err := ensureCheckoutAcceptingTx(ctx, tx, storeID); err != nil {
+			return err
 		}
 		if session.Status == CheckoutSessionStatusFinalized && cart.Status != CartStatusCheckedOut {
 			return ErrCheckoutCartInvariant
@@ -311,6 +317,10 @@ func (r Repository) FinalizeCheckout(ctx context.Context, storeID string, reques
 			return fmt.Errorf("capture checkout session decision time: %w", err)
 		}
 		sessionDecisionNow = sessionDecisionNow.UTC()
+
+		if err := ensureCheckoutAcceptingTx(ctx, tx, storeID); err != nil {
+			return err
+		}
 
 		// 4. Session / Cart State Rules
 		if session.Status == CheckoutSessionStatusFinalized && cart.Status != CartStatusCheckedOut {

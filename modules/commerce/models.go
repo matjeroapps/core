@@ -179,6 +179,22 @@ type StoreSettings struct {
 	Settings map[string]any `json:"settings"`
 }
 
+const (
+	StoreCheckoutStatusAccepting = "accepting"
+	StoreCheckoutStatusPaused    = "paused"
+)
+
+const DefaultCheckoutPausedMessage = "Checkout is temporarily unavailable. Please try again later."
+
+type StoreOperationalState struct {
+	StoreID            string     `json:"store_id"`
+	CheckoutStatus     string     `json:"checkout_status"`
+	MaintenanceMessage string     `json:"maintenance_message"`
+	UpdatedBy          string     `json:"updated_by,omitempty"`
+	UpdatedAt          *time.Time `json:"updated_at,omitempty"`
+	CheckoutAccepting  bool       `json:"checkout_accepting"`
+}
+
 type Product struct {
 	ID        string    `json:"id"`
 	Slug      string    `json:"slug"`

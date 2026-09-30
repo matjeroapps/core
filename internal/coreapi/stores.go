@@ -72,6 +72,40 @@ func (s *server) handleUpdateStoreStatus(w http.ResponseWriter, r *http.Request)
 	httpx.WriteJSON(w, http.StatusOK, StatusResponse{Status: updated.Status})
 }
 
+func (s *server) handleGetStoreOperationalState(w http.ResponseWriter, r *http.Request) {
+	store, ok := s.authorizeStore(w, r)
+	if !ok {
+		return
+	}
+	state, err := s.deps.Repo.GetStoreOperationalState(r.Context(), store.ID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, state)
+}
+
+func (s *server) handleUpdateStoreOperationalState(w http.ResponseWriter, r *http.Request) {
+	store, ok := s.authorizeStore(w, r)
+	if !ok {
+		return
+	}
+	var body StoreOperationalStateUpdateRequest
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	actor := serviceauth.SubjectFrom(r)
+	if actor == "" {
+		actor = "admin"
+	}
+	state, err := s.deps.Repo.UpdateStoreOperationalState(r.Context(), store.ID, body.CheckoutStatus, body.MaintenanceMessage, actor)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, state)
+}
+
 // handleListSupplierCatalog browses the supplier offers available to a store's
 // market. The market code is taken from the store record, never from the query
 // string, so a seller cannot widen the browse scope into another market.
