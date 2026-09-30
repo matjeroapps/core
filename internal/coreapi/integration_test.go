@@ -988,4 +988,3 @@ func TestIntegrationSupplierOfferImportContract(t *testing.T) {
 		t.Fatalf("cross-store import status = %d, want 403/401/404", crossRec.Code)
 	}
 }
-

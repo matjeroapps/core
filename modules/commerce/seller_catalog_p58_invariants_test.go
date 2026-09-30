@@ -1009,4 +1009,3 @@ func TestSupplierOfferImportEligibilityValidation(t *testing.T) {
 		t.Fatalf("expected supplier_offer_id %s, got %v", offerEG.ID, listing.SupplierOfferID)
 	}
 }
-
