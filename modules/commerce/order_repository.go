@@ -613,6 +613,12 @@ func isInventoryNeutralAdvance(from, to string, authority TransitionAuthority) b
 	if from == OrderStatusProcessing && to == OrderStatusReadyForShipping {
 		return true
 	}
+	if from == OrderStatusReadyForShipping && to == OrderStatusShipped {
+		return true
+	}
+	if from == OrderStatusShipped && to == OrderStatusDelivered {
+		return true
+	}
 	return false
 }
 
@@ -1741,6 +1747,26 @@ func (r Repository) UpdateOrderStatus(
 				return Order{}, ErrInvalidTransition
 			}
 			return r.CancelConfirmedOrder(ctx, exec, storeID, orderID, authority, actorSubject, reason, "")
+		default:
+			return Order{}, ErrInvalidTransition
+		}
+	case OrderStatusReadyForShipping:
+		switch targetStatus {
+		case OrderStatusShipped:
+			if authority != AuthoritySeller {
+				return Order{}, ErrInvalidTransition
+			}
+			return r.AdvanceOrderStatus(ctx, exec, storeID, orderID, targetStatus, authority, actorSubject, reason, "")
+		default:
+			return Order{}, ErrInvalidTransition
+		}
+	case OrderStatusShipped:
+		switch targetStatus {
+		case OrderStatusDelivered:
+			if authority != AuthoritySeller {
+				return Order{}, ErrInvalidTransition
+			}
+			return r.AdvanceOrderStatus(ctx, exec, storeID, orderID, targetStatus, authority, actorSubject, reason, "")
 		default:
 			return Order{}, ErrInvalidTransition
 		}

@@ -286,8 +286,31 @@ func ValidateOrderTransition(currentStatus string, authority TransitionAuthority
 			return ErrInvalidTransition
 		}
 
+	case OrderStatusReadyForShipping:
+		switch targetStatus {
+		case OrderStatusShipped:
+			if authority == AuthoritySeller {
+				return nil
+			}
+			return ErrInvalidTransition
+
+		default:
+			return ErrInvalidTransition
+		}
+
+	case OrderStatusShipped:
+		switch targetStatus {
+		case OrderStatusDelivered:
+			if authority == AuthoritySeller {
+				return nil
+			}
+			return ErrInvalidTransition
+
+		default:
+			return ErrInvalidTransition
+		}
+
 	default:
-		// All future inactive states (shipped, out_for_delivery, delivered, cancelled, returned) cannot transition in Phase 5.
 		return ErrInvalidTransition
 	}
 }
