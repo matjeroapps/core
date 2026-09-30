@@ -1455,8 +1455,17 @@ func (s Service) TransitionStoreOrderForSubject(ctx context.Context, subject, st
 		}
 		order, err = s.AdvanceOrderStatus(ctx, storeID, orderID, "ready_for_shipping", AuthoritySeller, &subject, reason, correlationID)
 
-	case "shipped", "delivered":
-		return SellerOrderView{}, fmt.Errorf("%w: shipping transitions are deferred beyond P5.8", ErrInvalidTransition)
+	case "shipped":
+		if order.Status != "ready_for_shipping" {
+			return SellerOrderView{}, fmt.Errorf("%w: cannot transition to shipped from status %s", ErrInvalidTransition, order.Status)
+		}
+		order, err = s.AdvanceOrderStatus(ctx, storeID, orderID, "shipped", AuthoritySeller, &subject, reason, correlationID)
+
+	case "delivered":
+		if order.Status != "shipped" {
+			return SellerOrderView{}, fmt.Errorf("%w: cannot transition to delivered from status %s", ErrInvalidTransition, order.Status)
+		}
+		order, err = s.AdvanceOrderStatus(ctx, storeID, orderID, "delivered", AuthoritySeller, &subject, reason, correlationID)
 
 	default:
 		return SellerOrderView{}, fmt.Errorf("%w: unknown target status %s", ErrInvalidTransition, targetStatus)

@@ -279,9 +279,21 @@ func TestFirstLiveProductAndOrderCoreIntegration(t *testing.T) {
 		t.Fatalf("Expected at least 4 timeline events (pending, confirmed, processing, ready_for_shipping), got %d", len(orderView.Timeline))
 	}
 
-	// Shipping transition beyond ready_for_shipping must fail
-	if _, err := service.TransitionStoreOrderForSubject(ctx, subject, store.ID, orderID, "shipped", nil, "corr-4"); err == nil {
-		t.Fatalf("Expected shipped transition to be rejected")
+	// Shipping transitions: ready_for_shipping -> shipped -> delivered
+	shippedOrder, err := service.TransitionStoreOrderForSubject(ctx, subject, store.ID, orderID, "shipped", nil, "corr-4")
+	if err != nil {
+		t.Fatalf("Transition to shipped: %v", err)
+	}
+	if shippedOrder.Order.Status != "shipped" {
+		t.Fatalf("Expected shipped status, got %s", shippedOrder.Order.Status)
+	}
+
+	deliveredOrder, err := service.TransitionStoreOrderForSubject(ctx, subject, store.ID, orderID, "delivered", nil, "corr-5")
+	if err != nil {
+		t.Fatalf("Transition to delivered: %v", err)
+	}
+	if deliveredOrder.Order.Status != "delivered" {
+		t.Fatalf("Expected delivered status, got %s", deliveredOrder.Order.Status)
 	}
 
 	// Verify inventory snapshot reserved/on-hand

@@ -185,36 +185,58 @@ func TestValidateOrderTransition_StateMatrix(t *testing.T) {
 			wantErr:                false,
 		},
 
-		// Future / Inactive transitions in Phase 5
+		// ReadyForShipping -> Shipped
 		{
-			name:                   "ready_for_shipping to shipped - invalid in P5.3",
+			name:                   "ready_for_shipping to shipped - seller",
 			currentStatus:          OrderStatusReadyForShipping,
 			authority:              AuthoritySeller,
 			targetStatus:           OrderStatusShipped,
 			confirmationDeadlineAt: deadline,
 			decisionNow:            now,
-			wantErr:                true,
+			wantErr:                false,
 		},
 		{
-			name:                   "shipped to out_for_delivery - invalid in P5.3",
-			currentStatus:          OrderStatusShipped,
-			authority:              AuthoritySeller,
-			targetStatus:           OrderStatusOutForDelivery,
+			name:                   "ready_for_shipping to shipped - wrong authority (customer)",
+			currentStatus:          OrderStatusReadyForShipping,
+			authority:              AuthorityCustomer,
+			targetStatus:           OrderStatusShipped,
 			confirmationDeadlineAt: deadline,
 			decisionNow:            now,
 			wantErr:                true,
 		},
+
+		// Shipped -> Delivered
 		{
-			name:                   "out_for_delivery to delivered - invalid in P5.3",
-			currentStatus:          OrderStatusOutForDelivery,
+			name:                   "shipped to delivered - seller",
+			currentStatus:          OrderStatusShipped,
 			authority:              AuthoritySeller,
+			targetStatus:           OrderStatusDelivered,
+			confirmationDeadlineAt: deadline,
+			decisionNow:            now,
+			wantErr:                false,
+		},
+		{
+			name:                   "shipped to delivered - wrong authority (customer)",
+			currentStatus:          OrderStatusShipped,
+			authority:              AuthorityCustomer,
 			targetStatus:           OrderStatusDelivered,
 			confirmationDeadlineAt: deadline,
 			decisionNow:            now,
 			wantErr:                true,
 		},
+
+		// Terminal & unsupported transitions
 		{
-			name:                   "delivered to returned - invalid in P5.3",
+			name:                   "shipped to cancelled - invalid terminal transition",
+			currentStatus:          OrderStatusShipped,
+			authority:              AuthoritySeller,
+			targetStatus:           OrderStatusCancelled,
+			confirmationDeadlineAt: deadline,
+			decisionNow:            now,
+			wantErr:                true,
+		},
+		{
+			name:                   "delivered to returned - invalid transition",
 			currentStatus:          OrderStatusDelivered,
 			authority:              AuthoritySeller,
 			targetStatus:           OrderStatusReturned,

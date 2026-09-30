@@ -2785,6 +2785,21 @@ func (r Repository) ImportSupplierOfferAtomically(ctx context.Context, storeID, 
 		return bumpStorefrontRevisions(ctx, tx, revisionStoreItself, storeID)
 	})
 
+	if err != nil && errors.Is(err, ErrConflict) {
+		var suppOfferID sql.NullString
+		errLookup := r.pool.QueryRow(ctx, `
+			SELECT id, store_id, product_id, supplier_offer_id, market_code, status, created_at, updated_at
+			FROM seller_listings
+			WHERE store_id = $1 AND supplier_offer_id = $2
+		`, storeID, supplierOfferID).Scan(&listing.ID, &listing.StoreID, &listing.ProductID, &suppOfferID, &listing.MarketCode, &listing.Status, &listing.CreatedAt, &listing.UpdatedAt)
+		if errLookup == nil {
+			if suppOfferID.Valid {
+				listing.SupplierOfferID = &suppOfferID.String
+			}
+			return listing, nil
+		}
+	}
+
 	return listing, err
 }
 

@@ -143,6 +143,10 @@ func toSellerOrderDetail(view commerce.SellerOrderView) sellerOrderDetail {
 		allowedActions = []string{"processing", "cancelled"}
 	case "processing":
 		allowedActions = []string{"ready_for_shipping", "cancelled"}
+	case "ready_for_shipping":
+		allowedActions = []string{"shipped"}
+	case "shipped":
+		allowedActions = []string{"delivered"}
 	default:
 		allowedActions = []string{}
 	}
