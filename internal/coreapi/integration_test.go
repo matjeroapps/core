@@ -529,6 +529,81 @@ func TestIntegrationStorefrontHostFailures(t *testing.T) {
 	}
 }
 
+func TestIntegrationStoreOperationalStatePausesStorefrontCheckout(t *testing.T) {
+	env := setupIntegration(t)
+
+	path := "/internal/v1/stores/" + env.storeA.ID + "/operational-state"
+	getReq := authenticatedRequest(t, http.MethodGet, path, "seller", testSellerToken)
+	getReq.Header.Set(serviceauth.HeaderSubject, "subject-of-seller-a")
+	getRec := httptest.NewRecorder()
+	env.handler.ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("get operational state status = %d (body %q)", getRec.Code, getRec.Body.String())
+	}
+	initial := decodeInto[commerce.StoreOperationalState](t, getRec)
+	if !initial.CheckoutAccepting || initial.CheckoutStatus != commerce.StoreCheckoutStatusAccepting {
+		t.Fatalf("initial operational state = %+v", initial)
+	}
+
+	body := `{"checkout_status":"paused","maintenance_message":"Back after inventory review"}`
+	putReq := httptest.NewRequest(http.MethodPut, path, strings.NewReader(body))
+	putReq.Header.Set(serviceauth.HeaderService, "seller")
+	putReq.Header.Set(serviceauth.HeaderSubject, "subject-of-seller-a")
+	putReq.Header.Set("Authorization", "Bearer "+testSellerToken)
+	putReq.Header.Set("Content-Type", "application/json")
+	putRec := httptest.NewRecorder()
+	env.handler.ServeHTTP(putRec, putReq)
+	if putRec.Code != http.StatusOK {
+		t.Fatalf("put operational state status = %d (body %q)", putRec.Code, putRec.Body.String())
+	}
+	updated := decodeInto[commerce.StoreOperationalState](t, putRec)
+	if updated.CheckoutAccepting || updated.CheckoutStatus != commerce.StoreCheckoutStatusPaused || updated.MaintenanceMessage != "Back after inventory review" {
+		t.Fatalf("updated operational state = %+v", updated)
+	}
+
+	cart, cartToken, err := env.repo.CreateCart(env.ctx, env.storeA.ID, "EG", nil)
+	if err != nil {
+		t.Fatalf("CreateCart: %v", err)
+	}
+	var skuID string
+	if err := env.db.QueryRow(env.ctx, `
+		SELECT s.id
+		FROM skus s
+		JOIN variants v ON v.id = s.variant_id
+		WHERE v.product_id = $1
+		ORDER BY s.id
+		LIMIT 1
+	`, env.listingA.ProductID).Scan(&skuID); err != nil {
+		t.Fatalf("load listing SKU: %v", err)
+	}
+	if _, err := env.repo.AddCartItem(env.ctx, env.storeA.ID, cartToken, skuID, 1); err != nil {
+		t.Fatalf("AddCartItem: %v", err)
+	}
+	checkoutReq := authenticatedRequest(t, http.MethodPost, "/internal/v1/storefront/checkout-sessions", "seller", testSellerToken)
+	checkoutReq.Header.Set(serviceauth.HeaderStorefrontHost, env.domainA)
+	checkoutReq.Header.Set(HeaderCartToken, cartToken)
+	checkoutRec := httptest.NewRecorder()
+	env.handler.ServeHTTP(checkoutRec, checkoutReq)
+	if checkoutRec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("paused checkout status = %d (body %q, cart %s)", checkoutRec.Code, checkoutRec.Body.String(), cart.ID)
+	}
+	checkoutErr := decodeError(t, checkoutRec).Error
+	if checkoutErr.Code != CodeCheckoutPaused {
+		t.Fatalf("paused checkout code = %q, want %q", checkoutErr.Code, CodeCheckoutPaused)
+	}
+	if checkoutErr.Message != "Back after inventory review" {
+		t.Fatalf("paused checkout message = %q, want maintenance message", checkoutErr.Message)
+	}
+
+	crossReq := authenticatedRequest(t, http.MethodGet, "/internal/v1/stores/"+env.storeB.ID+"/operational-state", "seller", testSellerToken)
+	crossReq.Header.Set(serviceauth.HeaderSubject, "subject-of-seller-a")
+	crossRec := httptest.NewRecorder()
+	env.handler.ServeHTTP(crossRec, crossReq)
+	if crossRec.Code != http.StatusNotFound {
+		t.Fatalf("cross-store operational state status = %d (body %q)", crossRec.Code, crossRec.Body.String())
+	}
+}
+
 func TestIntegrationStorefrontCategories(t *testing.T) {
 	env := setupIntegration(t)
 

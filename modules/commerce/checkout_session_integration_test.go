@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -120,6 +121,44 @@ func TestP52CheckoutSessionCapabilityExpiryAndReplayFoundation(t *testing.T) {
 	}
 	if _, err := repo.EvaluateCheckoutSession(ctx, store.ID, FinalizeRequest{SessionID: second.ID, ShippingAddress: testFinalizeRequest(second.ID).ShippingAddress, ContactEmail: "customer@example.test"}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("open Session plus checked-out Cart error = %v", err)
+	}
+}
+
+func TestStoreOperationalStatePausesCheckoutSessionCreationAndFinalize(t *testing.T) {
+	db, repo, ctx := setupP51Database(t)
+	setup := setupSellerCheckoutTest(t, db, repo, ctx, uuid.NewString(), 10, 1000)
+
+	state, err := repo.GetStoreOperationalState(ctx, setup.Store.ID)
+	if err != nil {
+		t.Fatalf("GetStoreOperationalState: %v", err)
+	}
+	if !state.CheckoutAccepting || state.CheckoutStatus != StoreCheckoutStatusAccepting {
+		t.Fatalf("initial operational state = %+v", state)
+	}
+	if _, err := repo.UpdateStoreOperationalState(ctx, setup.Store.ID, StoreCheckoutStatusPaused, strings.Repeat("x", 241), "subject-of-seller-a"); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("oversized maintenance message error = %v", err)
+	}
+
+	state, err = repo.UpdateStoreOperationalState(ctx, setup.Store.ID, StoreCheckoutStatusPaused, "Back soon", "subject-of-seller-a")
+	if err != nil {
+		t.Fatalf("UpdateStoreOperationalState: %v", err)
+	}
+	if state.CheckoutAccepting || state.CheckoutStatus != StoreCheckoutStatusPaused || state.MaintenanceMessage != "Back soon" || state.UpdatedAt == nil {
+		t.Fatalf("paused operational state = %+v", state)
+	}
+
+	if _, _, err := repo.CreateCheckoutSession(ctx, setup.Store.ID, setup.CartToken, nil, time.Hour); !errors.Is(err, ErrCheckoutPaused) {
+		t.Fatalf("paused checkout session creation error = %v", err)
+	}
+	if _, err := repo.FinalizeCheckout(ctx, setup.Store.ID, testFinalizeRequest(setup.Session.ID), "corr-paused"); !errors.Is(err, ErrCheckoutPaused) {
+		t.Fatalf("paused checkout finalize error = %v", err)
+	}
+
+	if _, err := repo.UpdateStoreOperationalState(ctx, setup.Store.ID, StoreCheckoutStatusAccepting, "", "subject-of-seller-a"); err != nil {
+		t.Fatalf("resume operational state: %v", err)
+	}
+	if _, _, err := repo.CreateCheckoutSession(ctx, setup.Store.ID, setup.CartToken, nil, time.Hour); err != nil {
+		t.Fatalf("resumed checkout session creation: %v", err)
 	}
 }
 

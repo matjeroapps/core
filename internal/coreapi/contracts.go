@@ -77,6 +77,11 @@ type StoreStatusUpdateRequest struct {
 	Status string `json:"status"`
 }
 
+type StoreOperationalStateUpdateRequest struct {
+	CheckoutStatus     string `json:"checkout_status"`
+	MaintenanceMessage string `json:"maintenance_message,omitempty"`
+}
+
 // StoreCreateRequest creates a store for the authenticated seller.
 type StoreCreateRequest struct {
 	MarketCode string         `json:"market_code"`
