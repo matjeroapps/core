@@ -332,6 +332,20 @@ type SellerListingPrice struct {
 	UpdatedAt       time.Time   `json:"updated_at"`
 }
 
+type ListingLifecycleStatus struct {
+	ListingID              string       `json:"listing_id"`
+	StoreID                string       `json:"store_id"`
+	Status                 string       `json:"status"`
+	EffectiveAvailability  string       `json:"effective_availability"`
+	IsUpstreamAvailable    bool         `json:"is_upstream_available"`
+	SupplierOfferID        *string      `json:"supplier_offer_id,omitempty"`
+	SupplierOfferStatus    *string      `json:"supplier_offer_status,omitempty"`
+	HasMarginWarning       bool         `json:"has_margin_warning"`
+	CurrentRetailPrice     *money.Money `json:"current_retail_price,omitempty"`
+	UpstreamWholesalePrice *money.Money `json:"upstream_wholesale_price,omitempty"`
+	LastSyncedAt           time.Time    `json:"last_synced_at"`
+}
+
 type FulfillmentLocation struct {
 	SupplierID       string    `json:"supplier_id"`
 	StoreID          string    `json:"store_id,omitempty"`

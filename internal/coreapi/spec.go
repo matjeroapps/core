@@ -1054,6 +1054,15 @@ func internalRoutes() []openapi.RouteSpec {
 			Responses: readResponses("Listing detail", commerce.SellerListing{}),
 		},
 		{
+			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/listings/{listingID}/lifecycle", OperationID: "internalGetStoreListingLifecycle",
+			Summary: "Get seller listing lifecycle status", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("listingID", "Listing identifier"),
+			},
+			Responses: readResponses("Listing lifecycle status", commerce.ListingLifecycleStatus{}),
+		},
+		{
 			Method: http.MethodPut, Path: "/internal/v1/stores/{storeID}/listings/{listingID}/price", OperationID: "internalSetStoreListingPrice",
 			Summary: "Replace current retail price", Tags: []string{"Seller Catalog"},
 			Parameters: []openapi.ParameterSpec{

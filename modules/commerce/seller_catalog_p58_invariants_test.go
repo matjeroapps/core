@@ -1009,3 +1009,288 @@ func TestSupplierOfferImportEligibilityValidation(t *testing.T) {
 		t.Fatalf("expected supplier_offer_id %s, got %v", offerEG.ID, listing.SupplierOfferID)
 	}
 }
+
+func TestSupplierOfferUnavailableLifecycle(t *testing.T) {
+	e, _ := setupP58TestDB(t)
+	ctx := context.Background()
+	suffix := e.suffix
+
+	seller, err := e.repo.CreateSeller(ctx, "life-seller-"+suffix, "Life Seller", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateSeller: %v", err)
+	}
+	subject := "life-owner-" + suffix
+	if _, err := e.repo.CreateSellerMember(ctx, seller.ID, subject, "owner", "active"); err != nil {
+		t.Fatalf("CreateSellerMember: %v", err)
+	}
+	store, err := e.repo.CreateStore(ctx, seller.ID, "EG", "life-store-"+suffix, "Life Store", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateStore: %v", err)
+	}
+
+	supplier, err := e.repo.CreateSupplier(ctx, "life-supplier-"+suffix, "Life Supplier", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateSupplier: %v", err)
+	}
+	market, err := e.repo.CreateSupplierMarket(ctx, supplier.ID, "EG", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateSupplierMarket: %v", err)
+	}
+	product, err := e.repo.CreateProduct(ctx, "life-prod-"+suffix, "active")
+	if err != nil {
+		t.Fatalf("CreateProduct: %v", err)
+	}
+	suppProd, err := e.repo.CreateSupplierProduct(ctx, supplier.ID, product.ID, "LIFE-SKU", "active")
+	if err != nil {
+		t.Fatalf("CreateSupplierProduct: %v", err)
+	}
+	offer, err := e.repo.CreateSupplierOffer(ctx, supplier.ID, suppProd.ID, market.ID, "EG", "active")
+	if err != nil {
+		t.Fatalf("CreateSupplierOffer: %v", err)
+	}
+
+	// Add price and availability to supplier offer
+	if _, err := e.db.Pool.Exec(ctx, `
+		INSERT INTO supplier_offer_prices (id, supplier_offer_id, amount_minor, currency_code, is_current)
+		VALUES (gen_random_uuid(), $1, 5000, 'EGP', true)
+	`, offer.ID); err != nil {
+		t.Fatalf("insert supplier_offer_prices: %v", err)
+	}
+	if _, err := e.db.Pool.Exec(ctx, `
+		INSERT INTO supplier_offer_availability (id, supplier_offer_id, is_available, available_qty)
+		VALUES (gen_random_uuid(), $1, true, 20)
+	`, offer.ID); err != nil {
+		t.Fatalf("insert supplier_offer_availability: %v", err)
+	}
+
+	// 1. Import offer
+	listing, err := e.service.ImportSupplierOfferForSubject(ctx, subject, store.ID, offer.ID)
+	if err != nil {
+		t.Fatalf("ImportSupplierOffer: %v", err)
+	}
+
+	// 2. Set seller retail price and set listing to published
+	if _, err := e.service.SetListingPriceForSubject(ctx, subject, store.ID, listing.ID, 9000, "EGP"); err != nil {
+		t.Fatalf("SetListingPrice: %v", err)
+	}
+	if _, err := e.db.Pool.Exec(ctx, `UPDATE seller_listings SET status = 'published' WHERE id = $1`, listing.ID); err != nil {
+		t.Fatalf("update listing status: %v", err)
+	}
+
+	// 3. Check lifecycle when active
+	status, err := e.service.GetSellerListingLifecycleForSubject(ctx, subject, store.ID, listing.ID)
+	if err != nil {
+		t.Fatalf("GetSellerListingLifecycleForSubject: %v", err)
+	}
+	if status.EffectiveAvailability != "available" || !status.IsUpstreamAvailable || status.HasMarginWarning {
+		t.Fatalf("expected available active status, got effective=%s upstream=%v margin=%v", status.EffectiveAvailability, status.IsUpstreamAvailable, status.HasMarginWarning)
+	}
+
+	// 4. Supplier offer is deactivated
+	if _, err := e.db.Pool.Exec(ctx, `UPDATE supplier_offers SET status = 'inactive' WHERE id = $1`, offer.ID); err != nil {
+		t.Fatalf("deactivate supplier offer: %v", err)
+	}
+
+	statusInactive, err := e.service.GetSellerListingLifecycleForSubject(ctx, subject, store.ID, listing.ID)
+	if err != nil {
+		t.Fatalf("GetSellerListingLifecycleForSubject: %v", err)
+	}
+	if statusInactive.EffectiveAvailability != "upstream_unavailable" || statusInactive.IsUpstreamAvailable {
+		t.Fatalf("expected upstream_unavailable status, got effective=%s upstream=%v", statusInactive.EffectiveAvailability, statusInactive.IsUpstreamAvailable)
+	}
+
+	// Verify seller retail price is strictly preserved
+	price, err := e.repo.GetSellerListingPrice(ctx, listing.ID)
+	if err != nil {
+		t.Fatalf("GetSellerListingPrice: %v", err)
+	}
+	if price.Price.AmountMinor != 9000 {
+		t.Fatalf("expected retail price 9000, got %d", price.Price.AmountMinor)
+	}
+
+	// 5. Supplier reactivates offer -> listing automatically restores availability
+	if _, err := e.db.Pool.Exec(ctx, `UPDATE supplier_offers SET status = 'active' WHERE id = $1`, offer.ID); err != nil {
+		t.Fatalf("reactivate supplier offer: %v", err)
+	}
+
+	statusRestored, err := e.service.GetSellerListingLifecycleForSubject(ctx, subject, store.ID, listing.ID)
+	if err != nil {
+		t.Fatalf("GetSellerListingLifecycleForSubject: %v", err)
+	}
+	if statusRestored.EffectiveAvailability != "available" || !statusRestored.IsUpstreamAvailable {
+		t.Fatalf("expected restored available status, got effective=%s upstream=%v", statusRestored.EffectiveAvailability, statusRestored.IsUpstreamAvailable)
+	}
+}
+
+func TestWholesalePriceShiftPreservesSellerRetailPrice(t *testing.T) {
+	e, _ := setupP58TestDB(t)
+	ctx := context.Background()
+	suffix := e.suffix
+
+	seller, err := e.repo.CreateSeller(ctx, "price-seller-"+suffix, "Price Seller", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateSeller: %v", err)
+	}
+	subject := "price-owner-" + suffix
+	if _, err := e.repo.CreateSellerMember(ctx, seller.ID, subject, "owner", "active"); err != nil {
+		t.Fatalf("CreateSellerMember: %v", err)
+	}
+	store, err := e.repo.CreateStore(ctx, seller.ID, "EG", "price-store-"+suffix, "Price Store", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateStore: %v", err)
+	}
+
+	supplier, err := e.repo.CreateSupplier(ctx, "price-supplier-"+suffix, "Price Supplier", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateSupplier: %v", err)
+	}
+	market, err := e.repo.CreateSupplierMarket(ctx, supplier.ID, "EG", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateSupplierMarket: %v", err)
+	}
+	product, err := e.repo.CreateProduct(ctx, "price-prod-"+suffix, "active")
+	if err != nil {
+		t.Fatalf("CreateProduct: %v", err)
+	}
+	suppProd, err := e.repo.CreateSupplierProduct(ctx, supplier.ID, product.ID, "PRICE-SKU", "active")
+	if err != nil {
+		t.Fatalf("CreateSupplierProduct: %v", err)
+	}
+	offer, err := e.repo.CreateSupplierOffer(ctx, supplier.ID, suppProd.ID, market.ID, "EG", "active")
+	if err != nil {
+		t.Fatalf("CreateSupplierOffer: %v", err)
+	}
+
+	// Initial wholesale price = 40.00 EGP
+	if _, err := e.db.Pool.Exec(ctx, `
+		INSERT INTO supplier_offer_prices (id, supplier_offer_id, amount_minor, currency_code, is_current)
+		VALUES (gen_random_uuid(), $1, 4000, 'EGP', true)
+	`, offer.ID); err != nil {
+		t.Fatalf("insert supplier_offer_prices: %v", err)
+	}
+	if _, err := e.db.Pool.Exec(ctx, `
+		INSERT INTO supplier_offer_availability (id, supplier_offer_id, is_available, available_qty)
+		VALUES (gen_random_uuid(), $1, true, 10)
+	`, offer.ID); err != nil {
+		t.Fatalf("insert supplier_offer_availability: %v", err)
+	}
+
+	listing, err := e.service.ImportSupplierOfferForSubject(ctx, subject, store.ID, offer.ID)
+	if err != nil {
+		t.Fatalf("ImportSupplierOffer: %v", err)
+	}
+
+	// Seller sets retail price to 60.00 EGP
+	if _, err := e.service.SetListingPriceForSubject(ctx, subject, store.ID, listing.ID, 6000, "EGP"); err != nil {
+		t.Fatalf("SetListingPrice: %v", err)
+	}
+
+	// Margin warning should be false
+	statusBefore, err := e.service.GetSellerListingLifecycleForSubject(ctx, subject, store.ID, listing.ID)
+	if err != nil {
+		t.Fatalf("GetSellerListingLifecycleForSubject: %v", err)
+	}
+	if statusBefore.HasMarginWarning {
+		t.Fatalf("expected HasMarginWarning false, got true")
+	}
+
+	// Supplier increases wholesale price to 75.00 EGP (exceeding retail price)
+	if _, err := e.db.Pool.Exec(ctx, `UPDATE supplier_offer_prices SET amount_minor = 7500 WHERE supplier_offer_id = $1`, offer.ID); err != nil {
+		t.Fatalf("update supplier_offer_prices: %v", err)
+	}
+
+	// Margin warning should now be true
+	statusAfter, err := e.service.GetSellerListingLifecycleForSubject(ctx, subject, store.ID, listing.ID)
+	if err != nil {
+		t.Fatalf("GetSellerListingLifecycleForSubject: %v", err)
+	}
+	if !statusAfter.HasMarginWarning {
+		t.Fatalf("expected HasMarginWarning true, got false")
+	}
+
+	// Retail price is unchanged
+	retailPrice, err := e.repo.GetSellerListingPrice(ctx, listing.ID)
+	if err != nil {
+		t.Fatalf("GetSellerListingPrice: %v", err)
+	}
+	if retailPrice.Price.AmountMinor != 6000 {
+		t.Fatalf("expected retail price preserved at 6000, got %d", retailPrice.Price.AmountMinor)
+	}
+}
+
+func TestStockExhaustionAvailabilityTransition(t *testing.T) {
+	e, _ := setupP58TestDB(t)
+	ctx := context.Background()
+	suffix := e.suffix
+
+	seller, err := e.repo.CreateSeller(ctx, "stock-seller-"+suffix, "Stock Seller", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateSeller: %v", err)
+	}
+	subject := "stock-owner-" + suffix
+	if _, err := e.repo.CreateSellerMember(ctx, seller.ID, subject, "owner", "active"); err != nil {
+		t.Fatalf("CreateSellerMember: %v", err)
+	}
+	store, err := e.repo.CreateStore(ctx, seller.ID, "EG", "stock-store-"+suffix, "Stock Store", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateStore: %v", err)
+	}
+
+	supplier, err := e.repo.CreateSupplier(ctx, "stock-supplier-"+suffix, "Stock Supplier", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateSupplier: %v", err)
+	}
+	market, err := e.repo.CreateSupplierMarket(ctx, supplier.ID, "EG", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateSupplierMarket: %v", err)
+	}
+	product, err := e.repo.CreateProduct(ctx, "stock-prod-"+suffix, "active")
+	if err != nil {
+		t.Fatalf("CreateProduct: %v", err)
+	}
+	suppProd, err := e.repo.CreateSupplierProduct(ctx, supplier.ID, product.ID, "STOCK-SKU", "active")
+	if err != nil {
+		t.Fatalf("CreateSupplierProduct: %v", err)
+	}
+	offer, err := e.repo.CreateSupplierOffer(ctx, supplier.ID, suppProd.ID, market.ID, "EG", "active")
+	if err != nil {
+		t.Fatalf("CreateSupplierOffer: %v", err)
+	}
+
+	if _, err := e.db.Pool.Exec(ctx, `
+		INSERT INTO supplier_offer_availability (id, supplier_offer_id, is_available, available_qty)
+		VALUES (gen_random_uuid(), $1, true, 5)
+	`, offer.ID); err != nil {
+		t.Fatalf("insert supplier_offer_availability: %v", err)
+	}
+
+	listing, err := e.service.ImportSupplierOfferForSubject(ctx, subject, store.ID, offer.ID)
+	if err != nil {
+		t.Fatalf("ImportSupplierOffer: %v", err)
+	}
+	if _, err := e.db.Pool.Exec(ctx, `UPDATE seller_listings SET status = 'published' WHERE id = $1`, listing.ID); err != nil {
+		t.Fatalf("update listing status: %v", err)
+	}
+
+	// Stock = 5 -> Available
+	s1, err := e.service.GetSellerListingLifecycleForSubject(ctx, subject, store.ID, listing.ID)
+	if err != nil {
+		t.Fatalf("GetSellerListingLifecycleForSubject: %v", err)
+	}
+	if s1.EffectiveAvailability != "available" {
+		t.Fatalf("expected available, got %s", s1.EffectiveAvailability)
+	}
+
+	// Stock = 0 -> Out of stock
+	if _, err := e.db.Pool.Exec(ctx, `UPDATE supplier_offer_availability SET available_qty = 0 WHERE supplier_offer_id = $1`, offer.ID); err != nil {
+		t.Fatalf("update supplier_offer_availability: %v", err)
+	}
+
+	s2, err := e.service.GetSellerListingLifecycleForSubject(ctx, subject, store.ID, listing.ID)
+	if err != nil {
+		t.Fatalf("GetSellerListingLifecycleForSubject: %v", err)
+	}
+	if s2.EffectiveAvailability != "out_of_stock" {
+		t.Fatalf("expected out_of_stock, got %s", s2.EffectiveAvailability)
+	}
+}

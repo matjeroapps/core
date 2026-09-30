@@ -2787,3 +2787,116 @@ func (r Repository) ImportSupplierOfferAtomically(ctx context.Context, storeID, 
 
 	return listing, err
 }
+
+func (r Repository) GetSellerListingLifecycleStatus(ctx context.Context, storeID, listingID string) (ListingLifecycleStatus, error) {
+	if storeID == "" || listingID == "" {
+		return ListingLifecycleStatus{}, ErrInvalidInput
+	}
+
+	var listing SellerListing
+	var suppOfferID sql.NullString
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, store_id, product_id, supplier_offer_id, market_code, status, created_at, updated_at
+		FROM seller_listings
+		WHERE id = $1 AND store_id = $2
+	`, listingID, storeID).Scan(&listing.ID, &listing.StoreID, &listing.ProductID, &suppOfferID, &listing.MarketCode, &listing.Status, &listing.CreatedAt, &listing.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ListingLifecycleStatus{}, ErrNotFound
+		}
+		return ListingLifecycleStatus{}, translatePGError(err, "get seller listing for lifecycle")
+	}
+
+	result := ListingLifecycleStatus{
+		ListingID:             listing.ID,
+		StoreID:               listing.StoreID,
+		Status:                listing.Status,
+		EffectiveAvailability: listing.Status,
+		IsUpstreamAvailable:   true,
+		LastSyncedAt:          listing.UpdatedAt,
+	}
+
+	if suppOfferID.Valid {
+		result.SupplierOfferID = &suppOfferID.String
+	}
+
+	// Fetch current retail price if exists
+	if retailPrice, err := r.GetSellerListingPrice(ctx, listing.ID); err == nil && retailPrice.IsCurrent {
+		result.CurrentRetailPrice = &retailPrice.Price
+	}
+
+	if result.SupplierOfferID == nil {
+		if listing.Status == "published" {
+			result.EffectiveAvailability = "available"
+		}
+		return result, nil
+	}
+
+	// It's a supplier-backed listing; query upstream offer, product, and availability
+	var offerStatus, supplierProductStatus, productStatus string
+	var wholesaleAmount sql.NullInt64
+	var wholesaleCurrency sql.NullString
+	var isAvailable sql.NullBool
+	var availableQty sql.NullInt64
+	var offerUpdatedAt time.Time
+
+	errOffer := r.pool.QueryRow(ctx, `
+		SELECT so.status, sp.status, p.status, sop.amount_minor, sop.currency_code, soa.is_available, soa.available_qty, so.updated_at
+		FROM supplier_offers so
+		JOIN supplier_products sp ON sp.id = so.supplier_product_id
+		JOIN products p ON p.id = sp.product_id
+		LEFT JOIN supplier_offer_prices sop ON sop.supplier_offer_id = so.id AND sop.is_current = true
+		LEFT JOIN supplier_offer_availability soa ON soa.supplier_offer_id = so.id
+		WHERE so.id = $1
+	`, *result.SupplierOfferID).Scan(
+		&offerStatus,
+		&supplierProductStatus,
+		&productStatus,
+		&wholesaleAmount,
+		&wholesaleCurrency,
+		&isAvailable,
+		&availableQty,
+		&offerUpdatedAt,
+	)
+
+	if errOffer != nil {
+		if errors.Is(errOffer, pgx.ErrNoRows) {
+			result.IsUpstreamAvailable = false
+			result.EffectiveAvailability = "upstream_unavailable"
+			statusArchived := "archived"
+			result.SupplierOfferStatus = &statusArchived
+			return result, nil
+		}
+		return ListingLifecycleStatus{}, translatePGError(errOffer, "get upstream offer details")
+	}
+
+	result.SupplierOfferStatus = &offerStatus
+	result.LastSyncedAt = offerUpdatedAt
+
+	if wholesaleAmount.Valid && wholesaleCurrency.Valid {
+		mObj, errMoney := money.New(wholesaleAmount.Int64, wholesaleCurrency.String)
+		if errMoney == nil {
+			result.UpstreamWholesalePrice = &mObj
+			if result.CurrentRetailPrice != nil && result.CurrentRetailPrice.AmountMinor <= mObj.AmountMinor {
+				result.HasMarginWarning = true
+			}
+		}
+	}
+
+	// Evaluate availability
+	if offerStatus != "active" || supplierProductStatus != "active" || productStatus != "active" {
+		result.IsUpstreamAvailable = false
+		result.EffectiveAvailability = "upstream_unavailable"
+	} else if (isAvailable.Valid && !isAvailable.Bool) || (availableQty.Valid && availableQty.Int64 <= 0) {
+		result.IsUpstreamAvailable = true
+		result.EffectiveAvailability = "out_of_stock"
+	} else if listing.Status == "published" {
+		result.IsUpstreamAvailable = true
+		result.EffectiveAvailability = "available"
+	} else {
+		result.IsUpstreamAvailable = true
+		result.EffectiveAvailability = listing.Status
+	}
+
+	return result, nil
+}

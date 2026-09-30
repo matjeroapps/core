@@ -1003,6 +1003,24 @@ func (s *server) handleGetStoreListing(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, listing)
 }
 
+func (s *server) handleGetStoreListingLifecycle(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	listingID := chi.URLParam(r, "listingID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+
+	lifecycle, err := s.deps.Commerce.GetSellerListingLifecycleForSubject(r.Context(), subject, storeID, listingID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, lifecycle)
+}
+
 func (s *server) handleSetStoreListingPrice(w http.ResponseWriter, r *http.Request) {
 	storeID := chi.URLParam(r, "storeID")
 	listingID := chi.URLParam(r, "listingID")

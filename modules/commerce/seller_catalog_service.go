@@ -1251,6 +1251,20 @@ func (s Service) GetSellerListingByIDForSubject(ctx context.Context, subject, st
 	return s.repo.GetSellerListingByStoreAndID(ctx, storeID, listingID)
 }
 
+func (s Service) GetSellerListingLifecycleForSubject(ctx context.Context, subject, storeID, listingID string) (ListingLifecycleStatus, error) {
+	if subject == "" || storeID == "" || listingID == "" {
+		return ListingLifecycleStatus{}, ErrInvalidInput
+	}
+	store, err := s.repo.GetStore(ctx, storeID)
+	if err != nil {
+		return ListingLifecycleStatus{}, err
+	}
+	if _, err := s.RequireSellerAccess(ctx, subject, store.SellerID); err != nil {
+		return ListingLifecycleStatus{}, err
+	}
+	return s.repo.GetSellerListingLifecycleStatus(ctx, storeID, listingID)
+}
+
 func (s Service) SetListingPriceForSubject(ctx context.Context, subject, storeID, listingID string, amountMinor int64, currency string) (SellerListingPrice, error) {
 	if subject == "" || storeID == "" || listingID == "" {
 		return SellerListingPrice{}, ErrInvalidInput
