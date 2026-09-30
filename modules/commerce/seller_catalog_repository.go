@@ -2762,20 +2762,24 @@ func (r Repository) ImportSupplierOfferAtomically(ctx context.Context, storeID, 
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO seller_listings (id, store_id, product_id, supplier_offer_id, market_code, status)
 			VALUES ($1, $2, $3, $4, $5, 'draft')
-			RETURNING created_at, updated_at
-		`, listingID, storeID, globalProductID, supplierOfferID, storeMarketCode).Scan(&listing.CreatedAt, &listing.UpdatedAt); err != nil {
+			ON CONFLICT (store_id, supplier_offer_id) WHERE supplier_offer_id IS NOT NULL
+			DO UPDATE SET updated_at = seller_listings.updated_at
+			RETURNING id, store_id, product_id, supplier_offer_id, market_code, status, created_at, updated_at
+		`, listingID, storeID, globalProductID, supplierOfferID, storeMarketCode).Scan(
+			&listing.ID,
+			&listing.StoreID,
+			&listing.ProductID,
+			&suppOfferID,
+			&listing.MarketCode,
+			&listing.Status,
+			&listing.CreatedAt,
+			&listing.UpdatedAt,
+		); err != nil {
 			return translatePGError(err, "create imported seller listing")
 		}
 
-		listing = SellerListing{
-			ID:              listingID,
-			StoreID:         storeID,
-			ProductID:       globalProductID,
-			SupplierOfferID: &supplierOfferID,
-			MarketCode:      storeMarketCode,
-			Status:          "draft",
-			CreatedAt:       listing.CreatedAt,
-			UpdatedAt:       listing.UpdatedAt,
+		if suppOfferID.Valid {
+			listing.SupplierOfferID = &suppOfferID.String
 		}
 
 		return bumpStorefrontRevisions(ctx, tx, revisionStoreItself, storeID)
