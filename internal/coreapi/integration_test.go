@@ -988,3 +988,75 @@ func TestIntegrationSupplierOfferImportContract(t *testing.T) {
 		t.Fatalf("cross-store import status = %d, want 403/401/404", crossRec.Code)
 	}
 }
+
+func TestIntegrationStoreListingLifecycleContract(t *testing.T) {
+	env := setupIntegration(t)
+	ctx := env.ctx
+
+	// Create a new active supplier product and offer
+	product := env.product(t, "life-lamp-"+time.Now().Format("150405.000000"), "Lifecycle Lamp", "مصباح دورة حياة", "Lifecycle desk lamp", "مصباح مكتبي")
+	markets, err := env.repo.ListSupplierMarkets(ctx, env.supplier.ID, commerce.Page{Limit: 10})
+	if err != nil || len(markets) == 0 {
+		t.Fatalf("list supplier markets: %v", err)
+	}
+	marketID := markets[0].ID
+	suppProd, err := env.repo.CreateSupplierProduct(ctx, env.supplier.ID, product.ID, "INT-LIFE-SKU", "active")
+	if err != nil {
+		t.Fatalf("CreateSupplierProduct: %v", err)
+	}
+	offer, err := env.repo.CreateSupplierOffer(ctx, env.supplier.ID, suppProd.ID, marketID, "EG", "active")
+	if err != nil {
+		t.Fatalf("CreateSupplierOffer: %v", err)
+	}
+	if _, err := env.db.Exec(ctx, `
+		INSERT INTO supplier_offer_prices (id, supplier_offer_id, amount_minor, currency_code, is_current)
+		VALUES (gen_random_uuid(), $1, 4500, 'EGP', true)
+	`, offer.ID); err != nil {
+		t.Fatalf("insert supplier_offer_prices: %v", err)
+	}
+	if _, err := env.db.Exec(ctx, `
+		INSERT INTO supplier_offer_availability (id, supplier_offer_id, is_available, available_qty)
+		VALUES (gen_random_uuid(), $1, true, 15)
+	`, offer.ID); err != nil {
+		t.Fatalf("insert supplier_offer_availability: %v", err)
+	}
+
+	// Import offer into Store A
+	listing, err := env.repo.ImportSupplierOfferAtomically(ctx, env.storeA.ID, offer.ID, "")
+	if err != nil {
+		t.Fatalf("ImportSupplierOffer: %v", err)
+	}
+	mPrice, _ := money.New(8500, "EGP")
+	if _, err := env.repo.SetSellerListingPrice(ctx, listing.ID, mPrice); err != nil {
+		t.Fatalf("SetSellerListingPrice: %v", err)
+	}
+	if _, err := env.db.Exec(ctx, `UPDATE seller_listings SET status = 'published' WHERE id = $1`, listing.ID); err != nil {
+		t.Fatalf("update listing: %v", err)
+	}
+
+	// 1. GET lifecycle endpoint
+	lifecyclePath := "/internal/v1/stores/" + env.storeA.ID + "/listings/" + listing.ID + "/lifecycle"
+	req := authenticatedRequest(t, http.MethodGet, lifecyclePath, "seller", testSellerToken)
+	req.Header.Set(serviceauth.HeaderSubject, "subject-of-seller-a")
+	rec := httptest.NewRecorder()
+	env.handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get lifecycle status = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+	}
+
+	var status commerce.ListingLifecycleStatus
+	if err := json.NewDecoder(rec.Body).Decode(&status); err != nil {
+		t.Fatalf("decode lifecycle response: %v", err)
+	}
+
+	if status.EffectiveAvailability != "available" || !status.IsUpstreamAvailable || status.HasMarginWarning {
+		t.Fatalf("unexpected lifecycle status: %+v", status)
+	}
+	if status.CurrentRetailPrice == nil || status.CurrentRetailPrice.AmountMinor != 8500 {
+		t.Fatalf("expected retail price 8500, got %v", status.CurrentRetailPrice)
+	}
+	if status.UpstreamWholesalePrice == nil || status.UpstreamWholesalePrice.AmountMinor != 4500 {
+		t.Fatalf("expected wholesale price 4500, got %v", status.UpstreamWholesalePrice)
+	}
+}
