@@ -1294,4 +1294,3 @@ func TestStockExhaustionAvailabilityTransition(t *testing.T) {
 		t.Fatalf("expected out_of_stock, got %s", s2.EffectiveAvailability)
 	}
 }
-
