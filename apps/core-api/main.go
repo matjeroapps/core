@@ -21,6 +21,7 @@ import (
 	"core/internal/integration"
 	"core/internal/marketplace"
 	"core/internal/marketplace_finance"
+	"core/internal/merchants"
 	"core/internal/payments"
 	"core/internal/serviceauth"
 	"core/internal/settlement"
@@ -112,6 +113,7 @@ func run(ctx context.Context) error {
 	balService := balance.NewService(balance.NewRepository(db.Pool))
 	settleService := settlement.NewService(settlement.NewRepository(db.Pool), balService)
 	mfService := marketplace_finance.NewService(marketplace_finance.NewRepository(db.Pool))
+	merchantService := merchants.NewService(merchants.NewPostgresRepository(db.Pool))
 
 	deps := coreapi.Dependencies{
 		Commerce:  service,
@@ -129,6 +131,7 @@ func run(ctx context.Context) error {
 		Balance:            balService,
 		Settlement:         settleService,
 		MarketplaceFinance: mfService,
+		Merchants:          merchantService,
 		Marketplace:        marketplace.NewService(marketplace.NewRepository(db.Pool)),
 		Integration:        integration.NewService(integration.NewRepository(db.Pool)),
 	}

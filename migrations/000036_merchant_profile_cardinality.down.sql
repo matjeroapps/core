@@ -1,0 +1,4 @@
+DROP INDEX IF EXISTS uk_merchant_crosswalk_supplier_source;
+DROP INDEX IF EXISTS uk_merchant_crosswalk_seller_source;
+DROP INDEX IF EXISTS uk_suppliers_one_active_profile_per_merchant;
+DROP INDEX IF EXISTS uk_sellers_one_active_profile_per_merchant;

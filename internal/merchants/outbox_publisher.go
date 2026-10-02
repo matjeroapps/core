@@ -10,6 +10,19 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+const (
+	EventTypeMerchantCreated             = "merchant.created.v1"
+	EventTypeMerchantCapabilityActivated = "merchant.capability.activated.v1"
+	EventTypeMerchantMembershipUpdated   = "merchant.membership.updated.v1"
+	EventTypeMerchantProfileLinked       = "merchant.profile.linked.v1"
+)
+
+type MutationMetadata struct {
+	CorrelationID  string
+	CausationID    string
+	IdempotencyKey string
+}
+
 type OutboxPublisher struct {
 	store outbox.Store
 }
@@ -30,7 +43,7 @@ func (p *OutboxPublisher) PublishMerchantCreated(ctx context.Context, tx pgx.Tx,
 
 	envelope := events.EventEnvelope{
 		EventID:          uuid.New().String(),
-		EventType:        "merchant.created",
+		EventType:        EventTypeMerchantCreated,
 		SchemaVersion:    1,
 		AggregateType:    "merchant",
 		AggregateID:      merchant.ID.String(),
@@ -54,10 +67,10 @@ func (p *OutboxPublisher) PublishCapabilityActivated(ctx context.Context, tx pgx
 
 	envelope := events.EventEnvelope{
 		EventID:          uuid.New().String(),
-		EventType:        "merchant.capability.activated",
+		EventType:        EventTypeMerchantCapabilityActivated,
 		SchemaVersion:    1,
-		AggregateType:    "merchant_capability",
-		AggregateID:      cap.ID.String(),
+		AggregateType:    "merchant",
+		AggregateID:      cap.MerchantID.String(),
 		AggregateVersion: 1,
 		CorrelationID:    correlationID,
 		CausationID:      causationID,
@@ -79,10 +92,33 @@ func (p *OutboxPublisher) PublishMembershipUpdated(ctx context.Context, tx pgx.T
 
 	envelope := events.EventEnvelope{
 		EventID:          uuid.New().String(),
-		EventType:        "merchant.membership.updated",
+		EventType:        EventTypeMerchantMembershipUpdated,
 		SchemaVersion:    1,
-		AggregateType:    "merchant_membership",
-		AggregateID:      mem.ID.String(),
+		AggregateType:    "merchant",
+		AggregateID:      mem.MerchantID.String(),
+		AggregateVersion: 1,
+		CorrelationID:    correlationID,
+		CausationID:      causationID,
+		OccurredAt:       time.Now().UTC(),
+		Payload:          payload,
+	}
+
+	return p.store.Enqueue(ctx, tx, envelope)
+}
+
+func (p *OutboxPublisher) PublishProfileLinked(ctx context.Context, tx pgx.Tx, merchantID uuid.UUID, profileType string, profileID uuid.UUID, correlationID, causationID string) error {
+	payload := map[string]any{
+		"merchant_id":  merchantID.String(),
+		"profile_type": profileType,
+		"profile_id":   profileID.String(),
+	}
+
+	envelope := events.EventEnvelope{
+		EventID:          uuid.New().String(),
+		EventType:        EventTypeMerchantProfileLinked,
+		SchemaVersion:    1,
+		AggregateType:    "merchant",
+		AggregateID:      merchantID.String(),
 		AggregateVersion: 1,
 		CorrelationID:    correlationID,
 		CausationID:      causationID,

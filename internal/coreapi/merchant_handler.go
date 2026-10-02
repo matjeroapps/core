@@ -5,10 +5,11 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+
 	"core/internal/merchants"
 	"core/packages/httpx"
-
-	"github.com/google/uuid"
 )
 
 type MerchantHandler struct {
@@ -26,15 +27,25 @@ type CreateMerchantRequest struct {
 }
 
 func (h *MerchantHandler) CreateMerchant(w http.ResponseWriter, r *http.Request) {
+	if r.Body == nil {
+		writeError(w, CodeInvalidArgument)
+		return
+	}
 	var req CreateMerchantRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeError(w, CodeInvalidArgument)
+		return
+	}
+	if req.Code == "" || req.LegalName == "" || !validCapability(req.InitialCapability) {
+		writeError(w, CodeValidationError)
 		return
 	}
 
-	merchant, err := h.service.CreateMerchant(r.Context(), req.Code, req.LegalName, req.InitialCapability)
+	merchant, err := h.service.CreateMerchantWithMetadata(r.Context(), req.Code, req.LegalName, req.InitialCapability, metadataFromRequest(r))
 	if err != nil {
-		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeError(w, CodeValidationError)
 		return
 	}
 
@@ -42,45 +53,34 @@ func (h *MerchantHandler) CreateMerchant(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *MerchantHandler) GetMerchant(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/internal/v1/merchants/")
-	id, err := uuid.Parse(path)
-	if err != nil {
-		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid merchant_id"})
+	id, ok := merchantIDParam(w, r)
+	if !ok {
 		return
 	}
 
 	merchant, err := h.service.GetMerchant(r.Context(), id)
 	if err != nil {
-		httpx.WriteJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		writeError(w, CodeNotFound)
 		return
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, merchant)
 }
 
-type ActivateCapabilityRequest struct {
-	CapabilityType merchants.CapabilityType `json:"capability_type"`
-}
-
 func (h *MerchantHandler) ActivateCapability(w http.ResponseWriter, r *http.Request) {
-	// Path: /internal/v1/merchants/{merchant_id}/capabilities/{capability_type}/activate
-	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	if len(parts) < 6 {
-		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid path"})
+	merchantID, ok := merchantIDParam(w, r)
+	if !ok {
+		return
+	}
+	capType := merchants.CapabilityType(strings.ToUpper(chi.URLParam(r, "capabilityType")))
+	if !validCapability(capType) {
+		writeError(w, CodeInvalidArgument)
 		return
 	}
 
-	merchantID, err := uuid.Parse(parts[3])
+	cap, err := h.service.ActivateCapabilityWithMetadata(r.Context(), merchantID, capType, metadataFromRequest(r))
 	if err != nil {
-		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid merchant_id"})
-		return
-	}
-
-	capType := merchants.CapabilityType(strings.ToUpper(parts[5]))
-
-	cap, err := h.service.ActivateCapability(r.Context(), merchantID, capType)
-	if err != nil {
-		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeError(w, CodeValidationError)
 		return
 	}
 
@@ -93,30 +93,52 @@ type AddMemberRequest struct {
 }
 
 func (h *MerchantHandler) AddMember(w http.ResponseWriter, r *http.Request) {
-	// Path: /internal/v1/merchants/{merchant_id}/memberships
-	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	if len(parts) < 5 {
-		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid path"})
+	merchantID, ok := merchantIDParam(w, r)
+	if !ok {
 		return
 	}
-
-	merchantID, err := uuid.Parse(parts[3])
-	if err != nil {
-		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid merchant_id"})
+	if r.Body == nil {
+		writeError(w, CodeInvalidArgument)
 		return
 	}
-
 	var req AddMemberRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeError(w, CodeInvalidArgument)
+		return
+	}
+	if req.PrincipalSubject == "" {
+		writeError(w, CodeValidationError)
 		return
 	}
 
-	mem, err := h.service.AddMember(r.Context(), merchantID, req.PrincipalSubject, req.Permissions)
+	mem, err := h.service.AddMemberWithMetadata(r.Context(), merchantID, req.PrincipalSubject, req.Permissions, metadataFromRequest(r))
 	if err != nil {
-		httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeError(w, CodeValidationError)
 		return
 	}
 
 	httpx.WriteJSON(w, http.StatusCreated, mem)
+}
+
+func merchantIDParam(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	id, err := uuid.Parse(chi.URLParam(r, "merchantID"))
+	if err != nil {
+		writeError(w, CodeInvalidArgument)
+		return uuid.Nil, false
+	}
+	return id, true
+}
+
+func metadataFromRequest(r *http.Request) merchants.MutationMetadata {
+	return merchants.MutationMetadata{
+		CorrelationID:  httpx.CorrelationID(r.Context()),
+		CausationID:    httpx.RequestID(r.Context()),
+		IdempotencyKey: r.Header.Get("Idempotency-Key"),
+	}
+}
+
+func validCapability(capType merchants.CapabilityType) bool {
+	return capType == merchants.CapabilityTypeRetail || capType == merchants.CapabilityTypeSupply
 }
