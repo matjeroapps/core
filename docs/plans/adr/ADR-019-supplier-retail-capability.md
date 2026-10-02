@@ -2,7 +2,21 @@
 
 ## Status
 
-Accepted
+Accepted with partial supersession by ADR-020
+
+## Supersession by ADR-020
+
+ADR-020 makes Merchant the canonical business and authorization tenant while preserving Retail and Supply as independent capabilities. This section records the precise scope of supersession without deleting or rewriting ADR-019's historical decisions.
+
+- **Decision 1 — partially superseded**: The conclusion that Supplier/Supply and Seller/Retail are capabilities remains active. The `Supplier -> Seller` hierarchy is superseded as the canonical business and identity model; both profiles instead link to Merchant.
+- **Decision 2 — active**: Stores remain strictly Seller-owned through `stores.seller_id`.
+- **Decision 3 — partially superseded**: The prohibition on inferred identity remains active. `supplier_seller_affiliations` is superseded as the canonical identity mechanism and remains only compatibility and explicit backfill evidence until separately approved cleanup.
+- **Decision 4 — active**: Core remains the single authority, and Supplier does not call Seller to execute Core business capabilities.
+- **Decision 5 — partially superseded**: Owner-governed atomic Retail activation remains active. Creating a separate Seller membership and affiliation as the target identity/membership model is superseded by Merchant membership, capability state, and explicit Merchant profile linkage. The existing transaction remains valid compatibility behavior until the replacement is implemented and cut over.
+- **Decision 6 — superseded for canonical membership**: Its behavior remains historical truth for already provisioned profiles, but separate Seller membership is not the target authorization model. Unified Merchant membership and capability-scoped permissions replace it after gated cutover.
+- **Decisions 7, 8, 9, and 10 — active**: Listing offer lineage, derived sourcing semantics, own-products-first internal prioritization, public storefront privacy, and the Core access boundary remain in force.
+
+ADR-020 does not authorize removal of legacy memberships, affiliations, profiles, or compatibility routes. Their retirement requires successful backfill, canonical cutover, rollback readiness, the compatibility observation window, and separate approval.
 
 ## Context
 
