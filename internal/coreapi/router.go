@@ -22,6 +22,7 @@ import (
 	"core/internal/integration"
 	"core/internal/marketplace"
 	"core/internal/marketplace_finance"
+	"core/internal/merchants"
 	"core/internal/payments"
 	"core/internal/serviceauth"
 	"core/internal/settlement"
@@ -133,6 +134,7 @@ type Dependencies struct {
 	Balance            BalanceService
 	Settlement         SettlementService
 	MarketplaceFinance MarketplaceFinanceService
+	Merchants          *merchants.Service
 	Integration        integration.Service
 	Marketplace        marketplace.Service
 }
@@ -189,6 +191,17 @@ func NewRouter(deps Dependencies) chi.Router {
 			r.Use(requireCallers(serviceauth.CallerPlatform))
 			r.Post("/markets/{market_code}/marketplace/carts/items", server.handleAddMarketplaceCartItem)
 		})
+
+		if deps.Merchants != nil {
+			merchantHandler := NewMerchantHandler(deps.Merchants)
+			r.Group(func(r chi.Router) {
+				r.Use(requireCallers(serviceauth.CallerAdmin, serviceauth.CallerPlatform))
+				r.Post("/merchants", merchantHandler.CreateMerchant)
+				r.Get("/merchants/{merchantID}", merchantHandler.GetMerchant)
+				r.Post("/merchants/{merchantID}/capabilities/{capabilityType}/activate", merchantHandler.ActivateCapability)
+				r.Post("/merchants/{merchantID}/memberships", merchantHandler.AddMember)
+			})
+		}
 
 		// Store-owned fulfillment locations. Seller identity is resolved from the
 		// forwarded subject and the Store path; no body field can choose ownership.

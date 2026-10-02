@@ -41,6 +41,56 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 	return &PostgresRepository{pool: pool}
 }
 
+func (r *PostgresRepository) withTx(ctx context.Context, fn func(pgx.Tx) error) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (r *PostgresRepository) createMerchantTx(ctx context.Context, tx pgx.Tx, m *Merchant) error {
+	query := `INSERT INTO merchants (id, code, legal_name, status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`
+	_, err := tx.Exec(ctx, query, m.ID, m.Code, m.LegalName, string(m.Status), m.CreatedAt, m.UpdatedAt)
+	return err
+}
+
+func (r *PostgresRepository) upsertCapabilityTx(ctx context.Context, tx pgx.Tx, cap *MerchantCapability) error {
+	query := `
+		INSERT INTO merchant_capabilities (id, merchant_id, capability_type, status, activated_at, suspended_at, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (merchant_id, capability_type) DO UPDATE SET
+			status = EXCLUDED.status,
+			activated_at = EXCLUDED.activated_at,
+			suspended_at = EXCLUDED.suspended_at,
+			updated_at = EXCLUDED.updated_at
+	`
+	_, err := tx.Exec(ctx, query, cap.ID, cap.MerchantID, string(cap.CapabilityType), string(cap.Status), cap.ActivatedAt, cap.SuspendedAt, cap.CreatedAt, cap.UpdatedAt)
+	return err
+}
+
+func (r *PostgresRepository) createMembershipTx(ctx context.Context, tx pgx.Tx, mem *MerchantMembership) error {
+	query := `INSERT INTO merchant_memberships (id, merchant_id, principal_subject, status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`
+	_, err := tx.Exec(ctx, query, mem.ID, mem.MerchantID, mem.PrincipalSubject, string(mem.Status), mem.CreatedAt, mem.UpdatedAt)
+	return err
+}
+
+func (r *PostgresRepository) grantPermissionsTx(ctx context.Context, tx pgx.Tx, membershipID uuid.UUID, permissions []string) error {
+	for _, perm := range permissions {
+		query := `INSERT INTO merchant_membership_permissions (id, membership_id, permission_code, granted_at) VALUES ($1, $2, $3, now()) ON CONFLICT DO NOTHING`
+		if _, err := tx.Exec(ctx, query, uuid.New(), membershipID, perm); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *PostgresRepository) CreateMerchant(ctx context.Context, m *Merchant) error {
 	query := `INSERT INTO merchants (id, code, legal_name, status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`
 	_, err := r.pool.Exec(ctx, query, m.ID, m.Code, m.LegalName, string(m.Status), m.CreatedAt, m.UpdatedAt)
