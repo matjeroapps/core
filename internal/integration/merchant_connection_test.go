@@ -37,6 +37,7 @@ func setupMerchantTestDB(t *testing.T) *database.Pool {
 		"000035_seller_supplier_merchant_linkage",
 		"000036_merchant_profile_cardinality",
 		"000037_merchant_owned_integration_connections",
+		"000038_merchant_integration_external_account_lifecycle",
 	}
 	migrations := make([]string, 0, len(paths))
 	for _, name := range paths {
@@ -269,10 +270,9 @@ func TestMerchantConnectionPendingSetupUniqueness(t *testing.T) {
 	}
 }
 
-// TestMerchantConnectionActiveRequiresExternalAccount verifies the database
-// CHECK guard: ACTIVE without external_account_id is rejected for every
-// writer, not just the service layer (delta D2b).
-func TestMerchantConnectionActiveRequiresExternalAccount(t *testing.T) {
+// TestMerchantConnectionOperationalStatusesRequireExternalAccount verifies
+// that only setup states may omit external_account_id.
+func TestMerchantConnectionOperationalStatusesRequireExternalAccount(t *testing.T) {
 	db := setupMerchantTestDB(t)
 	ctx := context.Background()
 	repo := integration.NewMerchantRepository(db.Pool)
@@ -290,14 +290,45 @@ func TestMerchantConnectionActiveRequiresExternalAccount(t *testing.T) {
 		t.Fatalf("create failed: %v", err)
 	}
 
-	// Service-level guard first.
-	if _, err := svc.UpdateMerchantConnectionStatus(ctx, conn.ID, integration.MerchantStatusActive, "corr-2", "caus-2"); err == nil {
-		t.Fatal("expected service to refuse ACTIVE without external_account_id")
+	for _, status := range []integration.MerchantConnectionStatus{
+		integration.MerchantStatusDraft,
+		integration.MerchantStatusAuthorizing,
+		integration.MerchantStatusConfiguring,
+	} {
+		if _, err := db.Exec(ctx, "UPDATE merchant_integration_connections SET status = $1 WHERE id = $2", status, conn.ID); err != nil {
+			t.Errorf("expected setup status %s without external_account_id to remain valid: %v", status, err)
+		}
 	}
 
-	// Database-level guard for any writer bypassing the service.
-	if _, err := db.Exec(ctx, "UPDATE merchant_integration_connections SET status = $1 WHERE id = $2", integration.MerchantStatusActive, conn.ID); err == nil {
-		t.Fatal("expected database CHECK to reject ACTIVE without external_account_id")
+	for _, status := range []integration.MerchantConnectionStatus{
+		integration.MerchantStatusActive,
+		integration.MerchantStatusPaused,
+		integration.MerchantStatusRevoked,
+		integration.MerchantStatusRetired,
+	} {
+		if _, err := svc.UpdateMerchantConnectionStatus(ctx, conn.ID, status, "corr-2", "caus-2"); err == nil {
+			t.Errorf("expected service to refuse %s without external_account_id", status)
+		}
+	}
+
+	for _, status := range []integration.MerchantConnectionStatus{
+		integration.MerchantStatusActive,
+		integration.MerchantStatusPaused,
+		integration.MerchantStatusError,
+		integration.MerchantStatusRevoked,
+		integration.MerchantStatusRetired,
+	} {
+		if _, err := db.Exec(ctx, "UPDATE merchant_integration_connections SET status = $1 WHERE id = $2", status, conn.ID); err == nil {
+			t.Errorf("expected database CHECK to reject %s without external_account_id", status)
+		}
+	}
+
+	if _, err := db.Exec(ctx, `
+		UPDATE merchant_integration_connections
+		SET external_account_id = '   ', status = 'ACTIVE'
+		WHERE id = $1
+	`, conn.ID); err == nil {
+		t.Error("expected database CHECK to reject a blank external_account_id for ACTIVE")
 	}
 }
 
@@ -332,6 +363,10 @@ func TestMerchantConnectionDownMigrationPreservesLegacy(t *testing.T) {
 		t.Fatalf("failed to insert legacy row: %v", err)
 	}
 
+	lifecycleDownSQL, err := os.ReadFile(filepath.Join("..", "..", "migrations", "000038_merchant_integration_external_account_lifecycle.down.sql"))
+	if err != nil {
+		t.Fatalf("failed to read lifecycle down migration: %v", err)
+	}
 	downSQL, err := os.ReadFile(filepath.Join("..", "..", "migrations", "000037_merchant_owned_integration_connections.down.sql"))
 	if err != nil {
 		t.Fatalf("failed to read down migration: %v", err)
@@ -340,12 +375,22 @@ func TestMerchantConnectionDownMigrationPreservesLegacy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read up migration: %v", err)
 	}
+	lifecycleUpSQL, err := os.ReadFile(filepath.Join("..", "..", "migrations", "000038_merchant_integration_external_account_lifecycle.up.sql"))
+	if err != nil {
+		t.Fatalf("failed to read lifecycle up migration: %v", err)
+	}
 
+	if _, err := db.Exec(ctx, string(lifecycleDownSQL)); err != nil {
+		t.Fatalf("lifecycle down migration failed: %v", err)
+	}
 	if _, err := db.Exec(ctx, string(downSQL)); err != nil {
 		t.Fatalf("down migration failed: %v", err)
 	}
 	if _, err := db.Exec(ctx, string(upSQL)); err != nil {
 		t.Fatalf("reapply (up) migration failed: %v", err)
+	}
+	if _, err := db.Exec(ctx, string(lifecycleUpSQL)); err != nil {
+		t.Fatalf("lifecycle reapply (up) migration failed: %v", err)
 	}
 
 	var legacyCount int
@@ -362,6 +407,38 @@ func TestMerchantConnectionDownMigrationPreservesLegacy(t *testing.T) {
 	}
 	if canonicalCount != 0 {
 		t.Fatalf("expected canonical row to be dropped by down migration, got count %d", canonicalCount)
+	}
+}
+
+func TestMerchantConnectionLifecycleMigrationRejectsExistingInvalidRows(t *testing.T) {
+	db := setupMerchantTestDB(t)
+	ctx := context.Background()
+
+	downSQL, err := os.ReadFile(filepath.Join("..", "..", "migrations", "000038_merchant_integration_external_account_lifecycle.down.sql"))
+	if err != nil {
+		t.Fatalf("failed to read lifecycle down migration: %v", err)
+	}
+	upSQL, err := os.ReadFile(filepath.Join("..", "..", "migrations", "000038_merchant_integration_external_account_lifecycle.up.sql"))
+	if err != nil {
+		t.Fatalf("failed to read lifecycle up migration: %v", err)
+	}
+	if _, err := db.Exec(ctx, string(downSQL)); err != nil {
+		t.Fatalf("lifecycle down migration failed: %v", err)
+	}
+
+	merchantID := createTestMerchant(t, db)
+	if _, err := db.Exec(ctx, `
+		INSERT INTO merchant_integration_connections (
+			merchant_id, connection_type, provider, name, status
+		) VALUES ($1, 'SUPPLY_SOURCE', 'salla', 'Invalid Existing Row', 'PAUSED')
+	`, merchantID); err != nil {
+		t.Fatalf("failed to seed pre-existing invalid row: %v", err)
+	}
+
+	if _, err := db.Exec(ctx, string(upSQL)); err == nil {
+		t.Fatal("expected lifecycle migration to reject pre-existing invalid rows")
+	} else if !strings.Contains(err.Error(), "1 invalid connection(s)") {
+		t.Fatalf("expected migration error to report invalid row count, got: %v", err)
 	}
 }
 
