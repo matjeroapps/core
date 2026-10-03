@@ -130,6 +130,9 @@ func (r *fakeMerchantRepo) GetMembership(ctx context.Context, merchantID uuid.UU
 	return mem, nil
 }
 
+func (r *fakeMerchantRepo) ListMembershipsBySubject(ctx context.Context, subject string) ([]*merchants.MerchantMembership, error) {
+	return nil, nil
+}
 func (r *fakeMerchantRepo) ListMemberships(ctx context.Context, merchantID uuid.UUID) ([]*merchants.MerchantMembership, error) {
 	var out []*merchants.MerchantMembership
 	for _, mem := range r.memberships {

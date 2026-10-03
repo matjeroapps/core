@@ -135,6 +135,7 @@ type Dependencies struct {
 	Settlement          SettlementService
 	MarketplaceFinance  MarketplaceFinanceService
 	Merchants           *merchants.Service
+	MerchantBootstrap   *merchants.BootstrapService
 	MerchantIntegration integration.MerchantService
 	MerchantAuthorizer  *merchants.Authorizer
 	SupplyIntegration   integration.SupplyService
@@ -206,6 +207,16 @@ func NewRouter(deps Dependencies) chi.Router {
 			})
 		}
 
+		// Feature 025: subject-oriented Merchant bootstrap. Only the actor
+		// services that own a console/BFF boundary may call it; the supplier
+		// caller exists solely for legacy compatibility eligibility decisions.
+		// The subject arrives through the trusted forwarded-subject boundary.
+		consoleHandler := NewMerchantConsoleHandler(deps.MerchantBootstrap)
+		r.Group(func(r chi.Router) {
+			r.Use(requireCallers(serviceauth.CallerSeller, serviceauth.CallerSupplier))
+			r.Get("/merchants/bootstrap", consoleHandler.GetBootstrap)
+		})
+
 		if deps.MerchantIntegration != nil {
 			merchantIntHandler := NewMerchantIntegrationHandler(deps.MerchantIntegration, deps.MerchantAuthorizer)
 			r.Group(func(r chi.Router) {
@@ -238,15 +249,28 @@ func NewRouter(deps Dependencies) chi.Router {
 				r.Post("/integrations/supply/webhook-inbox", supplyHandler.RecordWebhookInbox)
 			})
 
-			// Merchant decision surfaces: membership/capability/permission
-			// authorization applies, mirroring the connection endpoints.
-			r.Group(func(r chi.Router) {
-				r.Use(requireCallers(serviceauth.CallerAdmin, serviceauth.CallerPlatform, serviceauth.CallerSeller, serviceauth.CallerSupplier))
-				r.Post("/merchants/{merchantID}/integrations/supply/import-batches/{batchID}/approval", supplyHandler.ApproveImportBatch)
-				r.Get("/merchants/{merchantID}/integrations/supply/review-cases", supplyHandler.ListReviewCases)
-				r.Post("/merchants/{merchantID}/integrations/supply/review-cases/{caseID}/resolution", supplyHandler.ResolveReviewCase)
-			})
+			// Feature 025: Merchant-authorized Supply read and decision
+			// surfaces. Every request enforces the merchant authorization
+			// chain (active Merchant, membership, SUPPLY capability, Supply
+			// permission) inside the handler; foreign IDs are
+			// indistinguishable from missing ones.
 		}
+		supplyReadHandler := NewMerchantSupplyReadHandler(deps.SupplyIntegration, deps.MerchantAuthorizer)
+		r.Group(func(r chi.Router) {
+			r.Use(requireCallers(serviceauth.CallerSeller, serviceauth.CallerSupplier))
+			r.Post("/merchants/{merchantID}/integrations/supply/import-batches/{batchID}/approval", supplyReadHandler.ApproveImportBatch)
+			r.Get("/merchants/{merchantID}/integrations/supply/import-batches", supplyReadHandler.ListImportBatches)
+			r.Get("/merchants/{merchantID}/integrations/supply/import-batches/{batchID}", supplyReadHandler.GetImportBatch)
+			r.Get("/merchants/{merchantID}/integrations/supply/review-cases", supplyReadHandler.ListReviewCases)
+			r.Get("/merchants/{merchantID}/integrations/supply/review-cases/{caseID}", supplyReadHandler.GetReviewCase)
+			r.Post("/merchants/{merchantID}/integrations/supply/review-cases/{caseID}/resolution", supplyReadHandler.ResolveReviewCase)
+			r.Get("/merchants/{merchantID}/integrations/supply/mappings", supplyReadHandler.ListMappings)
+			r.Get("/merchants/{merchantID}/integrations/supply/mappings/{mappingID}", supplyReadHandler.GetMapping)
+			r.Get("/merchants/{merchantID}/integrations/supply/cursors", supplyReadHandler.ListSyncCursors)
+			r.Get("/merchants/{merchantID}/integrations/supply/fulfillment-requests", supplyReadHandler.ListFulfillmentRequests)
+			r.Get("/merchants/{merchantID}/integrations/supply/fulfillment-requests/{requestID}", supplyReadHandler.GetFulfillmentRequest)
+			r.Get("/merchants/{merchantID}/integrations/supply/fulfillment-requests/{requestID}/tracking-events", supplyReadHandler.ListTrackingEvents)
+		})
 
 		// Store-owned fulfillment locations. Seller identity is resolved from the
 		// forwarded subject and the Store path; no body field can choose ownership.

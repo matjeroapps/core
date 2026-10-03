@@ -12829,6 +12829,3856 @@
         ]
       }
     },
+    "/internal/v1/merchants/bootstrap": {
+      "get": {
+        "description": "Resolves the authenticated principal (via the trusted forwarded subject) to every Merchant workspace the principal holds a canonical membership in, with capabilities, effective permissions, authorized store summaries, the explicit plan state, and pending actions derived from persisted rows. Workspaces MAY be empty. Seller and supplier service callers only; the browser never calls Core.",
+        "operationId": "internalGetMerchantBootstrap",
+        "parameters": [
+          {
+            "description": "Override locale resolution",
+            "in": "query",
+            "name": "locale",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "meta": {
+                      "properties": {
+                        "contract_version": {
+                          "type": "string"
+                        },
+                        "generated_at": {
+                          "format": "date-time",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "contract_version",
+                        "generated_at"
+                      ],
+                      "type": "object"
+                    },
+                    "subject": {
+                      "type": "string"
+                    },
+                    "workspaces": {
+                      "items": {
+                        "properties": {
+                          "capabilities": {
+                            "nullable": true,
+                            "properties": {
+                              "retail": {
+                                "nullable": true,
+                                "properties": {
+                                  "status": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "status"
+                                ],
+                                "type": "object"
+                              },
+                              "supply": {
+                                "nullable": true,
+                                "properties": {
+                                  "status": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "status"
+                                ],
+                                "type": "object"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "legal_name": {
+                            "type": "string"
+                          },
+                          "membership": {
+                            "properties": {
+                              "id": {
+                                "items": {
+                                  "format": "int32",
+                                  "type": "integer"
+                                },
+                                "type": "array"
+                              },
+                              "permissions": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              },
+                              "status": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "permissions",
+                              "status"
+                            ],
+                            "type": "object"
+                          },
+                          "merchant_code": {
+                            "type": "string"
+                          },
+                          "merchant_id": {
+                            "items": {
+                              "format": "int32",
+                              "type": "integer"
+                            },
+                            "type": "array"
+                          },
+                          "merchant_status": {
+                            "type": "string"
+                          },
+                          "pending_actions": {
+                            "nullable": true,
+                            "properties": {
+                              "open_review_cases": {
+                                "format": "int32",
+                                "type": "integer"
+                              },
+                              "unhealthy_connections": {
+                                "format": "int32",
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "open_review_cases",
+                              "unhealthy_connections"
+                            ],
+                            "type": "object"
+                          },
+                          "plan_summary": {
+                            "nullable": true,
+                            "properties": {
+                              "state": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "state"
+                            ],
+                            "type": "object"
+                          },
+                          "stores": {
+                            "items": {
+                              "properties": {
+                                "code": {
+                                  "type": "string"
+                                },
+                                "id": {
+                                  "items": {
+                                    "format": "int32",
+                                    "type": "integer"
+                                  },
+                                  "type": "array"
+                                },
+                                "market_code": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "code",
+                                "id",
+                                "market_code",
+                                "name",
+                                "status"
+                              ],
+                              "type": "object"
+                            },
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "legal_name",
+                          "membership",
+                          "merchant_code",
+                          "merchant_id",
+                          "merchant_status",
+                          "stores"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "meta",
+                    "subject",
+                    "workspaces"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Merchant bootstrap"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Resolve the subject-oriented Merchant bootstrap",
+        "tags": [
+          "Merchant Console"
+        ]
+      }
+    },
+    "/internal/v1/merchants/{merchantID}/integrations/supply/cursors": {
+      "get": {
+        "operationId": "internalListMerchantSupplyCursors",
+        "parameters": [
+          {
+            "description": "Override locale resolution",
+            "in": "query",
+            "name": "locale",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Merchant identifier",
+            "in": "path",
+            "name": "merchantID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by supply connection",
+            "in": "query",
+            "name": "connection_id",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "connection_id": {
+                        "items": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "type": "array"
+                      },
+                      "created_at": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "cursor_token": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "entity_type": {
+                        "type": "string"
+                      },
+                      "id": {
+                        "items": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "type": "array"
+                      },
+                      "last_reconciled_at": {
+                        "format": "date-time",
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "last_successful_sync": {
+                        "format": "date-time",
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "updated_at": {
+                        "format": "date-time",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "connection_id",
+                      "created_at",
+                      "entity_type",
+                      "id",
+                      "updated_at"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Sync cursor collection"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List a Merchant's supply synchronization cursors",
+        "tags": [
+          "Merchant Supply"
+        ]
+      }
+    },
+    "/internal/v1/merchants/{merchantID}/integrations/supply/fulfillment-requests": {
+      "get": {
+        "operationId": "internalListMerchantSupplyFulfillmentRequests",
+        "parameters": [
+          {
+            "description": "Override locale resolution",
+            "in": "query",
+            "name": "locale",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Merchant identifier",
+            "in": "path",
+            "name": "merchantID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by supply connection",
+            "in": "query",
+            "name": "connection_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by fulfillment status",
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Page size, capped by the service default",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Zero-based offset",
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "causation_id": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "connection_id": {
+                        "items": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "type": "array"
+                      },
+                      "correlation_id": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "created_at": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "external_fulfillment_id": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "id": {
+                        "items": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "type": "array"
+                      },
+                      "idempotency_key": {
+                        "type": "string"
+                      },
+                      "merchant_id": {
+                        "items": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "type": "array"
+                      },
+                      "payload": {
+                        "items": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "type": "array"
+                      },
+                      "provider": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "updated_at": {
+                        "format": "date-time",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "connection_id",
+                      "created_at",
+                      "id",
+                      "idempotency_key",
+                      "merchant_id",
+                      "payload",
+                      "provider",
+                      "status",
+                      "updated_at"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Fulfillment request collection"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List a Merchant's supplier fulfillment requests",
+        "tags": [
+          "Merchant Supply"
+        ]
+      }
+    },
+    "/internal/v1/merchants/{merchantID}/integrations/supply/fulfillment-requests/{requestID}": {
+      "get": {
+        "operationId": "internalGetMerchantSupplyFulfillmentRequest",
+        "parameters": [
+          {
+            "description": "Override locale resolution",
+            "in": "query",
+            "name": "locale",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Merchant identifier",
+            "in": "path",
+            "name": "merchantID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Fulfillment request identifier",
+            "in": "path",
+            "name": "requestID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "request": {
+                      "nullable": true,
+                      "properties": {
+                        "causation_id": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "connection_id": {
+                          "items": {
+                            "format": "int32",
+                            "type": "integer"
+                          },
+                          "type": "array"
+                        },
+                        "correlation_id": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "created_at": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "external_fulfillment_id": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "id": {
+                          "items": {
+                            "format": "int32",
+                            "type": "integer"
+                          },
+                          "type": "array"
+                        },
+                        "idempotency_key": {
+                          "type": "string"
+                        },
+                        "merchant_id": {
+                          "items": {
+                            "format": "int32",
+                            "type": "integer"
+                          },
+                          "type": "array"
+                        },
+                        "payload": {
+                          "items": {
+                            "format": "int32",
+                            "type": "integer"
+                          },
+                          "type": "array"
+                        },
+                        "provider": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "updated_at": {
+                          "format": "date-time",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "connection_id",
+                        "created_at",
+                        "id",
+                        "idempotency_key",
+                        "merchant_id",
+                        "payload",
+                        "provider",
+                        "status",
+                        "updated_at"
+                      ],
+                      "type": "object"
+                    },
+                    "tracking_events": {
+                      "items": {
+                        "properties": {
+                          "carrier": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "connection_id": {
+                            "items": {
+                              "format": "int32",
+                              "type": "integer"
+                            },
+                            "type": "array"
+                          },
+                          "created_at": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "external_event_id": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "items": {
+                              "format": "int32",
+                              "type": "integer"
+                            },
+                            "type": "array"
+                          },
+                          "occurred_at": {
+                            "format": "date-time",
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "payload": {
+                            "items": {
+                              "format": "int32",
+                              "type": "integer"
+                            },
+                            "type": "array"
+                          },
+                          "request_id": {
+                            "items": {
+                              "format": "int32",
+                              "type": "integer"
+                            },
+                            "type": "array"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "tracking_number": {
+                            "nullable": true,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "connection_id",
+                          "created_at",
+                          "external_event_id",
+                          "id",
+                          "payload",
+                          "request_id",
+                          "status"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "tracking_events"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Fulfillment request detail"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get one of a Merchant's fulfillment requests with tracking events",
+        "tags": [
+          "Merchant Supply"
+        ]
+      }
+    },
+    "/internal/v1/merchants/{merchantID}/integrations/supply/fulfillment-requests/{requestID}/tracking-events": {
+      "get": {
+        "operationId": "internalListMerchantSupplyTrackingEvents",
+        "parameters": [
+          {
+            "description": "Override locale resolution",
+            "in": "query",
+            "name": "locale",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Merchant identifier",
+            "in": "path",
+            "name": "merchantID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Fulfillment request identifier",
+            "in": "path",
+            "name": "requestID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "carrier": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "connection_id": {
+                        "items": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "type": "array"
+                      },
+                      "created_at": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "external_event_id": {
+                        "type": "string"
+                      },
+                      "id": {
+                        "items": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "type": "array"
+                      },
+                      "occurred_at": {
+                        "format": "date-time",
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "payload": {
+                        "items": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "type": "array"
+                      },
+                      "request_id": {
+                        "items": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "type": "array"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "tracking_number": {
+                        "nullable": true,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "connection_id",
+                      "created_at",
+                      "external_event_id",
+                      "id",
+                      "payload",
+                      "request_id",
+                      "status"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Tracking event collection"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List the tracking events of one of a Merchant's fulfillment requests",
+        "tags": [
+          "Merchant Supply"
+        ]
+      }
+    },
+    "/internal/v1/merchants/{merchantID}/integrations/supply/import-batches": {
+      "get": {
+        "description": "Merchant-authorized read: enforces active Merchant, membership, SUPPLY capability, and the supply catalog permission. Rows are filtered by Merchant ownership.",
+        "operationId": "internalListMerchantSupplyImportBatches",
+        "parameters": [
+          {
+            "description": "Override locale resolution",
+            "in": "query",
+            "name": "locale",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Merchant identifier",
+            "in": "path",
+            "name": "merchantID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by supply connection",
+            "in": "query",
+            "name": "connection_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by batch status",
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Page size, capped by the service default",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Zero-based offset",
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "approved_count": {
+                        "format": "int32",
+                        "type": "integer"
+                      },
+                      "batch_type": {
+                        "type": "string"
+                      },
+                      "causation_id": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "connection_id": {
+                        "items": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "type": "array"
+                      },
+                      "correlation_id": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "created_at": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "cursor_token": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "duplicate_count": {
+                        "format": "int32",
+                        "type": "integer"
+                      },
+                      "first_import": {
+                        "type": "boolean"
+                      },
+                      "id": {
+                        "items": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "type": "array"
+                      },
+                      "idempotency_key": {
+                        "type": "string"
+                      },
+                      "merchant_id": {
+                        "items": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "type": "array"
+                      },
+                      "provider": {
+                        "type": "string"
+                      },
+                      "record_count": {
+                        "format": "int32",
+                        "type": "integer"
+                      },
+                      "rejected_count": {
+                        "format": "int32",
+                        "type": "integer"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "updated_at": {
+                        "format": "date-time",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "approved_count",
+                      "batch_type",
+                      "connection_id",
+                      "created_at",
+                      "duplicate_count",
+                      "first_import",
+                      "id",
+                      "idempotency_key",
+                      "merchant_id",
+                      "provider",
+                      "record_count",
+                      "rejected_count",
+                      "status",
+                      "updated_at"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Import batch collection"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List a Merchant's supply import batches",
+        "tags": [
+          "Merchant Supply"
+        ]
+      }
+    },
+    "/internal/v1/merchants/{merchantID}/integrations/supply/import-batches/{batchID}": {
+      "get": {
+        "operationId": "internalGetMerchantSupplyImportBatch",
+        "parameters": [
+          {
+            "description": "Override locale resolution",
+            "in": "query",
+            "name": "locale",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Merchant identifier",
+            "in": "path",
+            "name": "merchantID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Import batch identifier",
+            "in": "path",
+            "name": "batchID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "batch": {
+                      "nullable": true,
+                      "properties": {
+                        "approved_count": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "batch_type": {
+                          "type": "string"
+                        },
+                        "causation_id": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "connection_id": {
+                          "items": {
+                            "format": "int32",
+                            "type": "integer"
+                          },
+                          "type": "array"
+                        },
+                        "correlation_id": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "created_at": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "cursor_token": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "duplicate_count": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "first_import": {
+                          "type": "boolean"
+                        },
+                        "id": {
+                          "items": {
+                            "format": "int32",
+                            "type": "integer"
+                          },
+                          "type": "array"
+                        },
+                        "idempotency_key": {
+                          "type": "string"
+                        },
+                        "merchant_id": {
+                          "items": {
+                            "format": "int32",
+                            "type": "integer"
+                          },
+                          "type": "array"
+                        },
+                        "provider": {
+                          "type": "string"
+                        },
+                        "record_count": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "rejected_count": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "updated_at": {
+                          "format": "date-time",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "approved_count",
+                        "batch_type",
+                        "connection_id",
+                        "created_at",
+                        "duplicate_count",
+                        "first_import",
+                        "id",
+                        "idempotency_key",
+                        "merchant_id",
+                        "provider",
+                        "record_count",
+                        "rejected_count",
+                        "status",
+                        "updated_at"
+                      ],
+                      "type": "object"
+                    },
+                    "records": {
+                      "items": {
+                        "properties": {
+                          "barcode": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "batch_id": {
+                            "items": {
+                              "format": "int32",
+                              "type": "integer"
+                            },
+                            "type": "array"
+                          },
+                          "connection_id": {
+                            "items": {
+                              "format": "int32",
+                              "type": "integer"
+                            },
+                            "type": "array"
+                          },
+                          "content_digest": {
+                            "type": "string"
+                          },
+                          "created_at": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "currency": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "duplicate_of_connection": {
+                            "items": {
+                              "format": "int32",
+                              "type": "integer"
+                            },
+                            "nullable": true,
+                            "type": "array"
+                          },
+                          "entity_type": {
+                            "type": "string"
+                          },
+                          "external_product_id": {
+                            "type": "string"
+                          },
+                          "external_variant_id": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "external_version": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "id": {
+                            "items": {
+                              "format": "int32",
+                              "type": "integer"
+                            },
+                            "type": "array"
+                          },
+                          "mapping_decision": {
+                            "items": {
+                              "format": "int32",
+                              "type": "integer"
+                            },
+                            "type": "array"
+                          },
+                          "merchant_id": {
+                            "items": {
+                              "format": "int32",
+                              "type": "integer"
+                            },
+                            "type": "array"
+                          },
+                          "payload": {
+                            "items": {
+                              "format": "int32",
+                              "type": "integer"
+                            },
+                            "type": "array"
+                          },
+                          "review_case_id": {
+                            "items": {
+                              "format": "int32",
+                              "type": "integer"
+                            },
+                            "nullable": true,
+                            "type": "array"
+                          },
+                          "sku": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "updated_at": {
+                            "format": "date-time",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "batch_id",
+                          "connection_id",
+                          "content_digest",
+                          "created_at",
+                          "entity_type",
+                          "external_product_id",
+                          "id",
+                          "merchant_id",
+                          "payload",
+                          "status",
+                          "updated_at"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "records"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Import batch detail"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get one of a Merchant's supply import batches with staged records",
+        "tags": [
+          "Merchant Supply"
+        ]
+      }
+    },
+    "/internal/v1/merchants/{merchantID}/integrations/supply/import-batches/{batchID}/approval": {
+      "post": {
+        "operationId": "internalApproveMerchantSupplyImportBatch",
+        "parameters": [
+          {
+            "description": "Override locale resolution",
+            "in": "query",
+            "name": "locale",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Merchant identifier",
+            "in": "path",
+            "name": "merchantID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Import batch identifier",
+            "in": "path",
+            "name": "batchID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "decisions": {
+                    "items": {
+                      "properties": {
+                        "authority_source": {
+                          "type": "string"
+                        },
+                        "decision": {
+                          "type": "string"
+                        },
+                        "internal_id": {
+                          "type": "string"
+                        },
+                        "record_id": {
+                          "items": {
+                            "format": "int32",
+                            "type": "integer"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "decision",
+                        "record_id"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "decisions"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "approved_count": {
+                      "format": "int32",
+                      "type": "integer"
+                    },
+                    "batch_type": {
+                      "type": "string"
+                    },
+                    "causation_id": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "connection_id": {
+                      "items": {
+                        "format": "int32",
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    },
+                    "correlation_id": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "created_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "cursor_token": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "duplicate_count": {
+                      "format": "int32",
+                      "type": "integer"
+                    },
+                    "first_import": {
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "items": {
+                        "format": "int32",
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    },
+                    "idempotency_key": {
+                      "type": "string"
+                    },
+                    "merchant_id": {
+                      "items": {
+                        "format": "int32",
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    },
+                    "provider": {
+                      "type": "string"
+                    },
+                    "record_count": {
+                      "format": "int32",
+                      "type": "integer"
+                    },
+                    "rejected_count": {
+                      "format": "int32",
+                      "type": "integer"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "updated_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "approved_count",
+                    "batch_type",
+                    "connection_id",
+                    "created_at",
+                    "duplicate_count",
+                    "first_import",
+                    "id",
+                    "idempotency_key",
+                    "merchant_id",
+                    "provider",
+                    "record_count",
+                    "rejected_count",
+                    "status",
+                    "updated_at"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Updated import batch"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Apply the Merchant's per-record batch decisions",
+        "tags": [
+          "Merchant Supply"
+        ]
+      }
+    },
+    "/internal/v1/merchants/{merchantID}/integrations/supply/mappings": {
+      "get": {
+        "operationId": "internalListMerchantSupplyMappings",
+        "parameters": [
+          {
+            "description": "Override locale resolution",
+            "in": "query",
+            "name": "locale",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Merchant identifier",
+            "in": "path",
+            "name": "merchantID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by supply connection",
+            "in": "query",
+            "name": "connection_id",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "approved_batch_id": {
+                        "items": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "nullable": true,
+                        "type": "array"
+                      },
+                      "authority_source": {
+                        "type": "string"
+                      },
+                      "connection_id": {
+                        "items": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "type": "array"
+                      },
+                      "content_digest": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "created_at": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "entity_type": {
+                        "type": "string"
+                      },
+                      "external_product_id": {
+                        "type": "string"
+                      },
+                      "external_variant_id": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "external_version": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "id": {
+                        "items": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "type": "array"
+                      },
+                      "internal_id": {
+                        "type": "string"
+                      },
+                      "last_synced_at": {
+                        "format": "date-time",
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "merchant_id": {
+                        "items": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "type": "array"
+                      },
+                      "provenance": {
+                        "items": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "type": "array"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "updated_at": {
+                        "format": "date-time",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "authority_source",
+                      "connection_id",
+                      "created_at",
+                      "entity_type",
+                      "external_product_id",
+                      "id",
+                      "internal_id",
+                      "merchant_id",
+                      "provenance",
+                      "status",
+                      "updated_at"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Entity mapping collection"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List a Merchant's entity mappings with authority and provenance",
+        "tags": [
+          "Merchant Supply"
+        ]
+      }
+    },
+    "/internal/v1/merchants/{merchantID}/integrations/supply/mappings/{mappingID}": {
+      "get": {
+        "operationId": "internalGetMerchantSupplyMapping",
+        "parameters": [
+          {
+            "description": "Override locale resolution",
+            "in": "query",
+            "name": "locale",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Merchant identifier",
+            "in": "path",
+            "name": "merchantID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Entity mapping identifier",
+            "in": "path",
+            "name": "mappingID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "approved_batch_id": {
+                      "items": {
+                        "format": "int32",
+                        "type": "integer"
+                      },
+                      "nullable": true,
+                      "type": "array"
+                    },
+                    "authority_source": {
+                      "type": "string"
+                    },
+                    "connection_id": {
+                      "items": {
+                        "format": "int32",
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    },
+                    "content_digest": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "created_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "entity_type": {
+                      "type": "string"
+                    },
+                    "external_product_id": {
+                      "type": "string"
+                    },
+                    "external_variant_id": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "external_version": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "id": {
+                      "items": {
+                        "format": "int32",
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    },
+                    "internal_id": {
+                      "type": "string"
+                    },
+                    "last_synced_at": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "merchant_id": {
+                      "items": {
+                        "format": "int32",
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    },
+                    "provenance": {
+                      "items": {
+                        "format": "int32",
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "updated_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "authority_source",
+                    "connection_id",
+                    "created_at",
+                    "entity_type",
+                    "external_product_id",
+                    "id",
+                    "internal_id",
+                    "merchant_id",
+                    "provenance",
+                    "status",
+                    "updated_at"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Entity mapping"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get one of a Merchant's entity mappings",
+        "tags": [
+          "Merchant Supply"
+        ]
+      }
+    },
+    "/internal/v1/merchants/{merchantID}/integrations/supply/review-cases": {
+      "get": {
+        "operationId": "internalListMerchantSupplyReviewCases",
+        "parameters": [
+          {
+            "description": "Override locale resolution",
+            "in": "query",
+            "name": "locale",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Merchant identifier",
+            "in": "path",
+            "name": "merchantID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by supply connection",
+            "in": "query",
+            "name": "connection_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by case status",
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "case_type": {
+                        "type": "string"
+                      },
+                      "connection_id": {
+                        "items": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "type": "array"
+                      },
+                      "created_at": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "details": {
+                        "items": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "type": "array"
+                      },
+                      "id": {
+                        "items": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "type": "array"
+                      },
+                      "merchant_id": {
+                        "items": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "type": "array"
+                      },
+                      "reason_code": {
+                        "type": "string"
+                      },
+                      "resolution": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "resolved_at": {
+                        "format": "date-time",
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "resolved_by": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "subject_batch_id": {
+                        "items": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "nullable": true,
+                        "type": "array"
+                      },
+                      "subject_record_id": {
+                        "items": {
+                          "format": "int32",
+                          "type": "integer"
+                        },
+                        "nullable": true,
+                        "type": "array"
+                      },
+                      "updated_at": {
+                        "format": "date-time",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "case_type",
+                      "connection_id",
+                      "created_at",
+                      "details",
+                      "id",
+                      "merchant_id",
+                      "reason_code",
+                      "status",
+                      "updated_at"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Review case collection"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List a Merchant's supply review cases",
+        "tags": [
+          "Merchant Supply"
+        ]
+      }
+    },
+    "/internal/v1/merchants/{merchantID}/integrations/supply/review-cases/{caseID}": {
+      "get": {
+        "operationId": "internalGetMerchantSupplyReviewCase",
+        "parameters": [
+          {
+            "description": "Override locale resolution",
+            "in": "query",
+            "name": "locale",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Merchant identifier",
+            "in": "path",
+            "name": "merchantID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Review case identifier",
+            "in": "path",
+            "name": "caseID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "case_type": {
+                      "type": "string"
+                    },
+                    "connection_id": {
+                      "items": {
+                        "format": "int32",
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    },
+                    "created_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "details": {
+                      "items": {
+                        "format": "int32",
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    },
+                    "id": {
+                      "items": {
+                        "format": "int32",
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    },
+                    "merchant_id": {
+                      "items": {
+                        "format": "int32",
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    },
+                    "reason_code": {
+                      "type": "string"
+                    },
+                    "resolution": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "resolved_at": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "resolved_by": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "subject_batch_id": {
+                      "items": {
+                        "format": "int32",
+                        "type": "integer"
+                      },
+                      "nullable": true,
+                      "type": "array"
+                    },
+                    "subject_record_id": {
+                      "items": {
+                        "format": "int32",
+                        "type": "integer"
+                      },
+                      "nullable": true,
+                      "type": "array"
+                    },
+                    "updated_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "case_type",
+                    "connection_id",
+                    "created_at",
+                    "details",
+                    "id",
+                    "merchant_id",
+                    "reason_code",
+                    "status",
+                    "updated_at"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Review case"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get one of a Merchant's supply review cases",
+        "tags": [
+          "Merchant Supply"
+        ]
+      }
+    },
+    "/internal/v1/merchants/{merchantID}/integrations/supply/review-cases/{caseID}/resolution": {
+      "post": {
+        "operationId": "internalResolveMerchantSupplyReviewCase",
+        "parameters": [
+          {
+            "description": "Override locale resolution",
+            "in": "query",
+            "name": "locale",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Merchant identifier",
+            "in": "path",
+            "name": "merchantID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Review case identifier",
+            "in": "path",
+            "name": "caseID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "resolution": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "resolution"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "case_type": {
+                      "type": "string"
+                    },
+                    "connection_id": {
+                      "items": {
+                        "format": "int32",
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    },
+                    "created_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "details": {
+                      "items": {
+                        "format": "int32",
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    },
+                    "id": {
+                      "items": {
+                        "format": "int32",
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    },
+                    "merchant_id": {
+                      "items": {
+                        "format": "int32",
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    },
+                    "reason_code": {
+                      "type": "string"
+                    },
+                    "resolution": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "resolved_at": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "resolved_by": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "subject_batch_id": {
+                      "items": {
+                        "format": "int32",
+                        "type": "integer"
+                      },
+                      "nullable": true,
+                      "type": "array"
+                    },
+                    "subject_record_id": {
+                      "items": {
+                        "format": "int32",
+                        "type": "integer"
+                      },
+                      "nullable": true,
+                      "type": "array"
+                    },
+                    "updated_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "case_type",
+                    "connection_id",
+                    "created_at",
+                    "details",
+                    "id",
+                    "merchant_id",
+                    "reason_code",
+                    "status",
+                    "updated_at"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Resolved review case"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Resolve or dismiss a supply review case",
+        "tags": [
+          "Merchant Supply"
+        ]
+      }
+    },
     "/internal/v1/offers": {
       "get": {
         "operationId": "internalListOffers",
