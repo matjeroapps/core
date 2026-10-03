@@ -123,7 +123,7 @@ func setupMerchantConsoleAPITest(t *testing.T) *consoleFixture {
 		MerchantID:     merchant.ID,
 		ConnectionID:   conn.ID,
 		BatchType:      integration.SupplyBatchTypeFirstImport,
-		IdempotencyKey: "console-import-1",
+		IdempotencyKey: "int-console-import",
 		Records: []integration.StagedRecordInput{{
 			EntityType:        integration.SupplyEntityTypeProduct,
 			ExternalProductID: "prod-1",
@@ -160,7 +160,7 @@ func setupMerchantConsoleAPITest(t *testing.T) *consoleFixture {
 	fulfillment, err := supplySvc.CreateFulfillmentRequest(ctx, integration.CreateFulfillmentRequestInput{
 		MerchantID:     merchant.ID,
 		ConnectionID:   conn.ID,
-		IdempotencyKey: "console-fulfillment-1",
+		IdempotencyKey: "int-console-fulfillment",
 		Payload:        []byte(`{"order_ref":"ord-1"}`),
 	})
 	if err != nil {
@@ -194,7 +194,7 @@ func setupMerchantConsoleAPITest(t *testing.T) *consoleFixture {
 		MerchantID:     other.ID,
 		ConnectionID:   otherConn.ID,
 		BatchType:      integration.SupplyBatchTypeFirstImport,
-		IdempotencyKey: "other-import-1",
+		IdempotencyKey: "int-other-import",
 	}, "", "")
 	if err != nil {
 		t.Fatalf("create other batch: %v", err)
@@ -216,7 +216,7 @@ func setupMerchantConsoleAPITest(t *testing.T) *consoleFixture {
 	otherFulfillment, err := supplySvc.CreateFulfillmentRequest(ctx, integration.CreateFulfillmentRequestInput{
 		MerchantID:     other.ID,
 		ConnectionID:   otherConn.ID,
-		IdempotencyKey: "other-fulfillment-1",
+		IdempotencyKey: "int-other-fulfillment",
 	})
 	if err != nil {
 		t.Fatalf("create other fulfillment request: %v", err)
