@@ -130,6 +130,9 @@ func (r *memoryRepo) GetMembership(ctx context.Context, merchantID uuid.UUID, su
 func (r *memoryRepo) ListMemberships(ctx context.Context, merchantID uuid.UUID) ([]*MerchantMembership, error) {
 	return nil, nil
 }
+func (r *memoryRepo) ListMembershipsBySubject(ctx context.Context, subject string) ([]*MerchantMembership, error) {
+	return nil, nil
+}
 func (r *memoryRepo) GrantPermissions(ctx context.Context, membershipID uuid.UUID, permissions []string) error {
 	return nil
 }

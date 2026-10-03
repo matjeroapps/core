@@ -135,6 +135,7 @@ func run(ctx context.Context) error {
 		Settlement:          settleService,
 		MarketplaceFinance:  mfService,
 		Merchants:           merchantService,
+		MerchantBootstrap:   merchants.NewBootstrapService(db.Pool, merchants.NewPostgresRepository(db.Pool)),
 		MerchantIntegration: merchantIntegrationService,
 		MerchantAuthorizer:  merchantAuthorizer,
 		SupplyIntegration:   integration.NewSupplyService(db.Pool),
