@@ -7,7 +7,6 @@ CREATE TABLE IF NOT EXISTS merchant_integration_connections (
     name VARCHAR(255) NOT NULL,
     store_id UUID REFERENCES stores(id) ON DELETE SET NULL,
     status VARCHAR(32) NOT NULL DEFAULT 'DRAFT',
-    credentials_vault_ref VARCHAR(255),
     granted_scopes JSONB NOT NULL DEFAULT '[]'::jsonb,
     health_status VARCHAR(32) NOT NULL DEFAULT 'healthy',
     last_health_check_at TIMESTAMPTZ,
@@ -18,13 +17,21 @@ CREATE TABLE IF NOT EXISTS merchant_integration_connections (
     settings JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_merchant_integration_conn_account UNIQUE (merchant_id, provider, external_account_id)
+    CONSTRAINT uq_merchant_integration_conn_account UNIQUE (merchant_id, provider, external_account_id),
+    CONSTRAINT ck_merchant_integration_conn_active_account CHECK (status <> 'ACTIVE' OR external_account_id IS NOT NULL)
 );
 
 CREATE INDEX IF NOT EXISTS idx_merchant_integration_conn_merchant ON merchant_integration_connections(merchant_id);
 CREATE INDEX IF NOT EXISTS idx_merchant_integration_conn_type ON merchant_integration_connections(merchant_id, connection_type);
 CREATE INDEX IF NOT EXISTS idx_merchant_integration_conn_store ON merchant_integration_connections(store_id) WHERE store_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_merchant_integration_conn_status ON merchant_integration_connections(status);
+
+-- At most one in-flight setup row per (merchant, provider) while the external
+-- account is still unknown; operational rows are covered by
+-- uq_merchant_integration_conn_account.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_merchant_integration_conn_pending_account
+    ON merchant_integration_connections (merchant_id, provider)
+    WHERE external_account_id IS NULL;
 
 CREATE TABLE IF NOT EXISTS merchant_integration_job_intents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -60,6 +67,7 @@ CREATE TABLE IF NOT EXISTS merchant_integration_migration_crosswalk (
     target_connection_id UUID REFERENCES merchant_integration_connections(id) ON DELETE SET NULL,
     merchant_id UUID REFERENCES merchants(id) ON DELETE SET NULL,
     classification VARCHAR(32) NOT NULL,
+    reused_existing_connection BOOLEAN NOT NULL DEFAULT FALSE,
     quarantine_reason_code VARCHAR(64),
     quarantine_details JSONB NOT NULL DEFAULT '{}'::jsonb,
     run_id UUID NOT NULL,

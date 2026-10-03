@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS seller_channel_sync_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     store_id UUID NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
-    connection_id UUID NOT NULL REFERENCES integration_connections(id) ON DELETE CASCADE,
+    connection_id VARCHAR(64) NOT NULL REFERENCES integration_connections(id) ON DELETE CASCADE,
     sync_type VARCHAR(64) NOT NULL DEFAULT 'catalog_import',
     status VARCHAR(32) NOT NULL DEFAULT 'queued',
     total_items INT NOT NULL DEFAULT 0,

@@ -22,6 +22,16 @@ const (
 	EventTypeMerchantMigrationCompleted      = "merchant.integration.migration.completed.v1"
 )
 
+var (
+	// ErrStatusNotCallerManaged: ERROR and setup/import statuses are
+	// system-controlled and cannot be set through the authenticated API.
+	ErrStatusNotCallerManaged = errors.New("status is system-controlled and cannot be set by callers")
+	// ErrTerminalStatusTransition: REVOKED and RETIRED are terminal.
+	ErrTerminalStatusTransition = errors.New("connection status is terminal and cannot be changed")
+	// ErrExternalAccountRequired: ACTIVE requires a verified external account.
+	ErrExternalAccountRequired = errors.New("external_account_id is required before ACTIVE status")
+)
+
 type MerchantService interface {
 	CreateMerchantConnection(ctx context.Context, input CreateMerchantConnectionInput, correlationID, causationID string) (*MerchantIntegrationConnection, error)
 	GetMerchantConnection(ctx context.Context, id uuid.UUID) (*MerchantIntegrationConnection, error)
@@ -36,37 +46,44 @@ type MerchantService interface {
 }
 
 type merchantService struct {
-	repo  MerchantRepository
-	pool  *pgxpool.Pool
-	store outbox.Store
+	repo      MerchantRepository
+	pool      *pgxpool.Pool
+	store     outbox.Store
+	telemetry *Telemetry
 }
 
 func NewMerchantService(repo MerchantRepository, pool *pgxpool.Pool) MerchantService {
 	return &merchantService{
-		repo:  repo,
-		pool:  pool,
-		store: outbox.NewStore(),
+		repo:      repo,
+		pool:      pool,
+		store:     outbox.NewStore(),
+		telemetry: NewTelemetry(),
 	}
 }
 
 func (s *merchantService) CreateMerchantConnection(ctx context.Context, input CreateMerchantConnectionInput, correlationID, causationID string) (*MerchantIntegrationConnection, error) {
+	// Store binding is an API-create concern: migrated RETAIL_CHANNEL rows
+	// arrive without a store binding and bind one later.
+	if input.ConnectionType == ConnectionTypeRetailChannel && (input.StoreID == nil || *input.StoreID == uuid.Nil) {
+		return nil, errors.New("store_id is required for RETAIL_CHANNEL connections")
+	}
+
 	conn := MerchantIntegrationConnection{
-		ID:                  uuid.New(),
-		MerchantID:          input.MerchantID,
-		ConnectionType:      input.ConnectionType,
-		Provider:            input.Provider,
-		ExternalAccountID:   input.ExternalAccountID,
-		Name:                input.Name,
-		StoreID:             input.StoreID,
-		Status:              MerchantStatusDraft,
-		CredentialsVaultRef: input.CredentialsVaultRef,
-		GrantedScopes:       input.GrantedScopes,
-		Settings:            input.Settings,
-		LegacyActorType:     input.LegacyActorType,
-		LegacyActorID:       input.LegacyActorID,
-		LegacyConnectionID:  input.LegacyConnectionID,
-		CreatedAt:           time.Now().UTC(),
-		UpdatedAt:           time.Now().UTC(),
+		ID:                 uuid.New(),
+		MerchantID:         input.MerchantID,
+		ConnectionType:     input.ConnectionType,
+		Provider:           input.Provider,
+		ExternalAccountID:  input.ExternalAccountID,
+		Name:               input.Name,
+		StoreID:            input.StoreID,
+		Status:             MerchantStatusDraft,
+		GrantedScopes:      input.GrantedScopes,
+		Settings:           input.Settings,
+		LegacyActorType:    input.LegacyActorType,
+		LegacyActorID:      input.LegacyActorID,
+		LegacyConnectionID: input.LegacyConnectionID,
+		CreatedAt:          time.Now().UTC(),
+		UpdatedAt:          time.Now().UTC(),
 	}
 
 	if err := conn.Validate(); err != nil {
@@ -122,6 +139,8 @@ func (s *merchantService) CreateMerchantConnection(ctx context.Context, input Cr
 		return nil, fmt.Errorf("failed to commit tx: %w", err)
 	}
 
+	s.telemetry.RecordConnectionCreated()
+
 	return &conn, nil
 }
 
@@ -139,9 +158,22 @@ func (s *merchantService) ListMerchantConnections(ctx context.Context, merchantI
 	return s.repo.ListMerchantConnections(ctx, nil, merchantID, connType, page)
 }
 
+// callerManagedStatuses is the closed set of lifecycle statuses an
+// authenticated caller may set through PATCH /status. ERROR and the
+// setup/import states (DRAFT, AUTHORIZING, CONFIGURING) are system-controlled.
+var callerManagedStatuses = map[MerchantConnectionStatus]bool{
+	MerchantStatusActive:  true,
+	MerchantStatusPaused:  true,
+	MerchantStatusRevoked: true,
+	MerchantStatusRetired: true,
+}
+
 func (s *merchantService) UpdateMerchantConnectionStatus(ctx context.Context, id uuid.UUID, status MerchantConnectionStatus, correlationID, causationID string) (*MerchantIntegrationConnection, error) {
 	if id == uuid.Nil {
 		return nil, ErrMerchantConnectionNotFound
+	}
+	if !callerManagedStatuses[status] {
+		return nil, ErrStatusNotCallerManaged
 	}
 
 	tx, err := s.pool.Begin(ctx)
@@ -150,9 +182,25 @@ func (s *merchantService) UpdateMerchantConnectionStatus(ctx context.Context, id
 	}
 	defer tx.Rollback(ctx)
 
+	current, err := s.repo.GetMerchantConnectionByID(ctx, tx, id)
+	if err != nil {
+		return nil, err
+	}
+	if current.Status == MerchantStatusRevoked || current.Status == MerchantStatusRetired {
+		return nil, ErrTerminalStatusTransition
+	}
+	if status == MerchantStatusActive && current.ExternalAccountID == nil {
+		return nil, ErrExternalAccountRequired
+	}
+
 	conn, err := s.repo.UpdateMerchantConnectionStatus(ctx, tx, id, status)
 	if err != nil {
 		return nil, err
+	}
+
+	aggregateVersion, err := s.repo.LatestConnectionAggregateVersion(ctx, tx, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read connection aggregate version: %w", err)
 	}
 
 	payload := map[string]any{
@@ -168,7 +216,7 @@ func (s *merchantService) UpdateMerchantConnectionStatus(ctx context.Context, id
 		SchemaVersion:    1,
 		AggregateType:    "merchant_integration_connection",
 		AggregateID:      conn.ID.String(),
-		AggregateVersion: 2,
+		AggregateVersion: int64(aggregateVersion + 1),
 		CorrelationID:    correlationID,
 		CausationID:      causationID,
 		OccurredAt:       time.Now().UTC(),
@@ -182,6 +230,8 @@ func (s *merchantService) UpdateMerchantConnectionStatus(ctx context.Context, id
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("failed to commit tx: %w", err)
 	}
+
+	s.telemetry.RecordConnectionStatusChanged()
 
 	return conn, nil
 }
@@ -263,6 +313,7 @@ func (s *merchantService) ReconcileLegacyConnections(ctx context.Context, dryRun
 		var merchantID uuid.UUID
 		var connType MerchantConnectionType
 		var quarantineReason string
+		var externalAccountID string
 
 		switch leg.ActorType {
 		case ActorTypeSeller:
@@ -283,6 +334,18 @@ func (s *merchantService) ReconcileLegacyConnections(ctx context.Context, dryRun
 			}
 		default:
 			quarantineReason = QuarantineAmbiguousOwnerMismatch
+		}
+
+		// Verified external-account identity: the legacy model stores no account
+		// column, so the canonical settings key is the only accepted source.
+		// Weak attributes (name, provider label, emails) never substitute.
+		if quarantineReason == "" {
+			extAcc, ok := legacyExternalAccountID(leg.Settings)
+			if !ok {
+				quarantineReason = QuarantineMissingExternalAccount
+			} else {
+				externalAccountID = extAcc
+			}
 		}
 
 		if quarantineReason != "" || merchantID == uuid.Nil {
@@ -314,6 +377,38 @@ func (s *merchantService) ReconcileLegacyConnections(ctx context.Context, dryRun
 
 		summary.MappedCount++
 
+		// Idempotent reuse: an existing canonical connection for the same
+		// (merchant, provider, external account) is the desired migration
+		// target — reuse it and record the crosswalk as migrated/idempotent.
+		existing, err := s.repo.FindMerchantConnectionByIdentity(ctx, tx, merchantID, leg.Provider, externalAccountID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to look up canonical connection for legacy record %s: %w", leg.ID, err)
+		}
+		if existing != nil {
+			summary.ReusedExistingCount++
+			if !dryRun {
+				legacyConnID := leg.ID
+				legacyActorType := string(leg.ActorType)
+				legacyActorID := leg.ActorID
+				cross := MigrationCrosswalkRecord{
+					ID:                       uuid.New(),
+					LegacyConnectionID:       legacyConnID,
+					LegacyActorType:          legacyActorType,
+					LegacyActorID:            legacyActorID,
+					TargetConnectionID:       &existing.ID,
+					MerchantID:               &merchantID,
+					Classification:           MigrationClassMigrated,
+					ReusedExistingConnection: true,
+					RunID:                    runID,
+					CreatedAt:                time.Now().UTC(),
+				}
+				if err := s.repo.RecordMigrationCrosswalk(ctx, tx, cross); err != nil {
+					return nil, fmt.Errorf("failed to record idempotent-reuse crosswalk: %w", err)
+				}
+			}
+			continue
+		}
+
 		if !dryRun {
 			targetConnID := uuid.New()
 			legacyConnID := leg.ID
@@ -321,39 +416,40 @@ func (s *merchantService) ReconcileLegacyConnections(ctx context.Context, dryRun
 			legacyActorID := leg.ActorID
 
 			mConn := MerchantIntegrationConnection{
-				ID:                  targetConnID,
-				MerchantID:          merchantID,
-				ConnectionType:      connType,
-				Provider:            leg.Provider,
-				Name:                leg.Name,
-				Status:              MerchantStatusActive,
-				CredentialsVaultRef: leg.CredentialsVaultRef,
-				Settings:            leg.Settings,
-				LegacyActorType:     &legacyActorType,
-				LegacyActorID:       &legacyActorID,
-				LegacyConnectionID:  &legacyConnID,
-				CreatedAt:           leg.CreatedAt,
-				UpdatedAt:           time.Now().UTC(),
+				ID:                 targetConnID,
+				MerchantID:         merchantID,
+				ConnectionType:     connType,
+				Provider:           leg.Provider,
+				ExternalAccountID:  &externalAccountID,
+				Name:               leg.Name,
+				Status:             MerchantStatusActive,
+				Settings:           leg.Settings,
+				LegacyActorType:    &legacyActorType,
+				LegacyActorID:      &legacyActorID,
+				LegacyConnectionID: &legacyConnID,
+				CreatedAt:          leg.CreatedAt,
+				UpdatedAt:          time.Now().UTC(),
 			}
 
 			if err := s.repo.CreateMerchantConnection(ctx, tx, mConn); err != nil {
-				// If duplicate constraint error occurs during apply, quarantine instead
+				// A unique violation after the identity lookup means a concurrent
+				// writer or an unexpected conflict: record as failed rather than
+				// inventing a quarantine reason. The retired DUPLICATE_EXTERNAL_ACCOUNT
+				// quarantine is never emitted.
 				if errors.Is(err, ErrDuplicateAccountConnection) {
 					summary.MappedCount--
-					summary.QuarantinedCount++
-					qReason := QuarantineDuplicateAccount
+					summary.FailedCount++
 					detailJSON, _ := json.Marshal(map[string]any{"error": err.Error()})
 					cross := MigrationCrosswalkRecord{
-						ID:                   uuid.New(),
-						LegacyConnectionID:   leg.ID,
-						LegacyActorType:      string(leg.ActorType),
-						LegacyActorID:        leg.ActorID,
-						MerchantID:           &merchantID,
-						Classification:       MigrationClassQuarantined,
-						QuarantineReasonCode: &qReason,
-						QuarantineDetails:    detailJSON,
-						RunID:                runID,
-						CreatedAt:            time.Now().UTC(),
+						ID:                 uuid.New(),
+						LegacyConnectionID: leg.ID,
+						LegacyActorType:    string(leg.ActorType),
+						LegacyActorID:      leg.ActorID,
+						MerchantID:         &merchantID,
+						Classification:     MigrationClassFailed,
+						QuarantineDetails:  detailJSON,
+						RunID:              runID,
+						CreatedAt:          time.Now().UTC(),
 					}
 					_ = s.repo.RecordMigrationCrosswalk(ctx, tx, cross)
 					continue
@@ -380,10 +476,11 @@ func (s *merchantService) ReconcileLegacyConnections(ctx context.Context, dryRun
 
 	if !dryRun {
 		payload := map[string]any{
-			"run_id":            runID.String(),
-			"scanned_count":     summary.ScannedCount,
-			"mapped_count":      summary.MappedCount,
-			"quarantined_count": summary.QuarantinedCount,
+			"run_id":                runID.String(),
+			"scanned_count":         summary.ScannedCount,
+			"mapped_count":          summary.MappedCount,
+			"reused_existing_count": summary.ReusedExistingCount,
+			"quarantined_count":     summary.QuarantinedCount,
 		}
 
 		envelope := events.EventEnvelope{
@@ -414,4 +511,22 @@ func strPtrVal(p *string) string {
 		return ""
 	}
 	return *p
+}
+
+// legacyExternalAccountID resolves the verified external account identity for
+// a legacy record from the canonical settings key. The legacy model has no
+// account-identity column, so this key is the only accepted source; anything
+// else quarantines as MISSING_EXTERNAL_ACCOUNT_ID.
+func legacyExternalAccountID(settings json.RawMessage) (string, bool) {
+	if len(settings) == 0 {
+		return "", false
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(settings, &decoded); err != nil {
+		return "", false
+	}
+	if v, ok := decoded["external_account_id"].(string); ok && v != "" {
+		return v, true
+	}
+	return "", false
 }

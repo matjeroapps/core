@@ -17,6 +17,8 @@ import (
 	"core/packages/httpx"
 )
 
+const maxConnectionsPageSize = 100
+
 type MerchantIntegrationHandler struct {
 	service    integration.MerchantService
 	authorizer *merchants.Authorizer
@@ -30,18 +32,26 @@ func NewMerchantIntegrationHandler(service integration.MerchantService, authoriz
 }
 
 type CreateMerchantConnectionHTTPRequest struct {
-	ConnectionType      integration.MerchantConnectionType `json:"connection_type"`
-	Provider            integration.Provider               `json:"provider"`
-	ExternalAccountID   *string                            `json:"external_account_id,omitempty"`
-	Name                string                             `json:"name"`
-	StoreID             *uuid.UUID                         `json:"store_id,omitempty"`
-	CredentialsVaultRef string                             `json:"credentials_vault_ref,omitempty"`
-	GrantedScopes       json.RawMessage                    `json:"granted_scopes,omitempty"`
-	Settings            json.RawMessage                    `json:"settings,omitempty"`
+	ConnectionType    integration.MerchantConnectionType `json:"connection_type"`
+	Provider          integration.Provider               `json:"provider"`
+	ExternalAccountID *string                            `json:"external_account_id,omitempty"`
+	Name              string                             `json:"name"`
+	StoreID           *uuid.UUID                         `json:"store_id,omitempty"`
+	GrantedScopes     json.RawMessage                    `json:"granted_scopes,omitempty"`
+	Settings          json.RawMessage                    `json:"settings,omitempty"`
 }
 
 type UpdateMerchantConnectionStatusHTTPRequest struct {
 	Status integration.MerchantConnectionStatus `json:"status"`
+}
+
+// requiredScopeForConnectionType maps a connection type onto the capability
+// and permission that govern it. PermissionMerchantManage satisfies any scope.
+func requiredScopeForConnectionType(connType integration.MerchantConnectionType) (merchants.CapabilityType, string) {
+	if connType == integration.ConnectionTypeSupplySource {
+		return merchants.CapabilityTypeSupply, merchants.PermissionSupplyCatalogManage
+	}
+	return merchants.CapabilityTypeRetail, merchants.PermissionRetailStoresManage
 }
 
 func (h *MerchantIntegrationHandler) CreateConnection(w http.ResponseWriter, r *http.Request) {
@@ -62,12 +72,7 @@ func (h *MerchantIntegrationHandler) CreateConnection(w http.ResponseWriter, r *
 		return
 	}
 
-	requiredCap := merchants.CapabilityTypeRetail
-	requiredPerm := merchants.PermissionRetailStoresManage
-	if req.ConnectionType == integration.ConnectionTypeSupplySource {
-		requiredCap = merchants.CapabilityTypeSupply
-		requiredPerm = merchants.PermissionSupplyCatalogManage
-	}
+	requiredCap, requiredPerm := requiredScopeForConnectionType(req.ConnectionType)
 
 	subject := subjectFromContext(r)
 	if h.authorizer != nil {
@@ -82,15 +87,14 @@ func (h *MerchantIntegrationHandler) CreateConnection(w http.ResponseWriter, r *
 	}
 
 	input := integration.CreateMerchantConnectionInput{
-		MerchantID:          merchantID,
-		ConnectionType:      req.ConnectionType,
-		Provider:            req.Provider,
-		ExternalAccountID:   req.ExternalAccountID,
-		Name:                req.Name,
-		StoreID:             req.StoreID,
-		CredentialsVaultRef: req.CredentialsVaultRef,
-		GrantedScopes:       req.GrantedScopes,
-		Settings:            req.Settings,
+		MerchantID:        merchantID,
+		ConnectionType:    req.ConnectionType,
+		Provider:          req.Provider,
+		ExternalAccountID: req.ExternalAccountID,
+		Name:              req.Name,
+		StoreID:           req.StoreID,
+		GrantedScopes:     req.GrantedScopes,
+		Settings:          req.Settings,
 	}
 
 	correlationID := httpx.CorrelationID(r.Context())
@@ -102,7 +106,9 @@ func (h *MerchantIntegrationHandler) CreateConnection(w http.ResponseWriter, r *
 			writeError(w, CodeConflict)
 			return
 		}
-		writeError(w, CodeValidationError)
+		// The payload was well-formed JSON, so any remaining failure is a
+		// semantic rule violation (enum, store binding, uniqueness guard).
+		writeError(w, CodeUnprocessableEntity)
 		return
 	}
 
@@ -119,9 +125,18 @@ func (h *MerchantIntegrationHandler) GetConnection(w http.ResponseWriter, r *htt
 		return
 	}
 
+	conn, err := h.service.GetMerchantConnection(r.Context(), connID)
+	if err != nil || conn.MerchantID != merchantID {
+		// Cross-Merchant rows are indistinguishable from missing ones.
+		writeError(w, CodeNotFound)
+		return
+	}
+
+	requiredCap, requiredPerm := requiredScopeForConnectionType(conn.ConnectionType)
+
 	subject := subjectFromContext(r)
 	if h.authorizer != nil {
-		if err := h.authorizer.Authorize(r.Context(), merchantID, subject, "", ""); err != nil {
+		if err := h.authorizer.Authorize(r.Context(), merchantID, subject, requiredCap, requiredPerm); err != nil {
 			if errors.Is(err, merchants.ErrMerchantNotFound) {
 				writeError(w, CodeNotFound)
 				return
@@ -129,12 +144,6 @@ func (h *MerchantIntegrationHandler) GetConnection(w http.ResponseWriter, r *htt
 			writeError(w, CodeForbidden)
 			return
 		}
-	}
-
-	conn, err := h.service.GetMerchantConnection(r.Context(), connID)
-	if err != nil || conn.MerchantID != merchantID {
-		writeError(w, CodeNotFound)
-		return
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, conn)
@@ -146,23 +155,41 @@ func (h *MerchantIntegrationHandler) ListConnections(w http.ResponseWriter, r *h
 		return
 	}
 
-	subject := subjectFromContext(r)
-	if h.authorizer != nil {
-		if err := h.authorizer.Authorize(r.Context(), merchantID, subject, "", ""); err != nil {
-			if errors.Is(err, merchants.ErrMerchantNotFound) {
-				writeError(w, CodeNotFound)
-				return
-			}
-			writeError(w, CodeForbidden)
-			return
-		}
-	}
-
 	var connType *integration.MerchantConnectionType
 	rawType := r.URL.Query().Get("connection_type")
-	if rawType != "" {
-		ct := integration.MerchantConnectionType(strings.ToUpper(rawType))
-		connType = &ct
+
+	subject := subjectFromContext(r)
+	if h.authorizer != nil {
+		if rawType != "" {
+			ct := integration.MerchantConnectionType(strings.ToUpper(rawType))
+			if ct != integration.ConnectionTypeRetailChannel && ct != integration.ConnectionTypeSupplySource {
+				writeError(w, CodeUnprocessableEntity)
+				return
+			}
+			// A filtered list spans exactly one capability scope, which the
+			// filter decides.
+			requiredCap, requiredPerm := requiredScopeForConnectionType(ct)
+			if err := h.authorizer.Authorize(r.Context(), merchantID, subject, requiredCap, requiredPerm); err != nil {
+				if errors.Is(err, merchants.ErrMerchantNotFound) {
+					writeError(w, CodeNotFound)
+					return
+				}
+				writeError(w, CodeForbidden)
+				return
+			}
+			connType = &ct
+		} else {
+			// An unfiltered list spans both capability scopes, so it is a
+			// merchant-admin operation: PermissionMerchantManage is required.
+			if err := h.authorizer.Authorize(r.Context(), merchantID, subject, "", merchants.PermissionMerchantManage); err != nil {
+				if errors.Is(err, merchants.ErrMerchantNotFound) {
+					writeError(w, CodeNotFound)
+					return
+				}
+				writeError(w, CodeForbidden)
+				return
+			}
+		}
 	}
 
 	page := parsePageQuery(r)
@@ -204,16 +231,15 @@ func (h *MerchantIntegrationHandler) UpdateConnectionStatus(w http.ResponseWrite
 		return
 	}
 
-	requiredCap := merchants.CapabilityTypeRetail
-	requiredPerm := merchants.PermissionRetailStoresManage
-	if conn.ConnectionType == integration.ConnectionTypeSupplySource {
-		requiredCap = merchants.CapabilityTypeSupply
-		requiredPerm = merchants.PermissionSupplyCatalogManage
-	}
+	requiredCap, requiredPerm := requiredScopeForConnectionType(conn.ConnectionType)
 
 	subject := subjectFromContext(r)
 	if h.authorizer != nil {
 		if err := h.authorizer.Authorize(r.Context(), merchantID, subject, requiredCap, requiredPerm); err != nil {
+			if errors.Is(err, merchants.ErrMerchantNotFound) {
+				writeError(w, CodeNotFound)
+				return
+			}
 			writeError(w, CodeForbidden)
 			return
 		}
@@ -224,7 +250,17 @@ func (h *MerchantIntegrationHandler) UpdateConnectionStatus(w http.ResponseWrite
 
 	updated, err := h.service.UpdateMerchantConnectionStatus(r.Context(), connID, req.Status, correlationID, causationID)
 	if err != nil {
-		writeError(w, CodeValidationError)
+		switch {
+		case errors.Is(err, integration.ErrMerchantConnectionNotFound):
+			writeError(w, CodeNotFound)
+		case errors.Is(err, integration.ErrTerminalStatusTransition):
+			writeError(w, CodeConflict)
+		case errors.Is(err, integration.ErrStatusNotCallerManaged),
+			errors.Is(err, integration.ErrExternalAccountRequired):
+			writeError(w, CodeUnprocessableEntity)
+		default:
+			writeError(w, CodeValidationError)
+		}
 		return
 	}
 
@@ -263,6 +299,9 @@ func parsePageQuery(r *http.Request) commerce.Page {
 		if l, err := strconv.Atoi(lStr); err == nil && l > 0 {
 			limit = l
 		}
+	}
+	if limit > maxConnectionsPageSize {
+		limit = maxConnectionsPageSize
 	}
 	offset := (page - 1) * limit
 	return commerce.Page{Limit: limit, Offset: offset}

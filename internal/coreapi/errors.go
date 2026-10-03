@@ -30,6 +30,7 @@ const (
 	CodeNotFound                  = "not_found"
 	CodeInvalidArgument           = "invalid_argument"
 	CodeValidationError           = "validation_error"
+	CodeUnprocessableEntity       = "unprocessable_entity"
 	CodeUnauthorized              = "unauthorized"
 	CodeForbidden                 = "forbidden"
 	CodeConflict                  = "conflict"
@@ -65,6 +66,8 @@ func statusFor(code string) int {
 		return http.StatusNotFound
 	case CodeInvalidArgument, CodeValidationError, CodeSchemaMismatch, CodeUnsafeContent:
 		return http.StatusBadRequest
+	case CodeUnprocessableEntity:
+		return http.StatusUnprocessableEntity
 	case CodeUnauthorized:
 		return http.StatusUnauthorized
 	case CodeForbidden:
@@ -99,6 +102,8 @@ func messageFor(code string) string {
 		return "resource not found"
 	case CodeInvalidArgument, CodeValidationError:
 		return "invalid input"
+	case CodeUnprocessableEntity:
+		return "validation failed"
 	case CodeUnauthorized:
 		return "unauthorized"
 	case CodeForbidden:

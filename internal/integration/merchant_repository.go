@@ -24,6 +24,8 @@ var (
 type MerchantRepository interface {
 	CreateMerchantConnection(ctx context.Context, tx pgx.Tx, conn MerchantIntegrationConnection) error
 	GetMerchantConnectionByID(ctx context.Context, tx pgx.Tx, id uuid.UUID) (*MerchantIntegrationConnection, error)
+	FindMerchantConnectionByIdentity(ctx context.Context, tx pgx.Tx, merchantID uuid.UUID, provider Provider, externalAccountID string) (*MerchantIntegrationConnection, error)
+	LatestConnectionAggregateVersion(ctx context.Context, tx pgx.Tx, connectionID uuid.UUID) (int, error)
 	ListMerchantConnections(ctx context.Context, tx pgx.Tx, merchantID uuid.UUID, connType *MerchantConnectionType, page commerce.Page) ([]MerchantIntegrationConnection, error)
 	UpdateMerchantConnectionStatus(ctx context.Context, tx pgx.Tx, id uuid.UUID, status MerchantConnectionStatus) (*MerchantIntegrationConnection, error)
 
@@ -80,19 +82,19 @@ func (r *merchantRepository) CreateMerchantConnection(ctx context.Context, tx pg
 	query := `
 		INSERT INTO merchant_integration_connections (
 			id, merchant_id, connection_type, provider, external_account_id, name, store_id,
-			status, credentials_vault_ref, granted_scopes, health_status, last_health_check_at,
+			status, granted_scopes, health_status, last_health_check_at,
 			first_successful_sync_at, legacy_actor_type, legacy_actor_id, legacy_connection_id,
 			settings, created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7,
-			$8, $9, $10, $11, $12,
-			$13, $14, $15, $16,
-			$17, $18, $19
+			$8, $9, $10, $11,
+			$12, $13, $14, $15,
+			$16, $17, $18
 		)
 	`
 	_, err := r.conn(tx).Exec(ctx, query,
 		conn.ID, conn.MerchantID, conn.ConnectionType, conn.Provider, conn.ExternalAccountID, conn.Name, conn.StoreID,
-		conn.Status, conn.CredentialsVaultRef, conn.GrantedScopes, conn.HealthStatus, conn.LastHealthCheckAt,
+		conn.Status, conn.GrantedScopes, conn.HealthStatus, conn.LastHealthCheckAt,
 		conn.FirstSuccessfulSyncAt, conn.LegacyActorType, conn.LegacyActorID, conn.LegacyConnectionID,
 		conn.Settings, conn.CreatedAt, conn.UpdatedAt,
 	)
@@ -109,7 +111,7 @@ func (r *merchantRepository) GetMerchantConnectionByID(ctx context.Context, tx p
 	query := `
 		SELECT
 			id, merchant_id, connection_type, provider, external_account_id, name, store_id,
-			status, credentials_vault_ref, granted_scopes, health_status, last_health_check_at,
+			status, granted_scopes, health_status, last_health_check_at,
 			first_successful_sync_at, legacy_actor_type, legacy_actor_id, legacy_connection_id,
 			settings, created_at, updated_at
 		FROM merchant_integration_connections
@@ -117,6 +119,38 @@ func (r *merchantRepository) GetMerchantConnectionByID(ctx context.Context, tx p
 	`
 	row := r.conn(tx).QueryRow(ctx, query, id)
 	return scanMerchantConnection(row)
+}
+
+func (r *merchantRepository) FindMerchantConnectionByIdentity(ctx context.Context, tx pgx.Tx, merchantID uuid.UUID, provider Provider, externalAccountID string) (*MerchantIntegrationConnection, error) {
+	query := `
+		SELECT
+			id, merchant_id, connection_type, provider, external_account_id, name, store_id,
+			status, granted_scopes, health_status, last_health_check_at,
+			first_successful_sync_at, legacy_actor_type, legacy_actor_id, legacy_connection_id,
+			settings, created_at, updated_at
+		FROM merchant_integration_connections
+		WHERE merchant_id = $1 AND provider = $2 AND external_account_id = $3
+	`
+	row := r.conn(tx).QueryRow(ctx, query, merchantID, provider, externalAccountID)
+	conn, err := scanMerchantConnection(row)
+	if errors.Is(err, ErrMerchantConnectionNotFound) {
+		return nil, nil
+	}
+	return conn, err
+}
+
+func (r *merchantRepository) LatestConnectionAggregateVersion(ctx context.Context, tx pgx.Tx, connectionID uuid.UUID) (int, error) {
+	query := `
+		SELECT COALESCE(MAX(aggregate_version), 0)
+		FROM outbox_events
+		WHERE aggregate_type = 'merchant_integration_connection' AND aggregate_id = $1
+	`
+	var version int
+	err := r.conn(tx).QueryRow(ctx, query, connectionID.String()).Scan(&version)
+	if err != nil {
+		return 0, err
+	}
+	return version, nil
 }
 
 func (r *merchantRepository) ListMerchantConnections(ctx context.Context, tx pgx.Tx, merchantID uuid.UUID, connType *MerchantConnectionType, page commerce.Page) ([]MerchantIntegrationConnection, error) {
@@ -132,7 +166,7 @@ func (r *merchantRepository) ListMerchantConnections(ctx context.Context, tx pgx
 	query := `
 		SELECT
 			id, merchant_id, connection_type, provider, external_account_id, name, store_id,
-			status, credentials_vault_ref, granted_scopes, health_status, last_health_check_at,
+			status, granted_scopes, health_status, last_health_check_at,
 			first_successful_sync_at, legacy_actor_type, legacy_actor_id, legacy_connection_id,
 			settings, created_at, updated_at
 		FROM merchant_integration_connections
@@ -172,7 +206,7 @@ func (r *merchantRepository) UpdateMerchantConnectionStatus(ctx context.Context,
 		WHERE id = $3
 		RETURNING
 			id, merchant_id, connection_type, provider, external_account_id, name, store_id,
-			status, credentials_vault_ref, granted_scopes, health_status, last_health_check_at,
+			status, granted_scopes, health_status, last_health_check_at,
 			first_successful_sync_at, legacy_actor_type, legacy_actor_id, legacy_connection_id,
 			settings, created_at, updated_at
 	`
@@ -300,15 +334,15 @@ func (r *merchantRepository) RecordMigrationCrosswalk(ctx context.Context, tx pg
 	query := `
 		INSERT INTO merchant_integration_migration_crosswalk (
 			id, legacy_connection_id, legacy_actor_type, legacy_actor_id, target_connection_id,
-			merchant_id, classification, quarantine_reason_code, quarantine_details, run_id, created_at
+			merchant_id, classification, reused_existing_connection, quarantine_reason_code, quarantine_details, run_id, created_at
 		) VALUES (
 			$1, $2, $3, $4, $5,
-			$6, $7, $8, $9, $10, $11
+			$6, $7, $8, $9, $10, $11, $12
 		)
 	`
 	_, err := r.conn(tx).Exec(ctx, query,
 		record.ID, record.LegacyConnectionID, record.LegacyActorType, record.LegacyActorID, record.TargetConnectionID,
-		record.MerchantID, record.Classification, record.QuarantineReasonCode, record.QuarantineDetails, record.RunID, record.CreatedAt,
+		record.MerchantID, record.Classification, record.ReusedExistingConnection, record.QuarantineReasonCode, record.QuarantineDetails, record.RunID, record.CreatedAt,
 	)
 	return err
 }
@@ -365,14 +399,13 @@ func scanMerchantConnection(row pgx.Row) (*MerchantIntegrationConnection, error)
 	var c MerchantIntegrationConnection
 	var extAcc sql.NullString
 	var storeID uuid.NullUUID
-	var vaultRef sql.NullString
 	var legacyActorType sql.NullString
 	var legacyActorID sql.NullString
 	var legacyConnID sql.NullString
 
 	err := row.Scan(
 		&c.ID, &c.MerchantID, &c.ConnectionType, &c.Provider, &extAcc, &c.Name, &storeID,
-		&c.Status, &vaultRef, &c.GrantedScopes, &c.HealthStatus, &c.LastHealthCheckAt,
+		&c.Status, &c.GrantedScopes, &c.HealthStatus, &c.LastHealthCheckAt,
 		&c.FirstSuccessfulSyncAt, &legacyActorType, &legacyActorID, &legacyConnID,
 		&c.Settings, &c.CreatedAt, &c.UpdatedAt,
 	)
@@ -388,9 +421,6 @@ func scanMerchantConnection(row pgx.Row) (*MerchantIntegrationConnection, error)
 	}
 	if storeID.Valid && storeID.UUID != uuid.Nil {
 		c.StoreID = &storeID.UUID
-	}
-	if vaultRef.Valid {
-		c.CredentialsVaultRef = vaultRef.String
 	}
 	if legacyActorType.Valid {
 		c.LegacyActorType = &legacyActorType.String
@@ -409,14 +439,13 @@ func scanMerchantConnectionFromRows(rows pgx.Rows) (*MerchantIntegrationConnecti
 	var c MerchantIntegrationConnection
 	var extAcc sql.NullString
 	var storeID uuid.NullUUID
-	var vaultRef sql.NullString
 	var legacyActorType sql.NullString
 	var legacyActorID sql.NullString
 	var legacyConnID sql.NullString
 
 	err := rows.Scan(
 		&c.ID, &c.MerchantID, &c.ConnectionType, &c.Provider, &extAcc, &c.Name, &storeID,
-		&c.Status, &vaultRef, &c.GrantedScopes, &c.HealthStatus, &c.LastHealthCheckAt,
+		&c.Status, &c.GrantedScopes, &c.HealthStatus, &c.LastHealthCheckAt,
 		&c.FirstSuccessfulSyncAt, &legacyActorType, &legacyActorID, &legacyConnID,
 		&c.Settings, &c.CreatedAt, &c.UpdatedAt,
 	)
@@ -429,9 +458,6 @@ func scanMerchantConnectionFromRows(rows pgx.Rows) (*MerchantIntegrationConnecti
 	}
 	if storeID.Valid && storeID.UUID != uuid.Nil {
 		c.StoreID = &storeID.UUID
-	}
-	if vaultRef.Valid {
-		c.CredentialsVaultRef = vaultRef.String
 	}
 	if legacyActorType.Valid {
 		c.LegacyActorType = &legacyActorType.String
