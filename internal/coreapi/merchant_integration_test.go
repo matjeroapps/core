@@ -274,16 +274,15 @@ func createConnectionForTest(t *testing.T, handler http.Handler, merchantID uuid
 	return conn
 }
 
-// TestMerchantConnectionStatusPatchSemantics verifies the clarified PATCH
-// /status contract: only caller-driven statuses are accepted, system
-// statuses are rejected 422, ACTIVE requires an external account (422), and
-// terminal statuses conflict 409 (delta D4, per the internal API contract).
+// TestMerchantConnectionStatusPatchSemantics verifies the PATCH /status
+// contract: only caller-driven statuses are accepted, every operational status
+// requires an external account, and terminal statuses conflict.
 func TestMerchantConnectionStatusPatchSemantics(t *testing.T) {
 	db, handler, merchantID, subject := setupMerchantIntegrationAPITest(t)
 	base := "/internal/v1/merchants/" + merchantID.String() + "/integrations/connections"
 
-	// Connection without an external account: system statuses and
-	// account-less activation are rejected.
+	// A connection without an external account cannot enter an operational
+	// caller-managed state.
 	storeID := createTestStore(t, db, merchantID)
 	noAcc := createConnectionForTest(t, handler, merchantID, subject, nil, integration.ProviderShopify, integration.ConnectionTypeRetailChannel, &storeID)
 
@@ -299,14 +298,23 @@ func TestMerchantConnectionStatusPatchSemantics(t *testing.T) {
 		}
 	}
 
-	rec := doMerchantIntegrationRequest(t, handler, http.MethodPatch, base+"/"+noAcc.ID.String()+"/status", coreapi.UpdateMerchantConnectionStatusHTTPRequest{Status: integration.MerchantStatusActive}, subject)
-	if rec.Code != http.StatusUnprocessableEntity {
-		t.Errorf("ACTIVE without external_account_id should be 422, got %d: %s", rec.Code, rec.Body.String())
+	for _, status := range []integration.MerchantConnectionStatus{
+		integration.MerchantStatusActive,
+		integration.MerchantStatusPaused,
+		integration.MerchantStatusRevoked,
+		integration.MerchantStatusRetired,
+	} {
+		rec := doMerchantIntegrationRequest(t, handler, http.MethodPatch, base+"/"+noAcc.ID.String()+"/status", coreapi.UpdateMerchantConnectionStatusHTTPRequest{Status: status}, subject)
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("%s without external_account_id should be 422, got %d: %s", status, rec.Code, rec.Body.String())
+		}
 	}
 
-	rec = doMerchantIntegrationRequest(t, handler, http.MethodPatch, base+"/"+noAcc.ID.String()+"/status", coreapi.UpdateMerchantConnectionStatusHTTPRequest{Status: integration.MerchantStatusPaused}, subject)
-	if rec.Code != http.StatusOK {
-		t.Errorf("PAUSED should be accepted, got %d: %s", rec.Code, rec.Body.String())
+	blankExternalAccountID := "   "
+	blankAccount := createConnectionForTest(t, handler, merchantID, subject, &blankExternalAccountID, integration.ProviderWooCommerce, integration.ConnectionTypeRetailChannel, &storeID)
+	rec := doMerchantIntegrationRequest(t, handler, http.MethodPatch, base+"/"+blankAccount.ID.String()+"/status", coreapi.UpdateMerchantConnectionStatusHTTPRequest{Status: integration.MerchantStatusActive}, subject)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("ACTIVE with a blank external_account_id should be 422, got %d: %s", rec.Code, rec.Body.String())
 	}
 
 	// Connection with a verified external account can go ACTIVE, then RETIRED

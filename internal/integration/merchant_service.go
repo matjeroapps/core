@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,8 +29,8 @@ var (
 	ErrStatusNotCallerManaged = errors.New("status is system-controlled and cannot be set by callers")
 	// ErrTerminalStatusTransition: REVOKED and RETIRED are terminal.
 	ErrTerminalStatusTransition = errors.New("connection status is terminal and cannot be changed")
-	// ErrExternalAccountRequired: ACTIVE requires a verified external account.
-	ErrExternalAccountRequired = errors.New("external_account_id is required before ACTIVE status")
+	// ErrExternalAccountRequired: operational statuses require a verified external account.
+	ErrExternalAccountRequired = errors.New("external_account_id is required before an operational status")
 )
 
 type MerchantService interface {
@@ -68,12 +69,17 @@ func (s *merchantService) CreateMerchantConnection(ctx context.Context, input Cr
 		return nil, errors.New("store_id is required for RETAIL_CHANNEL connections")
 	}
 
+	externalAccountID := input.ExternalAccountID
+	if externalAccountID != nil && strings.TrimSpace(*externalAccountID) == "" {
+		externalAccountID = nil
+	}
+
 	conn := MerchantIntegrationConnection{
 		ID:                 uuid.New(),
 		MerchantID:         input.MerchantID,
 		ConnectionType:     input.ConnectionType,
 		Provider:           input.Provider,
-		ExternalAccountID:  input.ExternalAccountID,
+		ExternalAccountID:  externalAccountID,
 		Name:               input.Name,
 		StoreID:            input.StoreID,
 		Status:             MerchantStatusDraft,
@@ -189,7 +195,7 @@ func (s *merchantService) UpdateMerchantConnectionStatus(ctx context.Context, id
 	if current.Status == MerchantStatusRevoked || current.Status == MerchantStatusRetired {
 		return nil, ErrTerminalStatusTransition
 	}
-	if status == MerchantStatusActive && current.ExternalAccountID == nil {
+	if current.ExternalAccountID == nil || strings.TrimSpace(*current.ExternalAccountID) == "" {
 		return nil, ErrExternalAccountRequired
 	}
 
@@ -525,7 +531,7 @@ func legacyExternalAccountID(settings json.RawMessage) (string, bool) {
 	if err := json.Unmarshal(settings, &decoded); err != nil {
 		return "", false
 	}
-	if v, ok := decoded["external_account_id"].(string); ok && v != "" {
+	if v, ok := decoded["external_account_id"].(string); ok && strings.TrimSpace(v) != "" {
 		return v, true
 	}
 	return "", false
