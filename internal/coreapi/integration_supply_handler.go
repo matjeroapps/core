@@ -38,7 +38,7 @@ type createImportBatchHTTPRequest struct {
 
 // GetSupplyConnection handles GET /integrations/supply/connections/{connectionID}
 // for the Integration Hub: resolves an ACTIVE SUPPLY_SOURCE connection for
-// pipeline work. Cross-merchant visibility is not exposed here — the Hub
+// pipeline work. Cross-merchant visibility is not exposed here; the Hub
 // operates on connection identity only.
 func (h *IntegrationSupplyHandler) GetSupplyConnection(w http.ResponseWriter, r *http.Request) {
 	connectionID, ok := parseUUIDParam(w, r, "connectionID")
