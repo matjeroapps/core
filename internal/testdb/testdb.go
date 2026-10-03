@@ -168,3 +168,13 @@ func ensureRuntimeParams(cfg *pgxpool.Config) {
 		cfg.ConnConfig.RuntimeParams = map[string]string{}
 	}
 }
+
+func TruncateTables(t testing.TB, pool *pgxpool.Pool, tables ...string) {
+	t.Helper()
+	if len(tables) == 0 {
+		return
+	}
+	ctx := context.Background()
+	query := "TRUNCATE TABLE " + strings.Join(tables, ", ") + " CASCADE"
+	_, _ = pool.Exec(ctx, query)
+}

@@ -121,22 +121,24 @@ type MarketplaceFinanceService interface {
 // Dependencies wires the internal API. Every field is a Core-owned capability;
 // no actor ever constructs these directly.
 type Dependencies struct {
-	Commerce           commerce.Service
-	Repo               commerce.Repository
-	Markets            MarketService
-	Catalog            CatalogReader
-	Stores             StoreLocator
-	Revisions          RevisionReader
-	Themes             themes.Service
-	Shipping           ShippingService
-	Payments           PaymentService
-	Finance            FinanceService
-	Balance            BalanceService
-	Settlement         SettlementService
-	MarketplaceFinance MarketplaceFinanceService
-	Merchants          *merchants.Service
-	Integration        integration.Service
-	Marketplace        marketplace.Service
+	Commerce            commerce.Service
+	Repo                commerce.Repository
+	Markets             MarketService
+	Catalog             CatalogReader
+	Stores              StoreLocator
+	Revisions           RevisionReader
+	Themes              themes.Service
+	Shipping            ShippingService
+	Payments            PaymentService
+	Finance             FinanceService
+	Balance             BalanceService
+	Settlement          SettlementService
+	MarketplaceFinance  MarketplaceFinanceService
+	Merchants           *merchants.Service
+	MerchantIntegration integration.MerchantService
+	MerchantAuthorizer  *merchants.Authorizer
+	Integration         integration.Service
+	Marketplace         marketplace.Service
 }
 
 // NewRouter registers the internal API under /internal/v1.
@@ -200,6 +202,17 @@ func NewRouter(deps Dependencies) chi.Router {
 				r.Get("/merchants/{merchantID}", merchantHandler.GetMerchant)
 				r.Post("/merchants/{merchantID}/capabilities/{capabilityType}/activate", merchantHandler.ActivateCapability)
 				r.Post("/merchants/{merchantID}/memberships", merchantHandler.AddMember)
+			})
+		}
+
+		if deps.MerchantIntegration != nil {
+			merchantIntHandler := NewMerchantIntegrationHandler(deps.MerchantIntegration, deps.MerchantAuthorizer)
+			r.Group(func(r chi.Router) {
+				r.Use(requireCallers(serviceauth.CallerAdmin, serviceauth.CallerPlatform, serviceauth.CallerSeller, serviceauth.CallerSupplier))
+				r.Post("/merchants/{merchantID}/integrations/connections", merchantIntHandler.CreateConnection)
+				r.Get("/merchants/{merchantID}/integrations/connections/{id}", merchantIntHandler.GetConnection)
+				r.Get("/merchants/{merchantID}/integrations/connections", merchantIntHandler.ListConnections)
+				r.Patch("/merchants/{merchantID}/integrations/connections/{id}/status", merchantIntHandler.UpdateConnectionStatus)
 			})
 		}
 
