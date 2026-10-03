@@ -11,6 +11,8 @@ RUN go build -o /out/app ${APP_PATH}
 FROM alpine:3.22
 
 RUN adduser -D -H appuser
+WORKDIR /srv/core
+COPY --from=build /src/migrations ./migrations
 USER appuser
 COPY --from=build /out/app /app
 ENTRYPOINT ["/app"]

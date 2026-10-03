@@ -127,6 +127,32 @@ git diff --exit-code -- docs/api
 Core has no frontend workspace; the web applications live in the actor
 repositories.
 
+## Core-Owned Migrations
+
+Core exposes a supported migration runner for local validation and deployment
+orchestration. Platform Infra may run this command and parse its JSON status,
+but it must not read or apply `migrations/*.sql` itself.
+
+```sh
+DATABASE_URL=postgres://commerce:commerce@localhost:5432/commerce?sslmode=disable \
+  go run ./cmd/migrate up --format json
+
+DATABASE_URL=postgres://commerce:commerce@localhost:5432/commerce?sslmode=disable \
+  go run ./cmd/migrate status --format json
+```
+
+The runner discovers `migrations/*.up.sql` in deterministic order, applies only
+pending migrations, records checksums in `schema_migrations`, and uses a
+PostgreSQL advisory lock to serialize concurrent runs. JSON output redacts
+database credentials and includes `latest_available`, `applied_count`,
+`pending_count`, `pending`, `dirty`, and `locked`.
+
+Docker builds can package the runner with:
+
+```sh
+docker build -f docker/go-app.Dockerfile --build-arg APP_PATH=./cmd/migrate -t commerce-core-migrate:foundation .
+```
+
 ## Messaging
 
 Synchronous inter-service capability calls use versioned HTTP/JSON. RabbitMQ is
@@ -135,4 +161,3 @@ fan-out, with the PostgreSQL transactional outbox making publication reliable an
 consumers designed for at-least-once delivery. Kafka is not part of the active
 architecture or roadmap. See
 [ADR-018](docs/plans/adr/ADR-018-rabbitmq-asynchronous-messaging-backbone.md).
-
