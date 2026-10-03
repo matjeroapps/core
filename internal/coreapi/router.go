@@ -137,6 +137,7 @@ type Dependencies struct {
 	Merchants           *merchants.Service
 	MerchantIntegration integration.MerchantService
 	MerchantAuthorizer  *merchants.Authorizer
+	SupplyIntegration   integration.SupplyService
 	Integration         integration.Service
 	Marketplace         marketplace.Service
 }
@@ -213,6 +214,36 @@ func NewRouter(deps Dependencies) chi.Router {
 				r.Get("/merchants/{merchantID}/integrations/connections/{id}", merchantIntHandler.GetConnection)
 				r.Get("/merchants/{merchantID}/integrations/connections", merchantIntHandler.ListConnections)
 				r.Patch("/merchants/{merchantID}/integrations/connections/{id}/status", merchantIntHandler.UpdateConnectionStatus)
+			})
+		}
+
+		// Integration Track I2: Supply pipeline contracts.
+		if deps.SupplyIntegration != nil {
+			supplyHandler := NewIntegrationSupplyHandler(deps.SupplyIntegration)
+
+			// Hub-facing: only the platform Integration Hub service caller.
+			r.Group(func(r chi.Router) {
+				r.Use(requireCallers(serviceauth.CallerPlatform))
+				r.Post("/integrations/supply/import-batches", supplyHandler.CreateImportBatch)
+				r.Get("/integrations/supply/import-batches/{batchID}", supplyHandler.GetImportBatch)
+				r.Put("/integrations/supply/cursors", supplyHandler.UpsertSyncCursor)
+				r.Get("/integrations/supply/cursors/{connectionID}", supplyHandler.GetSyncCursor)
+				r.Get("/integrations/supply/mappings/{connectionID}", supplyHandler.ListMappings)
+				r.Get("/integrations/supply/mappings/{connectionID}/single", supplyHandler.GetMapping)
+				r.Post("/integrations/supply/fulfillment-requests", supplyHandler.CreateFulfillmentRequest)
+				r.Get("/integrations/supply/fulfillment-requests/{requestID}", supplyHandler.GetFulfillmentRequest)
+				r.Patch("/integrations/supply/fulfillment-requests/{requestID}/status", supplyHandler.UpdateFulfillmentRequestStatus)
+				r.Post("/integrations/supply/tracking-events", supplyHandler.RecordTrackingEvent)
+				r.Post("/integrations/supply/webhook-inbox", supplyHandler.RecordWebhookInbox)
+			})
+
+			// Merchant decision surfaces: membership/capability/permission
+			// authorization applies, mirroring the connection endpoints.
+			r.Group(func(r chi.Router) {
+				r.Use(requireCallers(serviceauth.CallerAdmin, serviceauth.CallerPlatform, serviceauth.CallerSeller, serviceauth.CallerSupplier))
+				r.Post("/merchants/{merchantID}/integrations/supply/import-batches/{batchID}/approval", supplyHandler.ApproveImportBatch)
+				r.Get("/merchants/{merchantID}/integrations/supply/review-cases", supplyHandler.ListReviewCases)
+				r.Post("/merchants/{merchantID}/integrations/supply/review-cases/{caseID}/resolution", supplyHandler.ResolveReviewCase)
 			})
 		}
 
