@@ -34,6 +34,7 @@ func setupReconcileDB(t *testing.T) *database.Pool {
 		"000035_seller_supplier_merchant_linkage",
 		"000036_merchant_profile_cardinality",
 		"000037_merchant_owned_integration_connections",
+		"000038_merchant_integration_external_account_lifecycle",
 	}
 	migrations := make([]string, 0, len(paths))
 	for _, name := range paths {
@@ -199,6 +200,14 @@ func TestReconcileDryRunAndApply(t *testing.T) {
 	}
 	if vaultLeaks != 0 {
 		t.Errorf("expected no vault references in integration event payloads, got %d", vaultLeaks)
+	}
+
+	var jobIntentCount int
+	if err := db.QueryRow(ctx, "SELECT COUNT(*) FROM merchant_integration_job_intents").Scan(&jobIntentCount); err != nil {
+		t.Fatalf("failed to count job intents: %v", err)
+	}
+	if jobIntentCount != 0 {
+		t.Errorf("expected reconciliation to create zero runtime job intents in I1, got %d", jobIntentCount)
 	}
 }
 
@@ -370,5 +379,13 @@ func TestReconcileApplyIsIdempotent(t *testing.T) {
 	}
 	if legacyEvents != 1 {
 		t.Errorf("expected exactly 1 migration.completed event for the first run, got %d", legacyEvents)
+	}
+
+	var jobIntentCount int
+	if err := db.QueryRow(ctx, "SELECT COUNT(*) FROM merchant_integration_job_intents").Scan(&jobIntentCount); err != nil {
+		t.Fatalf("failed to count job intents: %v", err)
+	}
+	if jobIntentCount != 0 {
+		t.Errorf("expected repeated reconciliation to create zero runtime job intents in I1, got %d", jobIntentCount)
 	}
 }
