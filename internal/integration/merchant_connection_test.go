@@ -291,11 +291,11 @@ func TestMerchantJobIntentSchemaOnlyCompatibility(t *testing.T) {
 
 	var legacyJobTableCount int
 	if err := db.QueryRow(ctx, `
-		SELECT COUNT(*)
-		FROM information_schema.tables
-		WHERE table_schema = 'public'
-		  AND table_name IN ('seller_channel_sync_jobs', 'supplier_catalog_sync_jobs')
-	`).Scan(&legacyJobTableCount); err != nil {
+			SELECT COUNT(*)
+			FROM information_schema.tables
+			WHERE table_schema = current_schema()
+			  AND table_name IN ('seller_channel_sync_jobs', 'supplier_catalog_sync_jobs')
+		`).Scan(&legacyJobTableCount); err != nil {
 		t.Fatalf("failed to count legacy job tables: %v", err)
 	}
 	if legacyJobTableCount != 2 {
