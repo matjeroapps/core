@@ -226,6 +226,7 @@ func NewRouter(deps Dependencies) chi.Router {
 				r.Use(requireCallers(serviceauth.CallerPlatform))
 				r.Post("/integrations/supply/import-batches", supplyHandler.CreateImportBatch)
 				r.Get("/integrations/supply/import-batches/{batchID}", supplyHandler.GetImportBatch)
+				r.Get("/integrations/supply/connections/{connectionID}", supplyHandler.GetSupplyConnection)
 				r.Put("/integrations/supply/cursors", supplyHandler.UpsertSyncCursor)
 				r.Get("/integrations/supply/cursors/{connectionID}", supplyHandler.GetSyncCursor)
 				r.Get("/integrations/supply/mappings/{connectionID}", supplyHandler.ListMappings)

@@ -36,6 +36,23 @@ type createImportBatchHTTPRequest struct {
 	Records        []integration.StagedRecordInput `json:"records"`
 }
 
+// GetSupplyConnection handles GET /integrations/supply/connections/{connectionID}
+// for the Integration Hub: resolves an ACTIVE SUPPLY_SOURCE connection for
+// pipeline work. Cross-merchant visibility is not exposed here — the Hub
+// operates on connection identity only.
+func (h *IntegrationSupplyHandler) GetSupplyConnection(w http.ResponseWriter, r *http.Request) {
+	connectionID, ok := parseUUIDParam(w, r, "connectionID")
+	if !ok {
+		return
+	}
+	conn, err := h.service.GetConnectionForWork(r.Context(), connectionID)
+	if err != nil {
+		writeSupplyError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, conn)
+}
+
 // CreateImportBatch handles POST /integrations/supply/import-batches.
 func (h *IntegrationSupplyHandler) CreateImportBatch(w http.ResponseWriter, r *http.Request) {
 	var req createImportBatchHTTPRequest
