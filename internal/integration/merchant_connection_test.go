@@ -270,6 +270,39 @@ func TestMerchantConnectionPendingSetupUniqueness(t *testing.T) {
 	}
 }
 
+func TestMerchantJobIntentSchemaOnlyCompatibility(t *testing.T) {
+	db := setupMerchantTestDB(t)
+	ctx := context.Background()
+
+	for _, table := range []string{
+		"merchant_integration_job_intents",
+		"integration_connections",
+		"seller_channel_sync_jobs",
+		"supplier_catalog_sync_jobs",
+	} {
+		var exists bool
+		if err := db.QueryRow(ctx, "SELECT to_regclass($1) IS NOT NULL", table).Scan(&exists); err != nil {
+			t.Fatalf("failed to check table %s: %v", table, err)
+		}
+		if !exists {
+			t.Fatalf("expected table %s to exist", table)
+		}
+	}
+
+	var legacyJobTableCount int
+	if err := db.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM information_schema.tables
+		WHERE table_schema = 'public'
+		  AND table_name IN ('seller_channel_sync_jobs', 'supplier_catalog_sync_jobs')
+	`).Scan(&legacyJobTableCount); err != nil {
+		t.Fatalf("failed to count legacy job tables: %v", err)
+	}
+	if legacyJobTableCount != 2 {
+		t.Fatalf("expected both legacy job tables to remain present, got %d", legacyJobTableCount)
+	}
+}
+
 // TestMerchantConnectionOperationalStatusesRequireExternalAccount verifies
 // that only setup states may omit external_account_id.
 func TestMerchantConnectionOperationalStatusesRequireExternalAccount(t *testing.T) {

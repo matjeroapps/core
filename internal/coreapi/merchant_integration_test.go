@@ -42,6 +42,7 @@ func setupMerchantIntegrationAPITest(t *testing.T) (*database.Pool, http.Handler
 		"000035_seller_supplier_merchant_linkage",
 		"000036_merchant_profile_cardinality",
 		"000037_merchant_owned_integration_connections",
+		"000038_merchant_integration_external_account_lifecycle",
 	}
 	migrations := make([]string, 0, len(paths))
 	for _, name := range paths {
@@ -155,6 +156,14 @@ func TestMerchantIntegrationAPIEndpointsAndAuthorization(t *testing.T) {
 		t.Errorf("expected non-nil connection ID")
 	}
 
+	var jobIntentCount int
+	if err := db.QueryRow(context.Background(), "SELECT COUNT(*) FROM merchant_integration_job_intents").Scan(&jobIntentCount); err != nil {
+		t.Fatalf("failed to count job intents: %v", err)
+	}
+	if jobIntentCount != 0 {
+		t.Errorf("expected create connection API to create zero runtime job intents in I1, got %d", jobIntentCount)
+	}
+
 	// 2. Get Connection
 	getReq := httptest.NewRequest("GET", "/internal/v1/merchants/"+merchantID.String()+"/integrations/connections/"+conn.ID.String(), nil)
 	getReq.Header.Set("Authorization", "Bearer test-platform-token")
@@ -202,6 +211,13 @@ func TestMerchantIntegrationAPIEndpointsAndAuthorization(t *testing.T) {
 
 	if patchRec.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK for status patch, got %d: %s", patchRec.Code, patchRec.Body.String())
+	}
+
+	if err := db.QueryRow(context.Background(), "SELECT COUNT(*) FROM merchant_integration_job_intents").Scan(&jobIntentCount); err != nil {
+		t.Fatalf("failed to recount job intents: %v", err)
+	}
+	if jobIntentCount != 0 {
+		t.Errorf("expected status patch API to create zero runtime job intents in I1, got %d", jobIntentCount)
 	}
 
 	// 5. Cross-Merchant Rejection
