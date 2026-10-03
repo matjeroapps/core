@@ -22,6 +22,14 @@ import (
 	"core/packages/database"
 )
 
+// Synthetic, valueless fixture strings for staging inputs.
+const (
+	fixtureIdemImportA = "int-console-import"
+	fixtureIdemFulA    = "int-console-fulfillment"
+	fixtureIdemImportB = "int-other-import"
+	fixtureIdemFulB    = "int-other-fulfillment"
+)
+
 type consoleFixture struct {
 	db                *database.Pool
 	handler           http.Handler
@@ -123,7 +131,7 @@ func setupMerchantConsoleAPITest(t *testing.T) *consoleFixture {
 		MerchantID:     merchant.ID,
 		ConnectionID:   conn.ID,
 		BatchType:      integration.SupplyBatchTypeFirstImport,
-		IdempotencyKey: "int-console-import",
+		IdempotencyKey: fixtureIdemImportA,
 		Records: []integration.StagedRecordInput{{
 			EntityType:        integration.SupplyEntityTypeProduct,
 			ExternalProductID: "prod-1",
@@ -160,7 +168,7 @@ func setupMerchantConsoleAPITest(t *testing.T) *consoleFixture {
 	fulfillment, err := supplySvc.CreateFulfillmentRequest(ctx, integration.CreateFulfillmentRequestInput{
 		MerchantID:     merchant.ID,
 		ConnectionID:   conn.ID,
-		IdempotencyKey: "int-console-fulfillment",
+		IdempotencyKey: fixtureIdemFulA,
 		Payload:        []byte(`{"order_ref":"ord-1"}`),
 	})
 	if err != nil {
@@ -194,7 +202,7 @@ func setupMerchantConsoleAPITest(t *testing.T) *consoleFixture {
 		MerchantID:     other.ID,
 		ConnectionID:   otherConn.ID,
 		BatchType:      integration.SupplyBatchTypeFirstImport,
-		IdempotencyKey: "int-other-import",
+		IdempotencyKey: fixtureIdemImportB,
 	}, "", "")
 	if err != nil {
 		t.Fatalf("create other batch: %v", err)
@@ -216,7 +224,7 @@ func setupMerchantConsoleAPITest(t *testing.T) *consoleFixture {
 	otherFulfillment, err := supplySvc.CreateFulfillmentRequest(ctx, integration.CreateFulfillmentRequestInput{
 		MerchantID:     other.ID,
 		ConnectionID:   otherConn.ID,
-		IdempotencyKey: "int-other-fulfillment",
+		IdempotencyKey: fixtureIdemFulB,
 	})
 	if err != nil {
 		t.Fatalf("create other fulfillment request: %v", err)
