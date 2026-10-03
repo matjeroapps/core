@@ -7,6 +7,7 @@ import (
 
 	"core/internal/integration"
 	"core/internal/marketplace"
+	"core/internal/merchants"
 	"core/modules/commerce"
 	"core/modules/contracts"
 	"core/modules/markets"
@@ -1658,6 +1659,135 @@ func internalRoutes() []openapi.RouteSpec {
 			Summary: "Delete webhook subscription", Tags: []string{"Integration Foundation"},
 			Parameters: []openapi.ParameterSpec{pathParam("id", "Webhook subscription identifier")},
 			Responses:  writeResponses("Deleted status", StatusResponse{}),
+		},
+
+		// --- Merchant Console (Feature 025) ---
+		{
+			Method: http.MethodGet, Path: "/internal/v1/merchants/bootstrap", OperationID: "internalGetMerchantBootstrap",
+			Summary: "Resolve the subject-oriented Merchant bootstrap", Tags: []string{"Merchant Console"},
+			Description: "Resolves the authenticated principal (via the trusted forwarded subject) to every Merchant workspace " +
+				"the principal holds a canonical membership in, with capabilities, effective permissions, authorized store " +
+				"summaries, the explicit plan state, and pending actions derived from persisted rows. Workspaces MAY be empty. " +
+				"Seller and supplier service callers only; the browser never calls Core.",
+			Responses: readResponses("Merchant bootstrap", merchants.MerchantBootstrap{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/merchants/{merchantID}/integrations/supply/import-batches", OperationID: "internalListMerchantSupplyImportBatches",
+			Summary: "List a Merchant's supply import batches", Tags: []string{"Merchant Supply"},
+			Description: "Merchant-authorized read: enforces active Merchant, membership, SUPPLY capability, and the supply catalog permission. Rows are filtered by Merchant ownership.",
+			Parameters: []openapi.ParameterSpec{
+				pathParam("merchantID", "Merchant identifier"),
+				openapi.StringParam("connection_id", "Filter by supply connection", false),
+				openapi.StringParam("status", "Filter by batch status", false),
+				openapi.LimitParam(),
+				openapi.OffsetParam(),
+			},
+			Responses: readResponses("Import batch collection", []integration.SupplyImportBatch{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/merchants/{merchantID}/integrations/supply/import-batches/{batchID}", OperationID: "internalGetMerchantSupplyImportBatch",
+			Summary: "Get one of a Merchant's supply import batches with staged records", Tags: []string{"Merchant Supply"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("merchantID", "Merchant identifier"),
+				pathParam("batchID", "Import batch identifier"),
+			},
+			Responses: readResponses("Import batch detail", ImportBatchDetailResponse{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/merchants/{merchantID}/integrations/supply/import-batches/{batchID}/approval", OperationID: "internalApproveMerchantSupplyImportBatch",
+			Summary: "Apply the Merchant's per-record batch decisions", Tags: []string{"Merchant Supply"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("merchantID", "Merchant identifier"),
+				pathParam("batchID", "Import batch identifier"),
+			},
+			RequestBody: ApproveImportBatchHTTPRequest{},
+			Responses:   writeResponses("Updated import batch", integration.SupplyImportBatch{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/merchants/{merchantID}/integrations/supply/review-cases", OperationID: "internalListMerchantSupplyReviewCases",
+			Summary: "List a Merchant's supply review cases", Tags: []string{"Merchant Supply"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("merchantID", "Merchant identifier"),
+				openapi.StringParam("connection_id", "Filter by supply connection", false),
+				openapi.StringParam("status", "Filter by case status", false),
+			},
+			Responses: readResponses("Review case collection", []integration.MerchantReviewCase{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/merchants/{merchantID}/integrations/supply/review-cases/{caseID}", OperationID: "internalGetMerchantSupplyReviewCase",
+			Summary: "Get one of a Merchant's supply review cases", Tags: []string{"Merchant Supply"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("merchantID", "Merchant identifier"),
+				pathParam("caseID", "Review case identifier"),
+			},
+			Responses: readResponses("Review case", integration.MerchantReviewCase{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/merchants/{merchantID}/integrations/supply/review-cases/{caseID}/resolution", OperationID: "internalResolveMerchantSupplyReviewCase",
+			Summary: "Resolve or dismiss a supply review case", Tags: []string{"Merchant Supply"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("merchantID", "Merchant identifier"),
+				pathParam("caseID", "Review case identifier"),
+			},
+			RequestBody: ResolveReviewCaseHTTPRequest{},
+			Responses:   writeResponses("Resolved review case", integration.MerchantReviewCase{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/merchants/{merchantID}/integrations/supply/mappings", OperationID: "internalListMerchantSupplyMappings",
+			Summary: "List a Merchant's entity mappings with authority and provenance", Tags: []string{"Merchant Supply"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("merchantID", "Merchant identifier"),
+				openapi.StringParam("connection_id", "Filter by supply connection", false),
+			},
+			Responses: readResponses("Entity mapping collection", []integration.MerchantEntityMapping{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/merchants/{merchantID}/integrations/supply/mappings/{mappingID}", OperationID: "internalGetMerchantSupplyMapping",
+			Summary: "Get one of a Merchant's entity mappings", Tags: []string{"Merchant Supply"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("merchantID", "Merchant identifier"),
+				pathParam("mappingID", "Entity mapping identifier"),
+			},
+			Responses: readResponses("Entity mapping", integration.MerchantEntityMapping{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/merchants/{merchantID}/integrations/supply/cursors", OperationID: "internalListMerchantSupplyCursors",
+			Summary: "List a Merchant's supply synchronization cursors", Tags: []string{"Merchant Supply"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("merchantID", "Merchant identifier"),
+				openapi.StringParam("connection_id", "Filter by supply connection", false),
+			},
+			Responses: readResponses("Sync cursor collection", []integration.MerchantSyncCursor{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/merchants/{merchantID}/integrations/supply/fulfillment-requests", OperationID: "internalListMerchantSupplyFulfillmentRequests",
+			Summary: "List a Merchant's supplier fulfillment requests", Tags: []string{"Merchant Supply"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("merchantID", "Merchant identifier"),
+				openapi.StringParam("connection_id", "Filter by supply connection", false),
+				openapi.StringParam("status", "Filter by fulfillment status", false),
+				openapi.LimitParam(),
+				openapi.OffsetParam(),
+			},
+			Responses: readResponses("Fulfillment request collection", []integration.MerchantSupplyFulfillmentRequest{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/merchants/{merchantID}/integrations/supply/fulfillment-requests/{requestID}", OperationID: "internalGetMerchantSupplyFulfillmentRequest",
+			Summary: "Get one of a Merchant's fulfillment requests with tracking events", Tags: []string{"Merchant Supply"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("merchantID", "Merchant identifier"),
+				pathParam("requestID", "Fulfillment request identifier"),
+			},
+			Responses: readResponses("Fulfillment request detail", FulfillmentRequestDetailResponse{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/merchants/{merchantID}/integrations/supply/fulfillment-requests/{requestID}/tracking-events", OperationID: "internalListMerchantSupplyTrackingEvents",
+			Summary: "List the tracking events of one of a Merchant's fulfillment requests", Tags: []string{"Merchant Supply"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("merchantID", "Merchant identifier"),
+				pathParam("requestID", "Fulfillment request identifier"),
+			},
+			Responses: readResponses("Tracking event collection", []integration.MerchantSupplyTrackingEvent{}),
 		},
 	}
 }

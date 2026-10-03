@@ -316,6 +316,19 @@ type SupplyService interface {
 	RecordTrackingEvent(ctx context.Context, input RecordTrackingEventInput, correlationID, causationID string) (*MerchantSupplyTrackingEvent, bool, error)
 	RecordWebhookInbox(ctx context.Context, input RecordWebhookInboxInput) (*MerchantWebhookInboxItem, bool, error)
 	GetConnectionForWork(ctx context.Context, connectionID uuid.UUID) (*MerchantIntegrationConnection, error)
+
+	// Merchant-authorized read surfaces (Feature 025). Every method filters by
+	// the Merchant ID from canonical ownership; a foreign ID is indistinguishable
+	// from a missing one.
+	ListImportBatchesForMerchant(ctx context.Context, merchantID uuid.UUID, connectionID *uuid.UUID, status string, page SupplyListPage) ([]SupplyImportBatch, error)
+	GetImportBatchForMerchant(ctx context.Context, merchantID, batchID uuid.UUID) (*SupplyImportBatch, []SupplyImportRecord, error)
+	GetReviewCaseForMerchant(ctx context.Context, merchantID, caseID uuid.UUID) (*MerchantReviewCase, error)
+	ListMappingsForMerchant(ctx context.Context, merchantID uuid.UUID, connectionID *uuid.UUID) ([]MerchantEntityMapping, error)
+	GetMappingForMerchant(ctx context.Context, merchantID, mappingID uuid.UUID) (*MerchantEntityMapping, error)
+	ListSyncCursorsForMerchant(ctx context.Context, merchantID uuid.UUID, connectionID *uuid.UUID) ([]MerchantSyncCursor, error)
+	ListFulfillmentRequestsForMerchant(ctx context.Context, merchantID uuid.UUID, connectionID *uuid.UUID, status string, page SupplyListPage) ([]MerchantSupplyFulfillmentRequest, error)
+	GetFulfillmentRequestForMerchant(ctx context.Context, merchantID, requestID uuid.UUID) (*MerchantSupplyFulfillmentRequest, []MerchantSupplyTrackingEvent, error)
+	ListTrackingEventsForMerchant(ctx context.Context, merchantID, requestID uuid.UUID) ([]MerchantSupplyTrackingEvent, error)
 }
 
 type supplyService struct {

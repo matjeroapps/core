@@ -81,7 +81,7 @@ func (h *IntegrationSupplyHandler) CreateImportBatch(w http.ResponseWriter, r *h
 	})
 }
 
-type approveImportBatchHTTPRequest struct {
+type ApproveImportBatchHTTPRequest struct {
 	Decisions []integration.RecordDecision `json:"decisions"`
 }
 
@@ -95,7 +95,7 @@ func (h *IntegrationSupplyHandler) ApproveImportBatch(w http.ResponseWriter, r *
 	if !ok {
 		return
 	}
-	var req approveImportBatchHTTPRequest
+	var req ApproveImportBatchHTTPRequest
 	if !decodeStrict(w, r, &req) {
 		return
 	}
@@ -156,7 +156,7 @@ func (h *IntegrationSupplyHandler) ListReviewCases(w http.ResponseWriter, r *htt
 	httpx.WriteJSON(w, http.StatusOK, cases)
 }
 
-type resolveReviewCaseHTTPRequest struct {
+type ResolveReviewCaseHTTPRequest struct {
 	Resolution string `json:"resolution"`
 }
 
@@ -170,7 +170,7 @@ func (h *IntegrationSupplyHandler) ResolveReviewCase(w http.ResponseWriter, r *h
 	if !ok {
 		return
 	}
-	var req resolveReviewCaseHTTPRequest
+	var req ResolveReviewCaseHTTPRequest
 	if !decodeStrict(w, r, &req) {
 		return
 	}

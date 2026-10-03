@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_merchant_memberships_principal_subject;

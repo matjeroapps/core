@@ -22,6 +22,7 @@ type Repository interface {
 	CreateMembership(ctx context.Context, mem *MerchantMembership) error
 	GetMembership(ctx context.Context, merchantID uuid.UUID, subject string) (*MerchantMembership, error)
 	ListMemberships(ctx context.Context, merchantID uuid.UUID) ([]*MerchantMembership, error)
+	ListMembershipsBySubject(ctx context.Context, subject string) ([]*MerchantMembership, error)
 
 	GrantPermissions(ctx context.Context, membershipID uuid.UUID, permissions []string) error
 	GetMembershipPermissions(ctx context.Context, membershipID uuid.UUID) ([]string, error)
@@ -231,6 +232,74 @@ func (r *PostgresRepository) ListMemberships(ctx context.Context, merchantID uui
 			m.Permissions = perms
 		}
 		mems = append(mems, &m)
+	}
+	return mems, nil
+}
+
+// maxMembershipsPerSubject bounds the subject-oriented resolution read.
+const maxMembershipsPerSubject = 100
+
+// ListMembershipsBySubject resolves every canonical membership recorded for a
+// principal subject, across all statuses and merchants. Merchant ownership is
+// never inferred here: only explicit membership rows are returned. Invited and
+// suspended memberships carry no permission data.
+func (r *PostgresRepository) ListMembershipsBySubject(ctx context.Context, subject string) ([]*MerchantMembership, error) {
+	query := `
+		SELECT id, merchant_id, principal_subject, status, created_at, updated_at
+		FROM merchant_memberships
+		WHERE principal_subject = $1
+		ORDER BY created_at, id
+		LIMIT $2
+	`
+	rows, err := r.pool.Query(ctx, query, subject, maxMembershipsPerSubject)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var mems []*MerchantMembership
+	for rows.Next() {
+		var m MerchantMembership
+		var statusStr string
+		if err := rows.Scan(&m.ID, &m.MerchantID, &m.PrincipalSubject, &statusStr, &m.CreatedAt, &m.UpdatedAt); err != nil {
+			return nil, err
+		}
+		m.Status = MembershipStatus(statusStr)
+		mems = append(mems, &m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(mems) == 0 {
+		return mems, nil
+	}
+
+	ids := make([]uuid.UUID, 0, len(mems))
+	for _, mem := range mems {
+		ids = append(ids, mem.ID)
+	}
+	permRows, err := r.pool.Query(ctx, `SELECT membership_id, permission_code FROM merchant_membership_permissions WHERE membership_id = ANY($1)`, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer permRows.Close()
+
+	permsByMembership := make(map[uuid.UUID][]string, len(mems))
+	for permRows.Next() {
+		var membershipID uuid.UUID
+		var code string
+		if err := permRows.Scan(&membershipID, &code); err != nil {
+			return nil, err
+		}
+		permsByMembership[membershipID] = append(permsByMembership[membershipID], code)
+	}
+	if err := permRows.Err(); err != nil {
+		return nil, err
+	}
+	for _, mem := range mems {
+		if mem.Status == MembershipStatusActive {
+			mem.Permissions = permsByMembership[mem.ID]
+		}
 	}
 	return mems, nil
 }
