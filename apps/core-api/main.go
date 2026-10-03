@@ -114,6 +114,9 @@ func run(ctx context.Context) error {
 	settleService := settlement.NewService(settlement.NewRepository(db.Pool), balService)
 	mfService := marketplace_finance.NewService(marketplace_finance.NewRepository(db.Pool))
 	merchantService := merchants.NewService(merchants.NewPostgresRepository(db.Pool))
+	merchantAuthorizer := merchants.NewAuthorizer(merchants.NewPostgresRepository(db.Pool), merchants.AuthModeShadow)
+	merchantIntegrationRepo := integration.NewMerchantRepository(db.Pool)
+	merchantIntegrationService := integration.NewMerchantService(merchantIntegrationRepo, db.Pool)
 
 	deps := coreapi.Dependencies{
 		Commerce:  service,
@@ -125,15 +128,17 @@ func run(ctx context.Context) error {
 		Themes: themes.NewService(themes.NewRepository(db.Pool), repo, themes.Options{
 			PreviewSecret: []byte(cfg.ThemePreviewSecret),
 		}),
-		Shipping:           shipping.NewService(shipping.NewRepository(db.Pool)),
-		Payments:           payments.NewService(payments.NewRepository(db.Pool)),
-		Finance:            finService,
-		Balance:            balService,
-		Settlement:         settleService,
-		MarketplaceFinance: mfService,
-		Merchants:          merchantService,
-		Marketplace:        marketplace.NewService(marketplace.NewRepository(db.Pool)),
-		Integration:        integration.NewService(integration.NewRepository(db.Pool)),
+		Shipping:            shipping.NewService(shipping.NewRepository(db.Pool)),
+		Payments:            payments.NewService(payments.NewRepository(db.Pool)),
+		Finance:             finService,
+		Balance:             balService,
+		Settlement:          settleService,
+		MarketplaceFinance:  mfService,
+		Merchants:           merchantService,
+		MerchantIntegration: merchantIntegrationService,
+		MerchantAuthorizer:  merchantAuthorizer,
+		Marketplace:         marketplace.NewService(marketplace.NewRepository(db.Pool)),
+		Integration:         integration.NewService(integration.NewRepository(db.Pool)),
 	}
 
 	appCfg := httpx.ConfigFrom(cfg)
