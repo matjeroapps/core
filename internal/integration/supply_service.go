@@ -556,10 +556,50 @@ RETURNING id, merchant_id, connection_id, provider, batch_type, status, first_im
 	return &batch, records, nil
 }
 
-// stageRecord upserts one staged record and detects cross-connection SKU or
-// barcode duplication within the same Merchant. Same-connection retries of an
-// identical external identity upsert in place (restart safety); different
-// content for an already-APPROVED identity returns to REVIEW_REQUIRED.
+// structuralFields summarizes the facts that define an approved mapping's
+// structure. A change in these fields returns the record to review; a change
+// in version/digest alone is an automatic subsequent update.
+type structuralFields struct {
+	SKU      *string
+	Barcode  *string
+	Currency *string
+}
+
+func (a structuralFields) equals(b structuralFields) bool {
+	strEq := func(x, y *string) bool {
+		if x == nil || y == nil {
+			return x == y
+		}
+		return *x == *y
+	}
+	return strEq(a.SKU, b.SKU) && strEq(a.Barcode, b.Barcode) && strEq(a.Currency, b.Currency)
+}
+
+func structuralChangeReviewCase(ctx context.Context, tx pgx.Tx, batch SupplyImportBatch, rec *SupplyImportRecord) error {
+	details, _ := json.Marshal(map[string]any{
+		"entity_type":         rec.EntityType,
+		"external_product_id": rec.ExternalProductID,
+		"sku":                 rec.SKU,
+		"barcode":             rec.Barcode,
+	})
+	if _, err := tx.Exec(ctx, `
+INSERT INTO merchant_integration_review_cases
+    (merchant_id, connection_id, case_type, status, reason_code, subject_batch_id, subject_record_id, details)
+VALUES ($1, $2, 'STRUCTURAL_CHANGE', $3, $4, $5, $6, $7)`,
+		batch.MerchantID, batch.ConnectionID, ReviewCaseStatusOpen, ReviewReasonStructuralChange,
+		batch.ID, rec.ID, details); err != nil {
+		return fmt.Errorf("insert structural-change review case: %w", err)
+	}
+	return nil
+}
+
+// stageRecord upserts one staged record and applies the staging rules:
+//   - duplicate SKU/barcode across the Merchant's other supply connections
+//     enters DUPLICATE_REVIEW with a review case;
+//   - an ACTIVE approved mapping receives automatic subsequent updates
+//     (record APPROVED, mapping version/digest refreshed);
+//   - a structural change to an approved mapping returns the record to
+//     REVIEW_REQUIRED with a structural-change review case.
 func stageRecord(ctx context.Context, tx pgx.Tx, batch SupplyImportBatch, r StagedRecordInput) (*SupplyImportRecord, *uuid.UUID, error) {
 	// Cross-source duplicate detection: the same Merchant staged the same SKU
 	// or barcode under a different supply connection.
@@ -599,6 +639,47 @@ LIMIT 1`, batch.MerchantID, batch.ConnectionID, *r.Barcode).Scan(&dupConnectionI
 		}
 	}
 
+	// Automatic-subsequent-update / structural-change rules apply only when an
+	// approved mapping already exists for this external identity.
+	incoming := structuralFields{SKU: r.SKU, Barcode: r.Barcode, Currency: r.Currency}
+	var mappedStructural struct {
+		SKU      *string
+		Barcode  *string
+		Currency *string
+	}
+	var mappingStatus string
+	var hasMapping bool
+	mappingErr := tx.QueryRow(ctx, `
+SELECT status,
+       (SELECT sku FROM merchant_integration_supply_import_records
+         WHERE connection_id = $1 AND entity_type = $2 AND external_product_id = $3
+           AND COALESCE(external_variant_id, '') = COALESCE($4, '') ORDER BY created_at DESC LIMIT 1),
+       (SELECT barcode FROM merchant_integration_supply_import_records
+         WHERE connection_id = $1 AND entity_type = $2 AND external_product_id = $3
+           AND COALESCE(external_variant_id, '') = COALESCE($4, '') ORDER BY created_at DESC LIMIT 1),
+       (SELECT currency FROM merchant_integration_supply_import_records
+         WHERE connection_id = $1 AND entity_type = $2 AND external_product_id = $3
+           AND COALESCE(external_variant_id, '') = COALESCE($4, '') ORDER BY created_at DESC LIMIT 1)
+FROM merchant_integration_entity_mappings
+WHERE connection_id = $1 AND entity_type = $2 AND external_product_id = $3
+  AND COALESCE(external_variant_id, '') = COALESCE($4, '') AND status = $5`,
+		batch.ConnectionID, r.EntityType, r.ExternalProductID, r.ExternalVariantID, MappingStatusActive,
+	).Scan(&mappingStatus, &mappedStructural.SKU, &mappedStructural.Barcode, &mappedStructural.Currency)
+	switch {
+	case mappingErr == nil:
+		hasMapping = true
+		if !incoming.equals(structuralFields{SKU: mappedStructural.SKU, Barcode: mappedStructural.Barcode, Currency: mappedStructural.Currency}) {
+			status = SupplyRecordStatusReviewRequired
+		} else {
+			status = SupplyRecordStatusApproved
+		}
+	case errors.Is(mappingErr, pgx.ErrNoRows):
+		hasMapping = false
+		// No approved mapping: normal staging rules apply.
+	default:
+		return nil, nil, fmt.Errorf("check approved mapping: %w", mappingErr)
+	}
+
 	var rec SupplyImportRecord
 	err := tx.QueryRow(ctx, `
 INSERT INTO merchant_integration_supply_import_records
@@ -607,6 +688,7 @@ INSERT INTO merchant_integration_supply_import_records
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 ON CONFLICT (connection_id, entity_type, external_product_id, COALESCE(external_variant_id, '')) DO UPDATE SET
     batch_id = EXCLUDED.batch_id,
+    status = EXCLUDED.status,
     content_digest = EXCLUDED.content_digest,
     payload = EXCLUDED.payload,
     external_version = EXCLUDED.external_version,
@@ -614,6 +696,7 @@ ON CONFLICT (connection_id, entity_type, external_product_id, COALESCE(external_
     barcode = EXCLUDED.barcode,
     title = EXCLUDED.title,
     currency = EXCLUDED.currency,
+    duplicate_of_connection = EXCLUDED.duplicate_of_connection,
     updated_at = NOW()
 RETURNING id, batch_id, merchant_id, connection_id, entity_type, external_product_id, external_variant_id,
           sku, barcode, title, currency, external_version, content_digest, payload, status,
@@ -627,6 +710,31 @@ RETURNING id, batch_id, merchant_id, connection_id, entity_type, external_produc
 		&rec.MappingDecision, &rec.CreatedAt, &rec.UpdatedAt)
 	if err != nil {
 		return nil, nil, fmt.Errorf("upsert staged record: %w", err)
+	}
+
+	if hasMapping && rec.Status == SupplyRecordStatusApproved {
+		// Automatic subsequent update: refresh the approved mapping's version
+		// and digest in place.
+		if _, err := tx.Exec(ctx, `
+UPDATE merchant_integration_entity_mappings
+SET external_version = $1, content_digest = $2, last_synced_at = NOW(), updated_at = NOW()
+WHERE connection_id = $3 AND entity_type = $4 AND external_product_id = $5
+  AND COALESCE(external_variant_id, '') = COALESCE($6, '')`,
+			r.ExternalVersion, r.ContentDigest, batch.ConnectionID, r.EntityType, r.ExternalProductID, r.ExternalVariantID); err != nil {
+			return nil, nil, fmt.Errorf("refresh approved mapping: %w", err)
+		}
+	}
+	if rec.Status == SupplyRecordStatusReviewRequired {
+		if _, err := tx.Exec(ctx, `
+UPDATE merchant_integration_entity_mappings SET status = $1, updated_at = NOW()
+WHERE connection_id = $2 AND entity_type = $3 AND external_product_id = $4
+  AND COALESCE(external_variant_id, '') = COALESCE($5, '')`,
+			MappingStatusReviewRequired, batch.ConnectionID, r.EntityType, r.ExternalProductID, r.ExternalVariantID); err != nil {
+			return nil, nil, fmt.Errorf("flag mapping review: %w", err)
+		}
+		if err := structuralChangeReviewCase(ctx, tx, batch, &rec); err != nil {
+			return nil, nil, err
+		}
 	}
 	return &rec, rec.DuplicateOfConn, nil
 }

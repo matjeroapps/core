@@ -540,3 +540,113 @@ func TestSupplyConnectionTypeImmutableAfterFirstSync(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+func TestSupplyApprovedMappingReceivesAutomaticUpdates(t *testing.T) {
+	db := setupSupplyTestDB(t)
+	ctx := context.Background()
+
+	merchantSvc := integration.NewMerchantService(integration.NewMerchantRepository(db.Pool), db.Pool)
+	merchantID := createTestMerchant(t, db)
+	connID := createSupplyConnection(t, merchantSvc, merchantID, "auto-update connection")
+	svc := newSupplyService(t, db)
+
+	// First import: staged then approved with an explicit mapping.
+	batch1, recs1, err := svc.CreateImportBatch(ctx, integration.CreateSupplyImportBatchInput{
+		MerchantID: merchantID, ConnectionID: connID, IdempotencyKey: "auto-1",
+		Records: []integration.StagedRecordInput{supplyRecord(integration.SupplyEntityTypePrice, "prod-1", "AUTO-SKU")},
+	}, "c", "u")
+	if err != nil {
+		t.Fatalf("first import: %v", err)
+	}
+	if _, err := svc.ApproveImportBatch(ctx, integration.ApproveSupplyImportBatchInput{
+		BatchID: batch1.ID, MerchantID: merchantID,
+		Decisions: []integration.RecordDecision{{RecordID: recs1[0].ID, Decision: "APPROVE", InternalID: "offer-1"}},
+	}, "c", "u"); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+
+	// Subsequent price update for the approved mapping: no manual review.
+	updated := supplyRecord(integration.SupplyEntityTypePrice, "prod-1", "AUTO-SKU")
+	updated.ContentDigest = "digest-v2"
+	updated.ExternalVersion = strPtr("v2")
+	batch2, recs2, err := svc.CreateImportBatch(ctx, integration.CreateSupplyImportBatchInput{
+		MerchantID: merchantID, ConnectionID: connID, IdempotencyKey: "auto-2",
+		Records: []integration.StagedRecordInput{updated},
+	}, "c", "u")
+	if err != nil {
+		t.Fatalf("subsequent update: %v", err)
+	}
+	if batch2.FirstImport {
+		t.Errorf("second batch must not be first_import")
+	}
+	if recs2[0].Status != integration.SupplyRecordStatusApproved {
+		t.Fatalf("approved-mapping update status = %q, want automatic APPROVED", recs2[0].Status)
+	}
+	mapping, err := svc.GetMappingByExternalID(ctx, connID, integration.SupplyEntityTypePrice, "prod-1", nil)
+	if err != nil {
+		t.Fatalf("GetMappingByExternalID: %v", err)
+	}
+	if mapping.ExternalVersion == nil || *mapping.ExternalVersion != "v2" {
+		t.Errorf("mapping version not refreshed: %+v", mapping.ExternalVersion)
+	}
+}
+
+func TestSupplyStructuralChangeReturnsToReview(t *testing.T) {
+	db := setupSupplyTestDB(t)
+	ctx := context.Background()
+
+	merchantSvc := integration.NewMerchantService(integration.NewMerchantRepository(db.Pool), db.Pool)
+	merchantID := createTestMerchant(t, db)
+	connID := createSupplyConnection(t, merchantSvc, merchantID, "structural connection")
+	svc := newSupplyService(t, db)
+
+	batch1, recs1, err := svc.CreateImportBatch(ctx, integration.CreateSupplyImportBatchInput{
+		MerchantID: merchantID, ConnectionID: connID, IdempotencyKey: "struct-1",
+		Records: []integration.StagedRecordInput{supplyRecord(integration.SupplyEntityTypeProduct, "prod-1", "STRUCT-SKU")},
+	}, "c", "u")
+	if err != nil {
+		t.Fatalf("first import: %v", err)
+	}
+	if _, err := svc.ApproveImportBatch(ctx, integration.ApproveSupplyImportBatchInput{
+		BatchID: batch1.ID, MerchantID: merchantID,
+		Decisions: []integration.RecordDecision{{RecordID: recs1[0].ID, Decision: "APPROVE", InternalID: "canon-1"}},
+	}, "c", "u"); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+
+	// A structural change (new SKU for the mapped external product) must not
+	// update automatically: it returns to review.
+	changed := supplyRecord(integration.SupplyEntityTypeProduct, "prod-1", "STRUCT-SKU-CHANGED")
+	changed.ContentDigest = "digest-structural-change"
+	batch2, recs2, err := svc.CreateImportBatch(ctx, integration.CreateSupplyImportBatchInput{
+		MerchantID: merchantID, ConnectionID: connID, IdempotencyKey: "struct-2",
+		Records: []integration.StagedRecordInput{changed},
+	}, "c", "u")
+	if err != nil {
+		t.Fatalf("structural update: %v", err)
+	}
+	if recs2[0].Status != integration.SupplyRecordStatusReviewRequired {
+		t.Fatalf("structural-change status = %q, want REVIEW_REQUIRED", recs2[0].Status)
+	}
+	cases, err := svc.ListReviewCases(ctx, merchantID, &connID, integration.ReviewCaseStatusOpen)
+	if err != nil {
+		t.Fatalf("ListReviewCases: %v", err)
+	}
+	found := false
+	for _, c := range cases {
+		if c.ReasonCode == integration.ReviewReasonStructuralChange {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no STRUCTURAL_CHANGE review case created")
+	}
+	mapping, err := svc.GetMappingByExternalID(ctx, connID, integration.SupplyEntityTypeProduct, "prod-1", nil)
+	if err != nil {
+		t.Fatalf("GetMappingByExternalID: %v", err)
+	}
+	if mapping.Status != integration.MappingStatusReviewRequired {
+		t.Errorf("mapping status = %q, want REVIEW_REQUIRED", mapping.Status)
+	}
+	_ = batch2
+}
