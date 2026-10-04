@@ -10766,6 +10766,366 @@
         ]
       }
     },
+    "/internal/v1/local-validation/merchant-console/scenarios": {
+      "post": {
+        "description": "Local-only Feature 026 provisioning endpoint. It is available only when CORE_LOCAL_VALIDATION_PROVISIONING_ENABLED=true, accepts only the platform internal caller, refuses non-local issuers, requires an Idempotency-Key, and returns a non-secret scenario manifest. This endpoint must not be enabled in production.",
+        "operationId": "internalProvisionLocalMerchantConsoleValidationScenarios",
+        "parameters": [
+          {
+            "description": "Override locale resolution",
+            "in": "query",
+            "name": "locale",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Stable key for rerunnable local scenario reconciliation",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "actors": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "issuer": {
+                    "type": "string"
+                  },
+                  "local_only": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "actors",
+                  "issuer",
+                  "local_only"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "actors": {
+                      "additionalProperties": {
+                        "properties": {
+                          "expected": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "subject": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "expected",
+                          "subject"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "object"
+                    },
+                    "denials": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "generated_by": {
+                      "type": "string"
+                    },
+                    "merchants": {
+                      "additionalProperties": {
+                        "properties": {
+                          "capabilities": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "items": {
+                              "format": "int32",
+                              "type": "integer"
+                            },
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "capabilities",
+                          "code",
+                          "id"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "object"
+                    },
+                    "stores": {
+                      "additionalProperties": {
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "items": {
+                              "format": "int32",
+                              "type": "integer"
+                            },
+                            "type": "array"
+                          },
+                          "merchant": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "id",
+                          "merchant"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "object"
+                    },
+                    "supply": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "version": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "actors",
+                    "denials",
+                    "generated_by",
+                    "merchants",
+                    "stores",
+                    "supply",
+                    "version"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Sanitized local validation scenario manifest"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Provision local Merchant Console validation scenarios",
+        "tags": [
+          "Local Validation"
+        ]
+      }
+    },
     "/internal/v1/locations": {
       "get": {
         "operationId": "internalListLocations",
@@ -56485,6 +56845,10 @@
     {
       "description": "External entity mappings, API keys, sync cursors, and webhook subscriptions",
       "name": "Integration Foundation"
+    },
+    {
+      "description": "Local-only validation helpers that must never be enabled in production",
+      "name": "Local Validation"
     }
   ]
 }

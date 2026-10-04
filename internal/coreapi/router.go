@@ -136,6 +136,7 @@ type Dependencies struct {
 	MarketplaceFinance  MarketplaceFinanceService
 	Merchants           *merchants.Service
 	MerchantBootstrap   *merchants.BootstrapService
+	MerchantValidation  MerchantValidationProvisioner
 	MerchantIntegration integration.MerchantService
 	MerchantAuthorizer  *merchants.Authorizer
 	SupplyIntegration   integration.SupplyService
@@ -206,6 +207,12 @@ func NewRouter(deps Dependencies) chi.Router {
 				r.Post("/merchants/{merchantID}/memberships", merchantHandler.AddMember)
 			})
 		}
+
+		validationHandler := NewMerchantValidationProvisioningHandler(deps.MerchantValidation)
+		r.Group(func(r chi.Router) {
+			r.Use(requireCallers(serviceauth.CallerPlatform))
+			r.Post("/local-validation/merchant-console/scenarios", validationHandler.Provision)
+		})
 
 		// Feature 025: subject-oriented Merchant bootstrap. Only the actor
 		// services that own a console/BFF boundary may call it; the supplier
