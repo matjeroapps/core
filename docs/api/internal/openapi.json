@@ -10889,6 +10889,9 @@
                           "code": {
                             "type": "string"
                           },
+                          "host": {
+                            "type": "string"
+                          },
                           "id": {
                             "items": {
                               "format": "int32",
@@ -10902,6 +10905,7 @@
                         },
                         "required": [
                           "code",
+                          "host",
                           "id",
                           "merchant"
                         ],
