@@ -114,7 +114,7 @@ func run(ctx context.Context) error {
 	settleService := settlement.NewService(settlement.NewRepository(db.Pool), balService)
 	mfService := marketplace_finance.NewService(marketplace_finance.NewRepository(db.Pool))
 	merchantService := merchants.NewService(merchants.NewPostgresRepository(db.Pool))
-	merchantValidationProvisioner := merchants.NewValidationProvisioner(db.Pool, cfg.LocalValidationProvisioningEnabled)
+	merchantValidationProvisioner := merchants.NewValidationProvisioner(db.Pool, cfg.LocalValidationProvisioningEnabled, cfg.PlatformDomain)
 	merchantAuthorizer := merchants.NewAuthorizer(merchants.NewPostgresRepository(db.Pool), merchants.AuthModeShadow)
 	merchantIntegrationRepo := integration.NewMerchantRepository(db.Pool)
 	merchantIntegrationService := integration.NewMerchantService(merchantIntegrationRepo, db.Pool)

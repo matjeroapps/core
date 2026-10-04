@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"core/internal/testdb"
@@ -18,18 +19,18 @@ func TestValidationProvisionerRequiresEnabledLocalRuntime(t *testing.T) {
 		Actors:         validationActorSubjects(),
 	}
 
-	if _, err := NewValidationProvisioner(nil, false).ProvisionValidationScenario(context.Background(), req); !errors.Is(err, ErrValidationProvisioningDisabled) {
+	if _, err := NewValidationProvisioner(nil, false, "matjero.com").ProvisionValidationScenario(context.Background(), req); !errors.Is(err, ErrValidationProvisioningDisabled) {
 		t.Fatalf("disabled provisioner error = %v, want %v", err, ErrValidationProvisioningDisabled)
 	}
 
 	req.LocalOnly = false
-	if _, err := NewValidationProvisioner(nil, true).ProvisionValidationScenario(context.Background(), req); !errors.Is(err, ErrValidationProvisioningUnsafe) {
+	if _, err := NewValidationProvisioner(nil, true, "matjero.com").ProvisionValidationScenario(context.Background(), req); !errors.Is(err, ErrValidationProvisioningUnsafe) {
 		t.Fatalf("non-local request error = %v, want %v", err, ErrValidationProvisioningUnsafe)
 	}
 
 	req.LocalOnly = true
 	req.Issuer = "https://auth.matjero.com"
-	if _, err := NewValidationProvisioner(nil, true).ProvisionValidationScenario(context.Background(), req); !errors.Is(err, ErrValidationProvisioningUnsafe) {
+	if _, err := NewValidationProvisioner(nil, true, "matjero.com").ProvisionValidationScenario(context.Background(), req); !errors.Is(err, ErrValidationProvisioningUnsafe) {
 		t.Fatalf("non-local issuer error = %v, want %v", err, ErrValidationProvisioningUnsafe)
 	}
 }
@@ -43,8 +44,21 @@ func TestValidationProvisionerRequiresAllActorSubjects(t *testing.T) {
 	}
 	delete(req.Actors, "dual_owner")
 
-	if _, err := NewValidationProvisioner(nil, true).ProvisionValidationScenario(context.Background(), req); !errors.Is(err, ErrValidationProvisioningInvalid) {
+	if _, err := NewValidationProvisioner(nil, true, "matjero.com").ProvisionValidationScenario(context.Background(), req); !errors.Is(err, ErrValidationProvisioningInvalid) {
 		t.Fatalf("missing actor error = %v, want %v", err, ErrValidationProvisioningInvalid)
+	}
+}
+
+func TestValidationProvisionerRequiresStorefrontDomain(t *testing.T) {
+	req := ValidationProvisionRequest{
+		LocalOnly:      true,
+		Issuer:         "http://localhost:8081",
+		IdempotencyKey: "feature-026-test",
+		Actors:         validationActorSubjects(),
+	}
+
+	if _, err := NewValidationProvisioner(nil, true, "").ProvisionValidationScenario(context.Background(), req); err == nil || !strings.Contains(err.Error(), "missing storefront platform domain") {
+		t.Fatalf("missing storefront domain error = %v, want missing storefront platform domain", err)
 	}
 }
 
@@ -82,6 +96,8 @@ func TestValidationProvisionerCreatesScenarioIdempotently(t *testing.T) {
 		"000001_event_delivery_foundation",
 		"000002_market_reference_data",
 		"000003_commerce_domain_schema",
+		"000005_store_domain_lifecycle",
+		"000006_store_domain_integrity",
 		"000009_supplier_retail_capability",
 		"000018_supplier_retail_affiliation",
 		"000027_integration_foundation",
@@ -107,7 +123,7 @@ func TestValidationProvisionerCreatesScenarioIdempotently(t *testing.T) {
 		IdempotencyKey: "feature-026-test",
 		Actors:         validationActorSubjects(),
 	}
-	provisioner := NewValidationProvisioner(db.Pool, true)
+	provisioner := NewValidationProvisioner(db.Pool, true, "matjero.com")
 
 	first, err := provisioner.ProvisionValidationScenario(context.Background(), req)
 	if err != nil {
@@ -123,6 +139,31 @@ func TestValidationProvisionerCreatesScenarioIdempotently(t *testing.T) {
 	}
 	if first.Supply["review_case"] != second.Supply["review_case"] {
 		t.Fatalf("review case was not idempotent: %s then %s", first.Supply["review_case"], second.Supply["review_case"])
+	}
+
+	if first.Stores["dual_store_a"].Host != "f026-store-a.matjero.com" {
+		t.Fatalf("dual_store_a storefront host = %q, want f026-store-a.matjero.com", first.Stores["dual_store_a"].Host)
+	}
+	if first.Stores["dual_store_b"].Host != "f026-store-b.matjero.com" {
+		t.Fatalf("dual_store_b storefront host = %q, want f026-store-b.matjero.com", first.Stores["dual_store_b"].Host)
+	}
+
+	var domainRows int
+	if err := db.QueryRow(context.Background(), `
+		SELECT COUNT(*)
+		FROM store_domains
+		WHERE domain_type = 'platform'
+			AND status = 'active'
+			AND is_primary
+			AND verified_at IS NOT NULL
+			AND (domain = $1 AND store_id = $2)
+			OR (domain = $3 AND store_id = $4)
+	`, first.Stores["dual_store_a"].Host, first.Stores["dual_store_a"].ID,
+		first.Stores["dual_store_b"].Host, first.Stores["dual_store_b"].ID).Scan(&domainRows); err != nil {
+		t.Fatalf("count storefront fixture domains: %v", err)
+	}
+	if domainRows != 2 {
+		t.Fatalf("storefront fixture domain rows = %d, want 2", domainRows)
 	}
 
 	var reviewCases int
