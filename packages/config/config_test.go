@@ -310,6 +310,29 @@ func TestProductionConfigValidationRequiresAllInternalTokens(t *testing.T) {
 	}
 }
 
+func TestProductionConfigRejectsLocalValidationProvisioning(t *testing.T) {
+	cfg := config.Config{
+		Environment:                        "production",
+		DatabaseURL:                        "postgres://user:pass@prod-db.internal:5432/commerce?sslmode=require",
+		RabbitMQURL:                        "amqp://user:pass@prod-mq.internal:5672/",
+		ZitadelIssuer:                      "https://auth.matjero.com",
+		InternalPlatformToken:              "secret-platform",
+		InternalSellerToken:                "secret-seller",
+		InternalAdminToken:                 "secret-admin",
+		InternalSupplierToken:              "secret-supplier",
+		ThemePreviewSecret:                 "secret-theme-preview",
+		MediaS3Bucket:                      "prod-media",
+		MediaS3AccessKeyID:                 "key",
+		MediaS3SecretAccessKey:             "secret",
+		MediaPublicBaseURL:                 "https://cdn.matjero.com",
+		LocalValidationProvisioningEnabled: true,
+	}
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected production validation to reject local validation provisioning")
+	}
+}
+
 func TestDevelopmentConfigWithoutS3(t *testing.T) {
 	t.Setenv("APP_ENV", "development")
 	cfg, err := config.Load("test-service")

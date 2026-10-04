@@ -60,6 +60,11 @@ type Config struct {
 	InternalAdminToken    string
 	InternalSupplierToken string
 
+	// LocalValidationProvisioningEnabled enables the Feature 026 local-only
+	// scenario provisioning contract. It is intentionally disabled by default
+	// and is rejected in production by Validate.
+	LocalValidationProvisioningEnabled bool
+
 	StoreDefaultMaxActiveStores int
 
 	OutboxClaimLeaseDuration      time.Duration
@@ -178,6 +183,8 @@ func Load(serviceName string) (Config, error) {
 		InternalAdminToken:    stringEnv("CORE_INTERNAL_ADMIN_TOKEN", ""),
 		InternalSupplierToken: stringEnv("CORE_INTERNAL_SUPPLIER_TOKEN", ""),
 
+		LocalValidationProvisioningEnabled: boolEnv("CORE_LOCAL_VALIDATION_PROVISIONING_ENABLED", false),
+
 		OutboxClaimLeaseDuration:      outboxClaimLeaseDuration,
 		OutboxClaimRenewalMargin:      outboxClaimRenewalMargin,
 		RabbitMQPublishConfirmTimeout: rabbitMQPublishConfirmTimeout,
@@ -231,6 +238,9 @@ func (c Config) Validate() error {
 	}
 	if c.MediaPublicBaseURL == "" {
 		return fmt.Errorf("production MEDIA_PUBLIC_BASE_URL is required")
+	}
+	if c.LocalValidationProvisioningEnabled {
+		return fmt.Errorf("production CORE_LOCAL_VALIDATION_PROVISIONING_ENABLED must be false")
 	}
 	return nil
 }

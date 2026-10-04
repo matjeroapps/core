@@ -136,6 +136,7 @@ type Dependencies struct {
 	MarketplaceFinance  MarketplaceFinanceService
 	Merchants           *merchants.Service
 	MerchantBootstrap   *merchants.BootstrapService
+	MerchantValidation  MerchantValidationProvisioner
 	MerchantIntegration integration.MerchantService
 	MerchantAuthorizer  *merchants.Authorizer
 	SupplyIntegration   integration.SupplyService
@@ -204,6 +205,14 @@ func NewRouter(deps Dependencies) chi.Router {
 				r.Get("/merchants/{merchantID}", merchantHandler.GetMerchant)
 				r.Post("/merchants/{merchantID}/capabilities/{capabilityType}/activate", merchantHandler.ActivateCapability)
 				r.Post("/merchants/{merchantID}/memberships", merchantHandler.AddMember)
+			})
+		}
+
+		if deps.MerchantValidation != nil {
+			validationHandler := NewMerchantValidationProvisioningHandler(deps.MerchantValidation)
+			r.Group(func(r chi.Router) {
+				r.Use(requireCallers(serviceauth.CallerPlatform))
+				r.Post("/local-validation/merchant-console/scenarios", validationHandler.Provision)
 			})
 		}
 

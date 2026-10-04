@@ -56410,6 +56410,172 @@
           "Payments"
         ]
       }
+    },
+    "/internal/v1/local-validation/merchant-console/scenarios": {
+      "post": {
+        "operationId": "internalProvisionLocalMerchantConsoleValidationScenarios",
+        "summary": "Provision local Merchant Console validation scenarios",
+        "description": "Local-only Feature 026 provisioning endpoint. It is available only when CORE_LOCAL_VALIDATION_PROVISIONING_ENABLED=true, accepts only the platform internal caller, refuses non-local issuers, requires an Idempotency-Key, and returns a non-secret scenario manifest. This endpoint must not be enabled in production.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Matjero-Service",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "platform"
+              ]
+            },
+            "description": "Internal caller identity bound to the bearer token."
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Stable key for rerunnable local scenario reconciliation."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "local_only",
+                  "issuer",
+                  "actors"
+                ],
+                "properties": {
+                  "local_only": {
+                    "type": "boolean",
+                    "const": true
+                  },
+                  "issuer": {
+                    "type": "string",
+                    "examples": [
+                      "http://localhost:8081"
+                    ]
+                  },
+                  "actors": {
+                    "type": "object",
+                    "required": [
+                      "dual_owner",
+                      "retail_owner",
+                      "supply_owner",
+                      "retail_limited_staff",
+                      "supply_limited_staff",
+                      "suspended_membership",
+                      "multi_merchant_actor",
+                      "no_membership_actor"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "properties": {
+                      "dual_owner": {
+                        "type": "string"
+                      },
+                      "retail_owner": {
+                        "type": "string"
+                      },
+                      "supply_owner": {
+                        "type": "string"
+                      },
+                      "retail_limited_staff": {
+                        "type": "string"
+                      },
+                      "supply_limited_staff": {
+                        "type": "string"
+                      },
+                      "suspended_membership": {
+                        "type": "string"
+                      },
+                      "multi_merchant_actor": {
+                        "type": "string"
+                      },
+                      "no_membership_actor": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sanitized local validation scenario manifest",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "version",
+                    "actors",
+                    "merchants",
+                    "stores",
+                    "supply",
+                    "denials"
+                  ],
+                  "properties": {
+                    "version": {
+                      "type": "string"
+                    },
+                    "actors": {
+                      "type": "object"
+                    },
+                    "merchants": {
+                      "type": "object"
+                    },
+                    "stores": {
+                      "type": "object"
+                    },
+                    "supply": {
+                      "type": "object"
+                    },
+                    "denials": {
+                      "type": "object"
+                    },
+                    "generated_by": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid argument or missing Idempotency-Key"
+          },
+          "403": {
+            "description": "Non-platform caller or unsafe non-local request"
+          },
+          "404": {
+            "description": "Local validation provisioning disabled"
+          },
+          "422": {
+            "description": "Validation error"
+          },
+          "500": {
+            "description": "Internal error"
+          }
+        },
+        "tags": [
+          "local-validation"
+        ]
+      }
     }
   },
   "servers": [
