@@ -117,6 +117,7 @@ func internalTags() []openapi3.Tag {
 		{Name: "Marketplace Discovery", Description: "Deterministic curated marketplace collections"},
 		{Name: "Platform Administration", Description: "Platform moderation and operational overview"},
 		{Name: "Integration Foundation", Description: "External entity mappings, API keys, sync cursors, and webhook subscriptions"},
+		{Name: "Local Validation", Description: "Local-only validation helpers that must never be enabled in production"},
 	}
 }
 
@@ -1670,6 +1671,18 @@ func internalRoutes() []openapi.RouteSpec {
 				"summaries, the explicit plan state, and pending actions derived from persisted rows. Workspaces MAY be empty. " +
 				"Seller and supplier service callers only; the browser never calls Core.",
 			Responses: readResponses("Merchant bootstrap", merchants.MerchantBootstrap{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/local-validation/merchant-console/scenarios", OperationID: "internalProvisionLocalMerchantConsoleValidationScenarios",
+			Summary: "Provision local Merchant Console validation scenarios", Tags: []string{"Local Validation"},
+			Description: "Local-only Feature 026 provisioning endpoint. It is available only when CORE_LOCAL_VALIDATION_PROVISIONING_ENABLED=true, " +
+				"accepts only the platform internal caller, refuses non-local issuers, requires an Idempotency-Key, and returns a non-secret scenario manifest. " +
+				"This endpoint must not be enabled in production.",
+			Parameters: []openapi.ParameterSpec{
+				{Name: "Idempotency-Key", In: "header", Required: true, Description: "Stable key for rerunnable local scenario reconciliation", Schema: ""},
+			},
+			RequestBody: merchants.ValidationProvisionRequest{},
+			Responses:   writeResponses("Sanitized local validation scenario manifest", merchants.ValidationScenarioManifest{}),
 		},
 		{
 			Method: http.MethodGet, Path: "/internal/v1/merchants/{merchantID}/integrations/supply/import-batches", OperationID: "internalListMerchantSupplyImportBatches",
