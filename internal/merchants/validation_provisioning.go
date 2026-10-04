@@ -21,10 +21,13 @@ var (
 type ValidationProvisioner struct {
 	pool    *pgxpool.Pool
 	enabled bool
+	// storefrontDomain is the base domain of the platform storefront fixture
+	// (<store-code>.<storefrontDomain>) provisioned for every validation store.
+	storefrontDomain string
 }
 
-func NewValidationProvisioner(pool *pgxpool.Pool, enabled bool) *ValidationProvisioner {
-	return &ValidationProvisioner{pool: pool, enabled: enabled}
+func NewValidationProvisioner(pool *pgxpool.Pool, enabled bool, storefrontDomain string) *ValidationProvisioner {
+	return &ValidationProvisioner{pool: pool, enabled: enabled, storefrontDomain: strings.ToLower(strings.TrimSpace(storefrontDomain))}
 }
 
 type ValidationProvisionRequest struct {
@@ -59,6 +62,9 @@ type ValidationStore struct {
 	ID       uuid.UUID `json:"id"`
 	Merchant string    `json:"merchant"`
 	Code     string    `json:"code"`
+	// Host is the storefront host that resolves to this store through the
+	// platform-generated domain fixture provisioned alongside the store.
+	Host string `json:"host"`
 }
 
 type validationMerchantSpec struct {
@@ -110,8 +116,8 @@ func (p *ValidationProvisioner) ProvisionValidationScenario(ctx context.Context,
 	if !req.LocalOnly || !localIssuer(req.Issuer) || strings.TrimSpace(req.IdempotencyKey) == "" {
 		return nil, ErrValidationProvisioningUnsafe
 	}
-	if p.pool == nil {
-		return nil, ErrValidationProvisioningInvalid
+	if p.pool == nil || strings.TrimSpace(p.storefrontDomain) == "" {
+		return nil, fmt.Errorf("%w: missing storefront platform domain", ErrValidationProvisioningInvalid)
 	}
 	for _, label := range validationActorLabels {
 		if strings.TrimSpace(req.Actors[label]) == "" {
@@ -231,8 +237,16 @@ func (p *ValidationProvisioner) ProvisionValidationScenario(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	manifest.Stores["dual_store_a"] = ValidationStore{ID: storeA, Merchant: "dual_merchant", Code: "f026-store-a"}
-	manifest.Stores["dual_store_b"] = ValidationStore{ID: storeB, Merchant: "dual_merchant", Code: "f026-store-b"}
+	hostA, err := upsertValidationStoreDomain(ctx, tx, storeA, "f026-store-a", p.storefrontDomain)
+	if err != nil {
+		return nil, err
+	}
+	hostB, err := upsertValidationStoreDomain(ctx, tx, storeB, "f026-store-b", p.storefrontDomain)
+	if err != nil {
+		return nil, err
+	}
+	manifest.Stores["dual_store_a"] = ValidationStore{ID: storeA, Merchant: "dual_merchant", Code: "f026-store-a", Host: hostA}
+	manifest.Stores["dual_store_b"] = ValidationStore{ID: storeB, Merchant: "dual_merchant", Code: "f026-store-b", Host: hostB}
 
 	connectionID, err := upsertValidationConnection(ctx, tx, merchantsByLabel["dual_merchant"], storeA, "feature-026-supply", supplierID.String())
 	if err != nil {
@@ -372,6 +386,34 @@ func upsertValidationStore(ctx context.Context, tx pgx.Tx, sellerID uuid.UUID, m
 		RETURNING id
 	`, id, sellerID, marketCode, code, name, status).Scan(&id)
 	return id, err
+}
+
+// upsertValidationStoreDomain provisions the active platform storefront domain
+// fixture that a public storefront host resolves through. It mirrors the
+// production platform subdomain lifecycle (type "platform", active, primary,
+// verified at creation) without bypassing any runtime authorization rule.
+func upsertValidationStoreDomain(ctx context.Context, tx pgx.Tx, storeID uuid.UUID, storeCode, storefrontDomain string) (string, error) {
+	if strings.TrimSpace(storefrontDomain) == "" {
+		return "", fmt.Errorf("%w: missing storefront platform domain", ErrValidationProvisioningInvalid)
+	}
+	domain := strings.ToLower(strings.TrimSpace(storeCode)) + "." + strings.ToLower(strings.TrimSpace(storefrontDomain))
+	id := uuid.New()
+	err := tx.QueryRow(ctx, `
+		INSERT INTO store_domains (id, store_id, domain, is_primary, verified_at, status, domain_type, verification_token)
+		VALUES ($1, $2, $3, true, now(), 'active', 'platform', NULL)
+		ON CONFLICT (lower(domain)) DO UPDATE SET
+			store_id = EXCLUDED.store_id,
+			is_primary = EXCLUDED.is_primary,
+			verified_at = EXCLUDED.verified_at,
+			status = 'active',
+			domain_type = 'platform',
+			updated_at = now()
+		RETURNING domain
+	`, id, storeID, domain).Scan(&domain)
+	if err != nil {
+		return "", fmt.Errorf("provision validation storefront domain: %w", err)
+	}
+	return domain, nil
 }
 
 func upsertValidationConnection(ctx context.Context, tx pgx.Tx, merchantID, storeID uuid.UUID, externalAccount, supplierID string) (uuid.UUID, error) {
