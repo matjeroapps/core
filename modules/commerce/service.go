@@ -213,6 +213,17 @@ func (s Service) CreateStoreForSubject(ctx context.Context, subject, sellerID, m
 	return s.createStoreForSeller(ctx, sellerID, marketCode, code, name, status, settings)
 }
 
+func (s Service) CreateStoreForMerchantSubject(ctx context.Context, subject, merchantID, marketCode, code, name, status string, settings map[string]any) (Store, error) {
+	if subject == "" || merchantID == "" {
+		return Store{}, ErrInvalidInput
+	}
+	seller, err := s.repo.EnsureRetailSellerForMerchant(ctx, merchantID, subject)
+	if err != nil {
+		return Store{}, err
+	}
+	return s.createStoreForSeller(ctx, seller.ID, marketCode, code, name, status, settings)
+}
+
 func (s Service) CreateSupplierStoreForSubject(ctx context.Context, subject, supplierID, marketCode, code, name, status string, settings map[string]any) (Store, error) {
 	seller, err := s.RequireSupplierRetailAccess(ctx, subject, supplierID)
 	if err != nil {

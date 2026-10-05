@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"core/internal/merchants"
+	"core/internal/serviceauth"
 	"core/packages/httpx"
 )
 
@@ -24,6 +25,48 @@ type CreateMerchantRequest struct {
 	Code              string                   `json:"code"`
 	LegalName         string                   `json:"legal_name"`
 	InitialCapability merchants.CapabilityType `json:"initial_capability"`
+}
+
+type EnsureRetailWorkspaceRequest struct {
+	Code      string `json:"code"`
+	LegalName string `json:"legal_name"`
+}
+
+// EnsureRetailWorkspace bridges a newly authenticated Seller identity into
+// Core's canonical Merchant model during first-run onboarding.
+func (h *MerchantHandler) EnsureRetailWorkspace(w http.ResponseWriter, r *http.Request) {
+	if h.service == nil {
+		writeError(w, CodeUnavailable)
+		return
+	}
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+	if r.Body == nil {
+		writeError(w, CodeInvalidArgument)
+		return
+	}
+	var req EnsureRetailWorkspaceRequest
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil || strings.TrimSpace(req.Code) == "" || strings.TrimSpace(req.LegalName) == "" {
+		writeError(w, CodeInvalidArgument)
+		return
+	}
+	merchant, err := h.service.EnsureRetailWorkspaceWithMetadata(
+		r.Context(),
+		subject,
+		strings.TrimSpace(req.Code),
+		strings.TrimSpace(req.LegalName),
+		metadataFromRequest(r),
+	)
+	if err != nil {
+		writeError(w, CodeValidationError)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, merchant)
 }
 
 func (h *MerchantHandler) CreateMerchant(w http.ResponseWriter, r *http.Request) {
