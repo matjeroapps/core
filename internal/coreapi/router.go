@@ -207,6 +207,13 @@ func NewRouter(deps Dependencies) chi.Router {
 				r.Post("/merchants/{merchantID}/memberships", merchantHandler.AddMember)
 			})
 		}
+		// Seller first-run onboarding is always part of the route contract; the
+		// handler fails closed with service_unavailable when Merchant storage is
+		// not wired in a reduced test/runtime configuration.
+		r.Group(func(r chi.Router) {
+			r.Use(requireCallers(serviceauth.CallerSeller))
+			r.Post("/merchants/self/retail-workspace", NewMerchantHandler(deps.Merchants).EnsureRetailWorkspace)
+		})
 
 		validationHandler := NewMerchantValidationProvisioningHandler(deps.MerchantValidation)
 		r.Group(func(r chi.Router) {
@@ -222,6 +229,11 @@ func NewRouter(deps Dependencies) chi.Router {
 		r.Group(func(r chi.Router) {
 			r.Use(requireCallers(serviceauth.CallerSeller, serviceauth.CallerSupplier))
 			r.Get("/merchants/bootstrap", consoleHandler.GetBootstrap)
+		})
+
+		r.Group(func(r chi.Router) {
+			r.Use(requireCallers(serviceauth.CallerSeller))
+			r.Post("/merchants/{merchantID}/stores", server.handleCreateMerchantStore)
 		})
 
 		if deps.MerchantIntegration != nil {

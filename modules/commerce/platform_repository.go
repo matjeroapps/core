@@ -119,6 +119,77 @@ func (r Repository) GetSellerForSubject(ctx context.Context, subject string) (Se
 	return seller, nil
 }
 
+func (r Repository) EnsureRetailSellerForMerchant(ctx context.Context, merchantID, subject string) (Seller, error) {
+	if merchantID == "" || subject == "" {
+		return Seller{}, ErrInvalidInput
+	}
+
+	var seller Seller
+	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var merchantName, merchantStatus string
+		if err := tx.QueryRow(ctx, `
+			SELECT legal_name, status
+			FROM merchants
+			WHERE id = $1
+			FOR UPDATE
+		`, merchantID).Scan(&merchantName, &merchantStatus); err != nil {
+			return translatePGError(err, "get merchant for retail seller")
+		}
+		if merchantStatus != "active" {
+			return ErrForbidden
+		}
+
+		err := tx.QueryRow(ctx, `
+			SELECT id, code, name, status, created_at, updated_at
+			FROM sellers
+			WHERE merchant_id = $1
+			  AND status = 'active'
+			LIMIT 1
+		`, merchantID).Scan(&seller.ID, &seller.Code, &seller.Name, &seller.Status, &seller.CreatedAt, &seller.UpdatedAt)
+		if err != nil {
+			if !errors.Is(err, pgx.ErrNoRows) {
+				return translatePGError(err, "get merchant retail seller")
+			}
+			sellerID := uuid.NewString()
+			sellerCode := strings.ToLower("merchant-" + strings.ReplaceAll(merchantID, "-", ""))
+			if err := tx.QueryRow(ctx, `
+				INSERT INTO sellers (id, code, name, status, merchant_id)
+				VALUES ($1, $2, $3, 'active', $4)
+				RETURNING created_at, updated_at
+			`, sellerID, sellerCode, merchantName, merchantID).Scan(&seller.CreatedAt, &seller.UpdatedAt); err != nil {
+				return translatePGError(err, "create merchant retail seller")
+			}
+			if err := upsertJSONSettings(ctx, tx, `
+				INSERT INTO seller_settings (seller_id, settings)
+				VALUES ($1, $2)
+				ON CONFLICT (seller_id) DO UPDATE SET settings = EXCLUDED.settings, updated_at = now()
+			`, sellerID, nil); err != nil {
+				return err
+			}
+			seller = Seller{
+				ID:        sellerID,
+				Code:      sellerCode,
+				Name:      merchantName,
+				Status:    "active",
+				CreatedAt: seller.CreatedAt,
+				UpdatedAt: seller.UpdatedAt,
+			}
+		}
+
+		_, err = tx.Exec(ctx, `
+			INSERT INTO seller_members (id, seller_id, principal_subject, role, status)
+			VALUES ($1, $2, $3, 'owner', 'active')
+			ON CONFLICT (seller_id, principal_subject)
+			DO UPDATE SET role = 'owner', status = 'active', updated_at = now()
+		`, uuid.NewString(), seller.ID, subject)
+		if err != nil {
+			return translatePGError(err, "upsert merchant retail seller member")
+		}
+		return nil
+	})
+	return seller, err
+}
+
 func (r Repository) ListSuppliers(ctx context.Context, page Page) ([]Supplier, error) {
 	page = normalizePage(page)
 	rows, err := r.pool.Query(ctx, `

@@ -1673,6 +1673,21 @@ func internalRoutes() []openapi.RouteSpec {
 			Responses: readResponses("Merchant bootstrap", merchants.MerchantBootstrap{}),
 		},
 		{
+			Method: http.MethodPost, Path: "/internal/v1/merchants/{merchantID}/stores", OperationID: "internalCreateMerchantStore",
+			Summary: "Create a retail store for a Merchant workspace", Tags: []string{"Merchant Console"},
+			Description: "Merchant-authorized write: enforces active Merchant, active RETAIL capability, active membership, and the retail stores permission. " +
+				"Core owns the compatibility bridge to the legacy seller profile used by the stores table.",
+			Parameters:  []openapi.ParameterSpec{pathParam("merchantID", "Merchant identifier")},
+			RequestBody: StoreCreateRequest{},
+			Responses:   createResponses("Created store", commerce.Store{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/merchants/self/retail-workspace", OperationID: "internalEnsureRetailWorkspace",
+			Summary: "Ensure the authenticated Seller has a retail Merchant workspace", Tags: []string{"Merchant Console"},
+			RequestBody: EnsureRetailWorkspaceRequest{},
+			Responses:   writeResponses("Retail Merchant workspace", merchants.Merchant{}),
+		},
+		{
 			Method: http.MethodPost, Path: "/internal/v1/local-validation/merchant-console/scenarios", OperationID: "internalProvisionLocalMerchantConsoleValidationScenarios",
 			Summary: "Provision local Merchant Console validation scenarios", Tags: []string{"Local Validation"},
 			Description: "Local-only Feature 026 provisioning endpoint. It is available only when CORE_LOCAL_VALIDATION_PROVISIONING_ENABLED=true, " +
