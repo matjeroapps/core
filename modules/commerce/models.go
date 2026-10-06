@@ -538,6 +538,7 @@ type SellerProductDetail struct {
 	Source           string                     `json:"source"` // seller_owned, supplier_backed
 	Translations     []ProductTranslation       `json:"translations"`
 	Categories       []Category                 `json:"categories"`
+	StoreCategories  []StoreCategoryRef         `json:"store_categories"`
 	Variants         []Variant                  `json:"variants"`
 	SKUs             []SKU                      `json:"skus"`
 	Media            []MediaMetadata            `json:"media"`
@@ -628,9 +629,10 @@ type CompleteMediaUploadRequest struct {
 }
 
 type SellerProductDraft struct {
-	Slug         string               `json:"slug"`
-	Translations []ProductTranslation `json:"translations"`
-	CategoryIDs  []string             `json:"category_ids"`
+	Slug             string               `json:"slug"`
+	Translations     []ProductTranslation `json:"translations"`
+	CategoryIDs      []string             `json:"category_ids"`
+	StoreCategoryIDs []string             `json:"store_category_ids"`
 }
 
 // MediaUploadIntent tracks a server-side scoped presign request.

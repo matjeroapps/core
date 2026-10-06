@@ -190,9 +190,10 @@ func toSellerOrderDetail(view commerce.SellerOrderView) sellerOrderDetail {
 type StoreProductCreateRequest = commerce.SellerProductDraft
 
 type StoreProductUpdateRequest struct {
-	Slug         string                        `json:"slug"`
-	Translations []commerce.ProductTranslation `json:"translations"`
-	CategoryIDs  []string                      `json:"category_ids"`
+	Slug             string                        `json:"slug"`
+	Translations     []commerce.ProductTranslation `json:"translations"`
+	CategoryIDs      []string                      `json:"category_ids"`
+	StoreCategoryIDs []string                      `json:"store_category_ids"`
 }
 
 type VariantDimensionsDTO struct {
@@ -327,7 +328,7 @@ func (s *server) handleUpdateStoreProduct(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	detail, err := s.deps.Commerce.UpdateSellerProductForSubject(r.Context(), subject, storeID, productID, req.Slug, req.Translations, req.CategoryIDs)
+	detail, err := s.deps.Commerce.UpdateSellerProductForSubject(r.Context(), subject, storeID, productID, req.Slug, req.Translations, req.CategoryIDs, req.StoreCategoryIDs)
 	if err != nil {
 		writeDomainError(w, err)
 		return

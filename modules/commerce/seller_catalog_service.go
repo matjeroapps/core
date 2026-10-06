@@ -79,6 +79,11 @@ func (s Service) GetSellerProductDetailForSubject(ctx context.Context, subject, 
 		return SellerProductDetail{}, err
 	}
 
+	storeCategories, err := s.repo.GetStoreProductCategoryRefs(ctx, productID)
+	if err != nil {
+		return SellerProductDetail{}, err
+	}
+
 	variants, err := s.repo.ListVariantsByProductID(ctx, productID)
 	if err != nil {
 		return SellerProductDetail{}, err
@@ -157,6 +162,7 @@ func (s Service) GetSellerProductDetailForSubject(ctx context.Context, subject, 
 		Source:           source,
 		Translations:     translations,
 		Categories:       categories,
+		StoreCategories:  storeCategories,
 		Variants:         variants,
 		SKUs:             skus,
 		Media:            media,
@@ -326,7 +332,7 @@ func (s Service) ListSellerProductsForSubject(ctx context.Context, subject, stor
 	return s.repo.ListStoreProducts(ctx, storeID, statusFilter, sourceFilter, queryFilter, limit, offset)
 }
 
-func (s Service) UpdateSellerProductForSubject(ctx context.Context, subject, storeID, productID, slug string, translations []ProductTranslation, categoryIDs []string) (SellerProductDetail, error) {
+func (s Service) UpdateSellerProductForSubject(ctx context.Context, subject, storeID, productID, slug string, translations []ProductTranslation, categoryIDs []string, storeCategoryIDs []string) (SellerProductDetail, error) {
 	store, err := s.repo.GetStore(ctx, storeID)
 	if err != nil {
 		return SellerProductDetail{}, err
@@ -361,6 +367,15 @@ func (s Service) UpdateSellerProductForSubject(ctx context.Context, subject, sto
 
 	if categoryIDs != nil {
 		if err := s.repo.SetProductCategories(ctx, productID, categoryIDs); err != nil {
+			return SellerProductDetail{}, err
+		}
+	}
+
+	if storeCategoryIDs != nil {
+		if err := s.validateStoreCategoryAssignment(ctx, storeID, storeCategoryIDs); err != nil {
+			return SellerProductDetail{}, err
+		}
+		if err := s.repo.SetStoreProductCategories(ctx, productID, storeID, storeCategoryIDs); err != nil {
 			return SellerProductDetail{}, err
 		}
 	}
