@@ -42,6 +42,7 @@ type Config struct {
 	// Set MEDIA_S3_BUCKET (plus credentials) to enable presigned uploads.
 	// In production the bucket name is required; startup refuses without it.
 	MediaS3Endpoint        string
+	MediaS3PresignEndpoint string
 	MediaS3Region          string
 	MediaS3Bucket          string
 	MediaS3AccessKeyID     string
@@ -169,6 +170,7 @@ func Load(serviceName string) (Config, error) {
 		ReservedSubdomains:          stringSliceEnv("RESERVED_SUBDOMAINS", []string{"www", "api", "admin", "app", "cdn", "mail", "seller", "supplier", "static", "assets"}),
 		ThemePreviewSecret:          stringEnv("THEME_PREVIEW_SECRET", ""),
 		MediaS3Endpoint:             stringEnv("MEDIA_S3_ENDPOINT", ""),
+		MediaS3PresignEndpoint:      stringEnv("MEDIA_S3_PRESIGN_ENDPOINT", ""),
 		MediaS3Region:               stringEnv("MEDIA_S3_REGION", "us-east-1"),
 		MediaS3Bucket:               stringEnv("MEDIA_S3_BUCKET", ""),
 		MediaS3AccessKeyID:          stringEnv("MEDIA_S3_ACCESS_KEY_ID", ""),
