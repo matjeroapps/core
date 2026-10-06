@@ -162,6 +162,33 @@ func (r Repository) CreateSellerProductAtomically(ctx context.Context, sellerID,
 			}
 		}
 
+		// 4a. Store-scoped categories: every id must belong to this store
+		// (FR-013). Validated here inside the same transaction so a rejected
+		// create leaves nothing behind.
+		if len(draft.StoreCategoryIDs) > 0 {
+			var matching int
+			if err := tx.QueryRow(ctx, `
+				SELECT count(*) FROM store_categories WHERE store_id = $1 AND id = ANY($2)
+			`, storeID, draft.StoreCategoryIDs).Scan(&matching); err != nil {
+				return translatePGError(err, "validate store categories atomically")
+			}
+			if matching != len(draft.StoreCategoryIDs) {
+				return fmt.Errorf("%w: store categories must belong to the product's store", ErrInvalidInput)
+			}
+			for _, categoryID := range draft.StoreCategoryIDs {
+				if categoryID == "" {
+					continue
+				}
+				if _, err := tx.Exec(ctx, `
+					INSERT INTO store_product_categories (product_id, store_category_id)
+					VALUES ($1, $2)
+					ON CONFLICT DO NOTHING
+				`, productID, categoryID); err != nil {
+					return translatePGError(err, "insert store product category atomically")
+				}
+			}
+		}
+
 		// 4. Categories
 		if len(draft.CategoryIDs) > 0 {
 			if _, err := tx.Exec(ctx, `DELETE FROM product_categories WHERE product_id = $1`, productID); err != nil {

@@ -406,6 +406,16 @@ func NewRouter(deps Dependencies) chi.Router {
 			r.Post("/stores/{storeID}/products/{productID}/media-references", server.handleAttachProductMediaReference)
 			r.Put("/stores/{storeID}/products/{productID}/media-references/{referenceID}", server.handleUpdateProductMediaReference)
 			r.Delete("/stores/{storeID}/products/{productID}/media-references/{referenceID}", server.handleDetachProductMediaReference)
+
+			// Store-scoped Categories (seller-managed, per-store; never exposes
+			// the platform-global category records).
+			r.Get("/stores/{storeID}/categories", server.handleListStoreCategories)
+			r.Post("/stores/{storeID}/categories", server.handleCreateStoreCategory)
+			r.Get("/stores/{storeID}/categories/{categoryID}", server.handleGetStoreCategory)
+			r.Put("/stores/{storeID}/categories/{categoryID}", server.handleUpdateStoreCategory)
+			r.Post("/stores/{storeID}/categories/{categoryID}/status", server.handleTransitionStoreCategoryStatus)
+			r.Delete("/stores/{storeID}/categories/{categoryID}", server.handleDeleteStoreCategory)
+			r.Post("/stores/{storeID}/categories/reorder", server.handleReorderStoreCategories)
 			r.Get("/stores/{storeID}/supplier-offers", server.handleListSupplierCatalog)
 			r.Post("/stores/{storeID}/supplier-offers/{offerID}/imports", server.handleImportSupplierOffer)
 			r.Get("/stores/{storeID}/listings/{listingID}", server.handleGetStoreListing)

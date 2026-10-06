@@ -41,6 +41,7 @@ func setupSellerCatalogTestDB(t *testing.T) (*database.Pool, Service, Repository
 		"000015_media_upload_intent.up.sql",
 		"000025_seller_catalog_phase_b.up.sql",
 		"000026_seller_catalog_phase_c.up.sql",
+		"000044_store_scoped_categories.up.sql",
 	}
 
 	migrationNames := make([]string, 0, len(migrations))
@@ -338,7 +339,7 @@ func TestSellerProductTenantIsolationAndSecurity(t *testing.T) {
 	}
 
 	// Security Test 2: Seller B cannot update Seller A's product (returns ErrNotFound)
-	if _, err := service.UpdateSellerProductForSubject(ctx, subjectB, storeB.ID, detailA.Product.ID, "hacked-slug", nil, nil); !errors.Is(err, ErrNotFound) {
+	if _, err := service.UpdateSellerProductForSubject(ctx, subjectB, storeB.ID, detailA.Product.ID, "hacked-slug", nil, nil, nil); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Expected ErrNotFound when Seller B updates Seller A product, got %v", err)
 	}
 

@@ -815,6 +815,68 @@ func internalRoutes() []openapi.RouteSpec {
 			RequestBody: StoreProductUpdateRequest{},
 			Responses:   writeResponses("Updated product detail", sellerProductDetailResponse{}),
 		},
+		// --- Store-scoped categories (seller-managed, per-store) ---
+		{
+			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/categories", OperationID: "internalListStoreCategories",
+			Summary: "List a store's categories (seller)", Tags: []string{"Seller Catalog"},
+			Parameters: append([]openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				openapi.StringParam("status", "Category status filter (active, inactive, archived)", false),
+			}, pageParams...),
+			Responses: readResponses("Store category collection", storeCategoryListResponse{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/categories", OperationID: "internalCreateStoreCategory",
+			Summary: "Create a store category", Tags: []string{"Seller Catalog"},
+			Parameters:  []openapi.ParameterSpec{pathParam("storeID", "Store identifier")},
+			RequestBody: createStoreCategoryRequest{},
+			Responses:   createResponses("Created store category", storeCategoryResponse{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/categories/{categoryID}", OperationID: "internalGetStoreCategory",
+			Summary: "Get a store category", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("categoryID", "Category identifier"),
+			},
+			Responses: readResponses("Store category", storeCategoryResponse{}),
+		},
+		{
+			Method: http.MethodPut, Path: "/internal/v1/stores/{storeID}/categories/{categoryID}", OperationID: "internalUpdateStoreCategory",
+			Summary: "Update a store category", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("categoryID", "Category identifier"),
+			},
+			RequestBody: updateStoreCategoryRequest{},
+			Responses:   writeResponses("Updated store category", storeCategoryResponse{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/categories/{categoryID}/status", OperationID: "internalTransitionStoreCategoryStatus",
+			Summary: "Transition a store category status (active, inactive, archived)", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("categoryID", "Category identifier"),
+			},
+			RequestBody: storeCategoryStatusRequest{},
+			Responses:   writeResponses("Updated store category", storeCategoryResponse{}),
+		},
+		{
+			Method: http.MethodDelete, Path: "/internal/v1/stores/{storeID}/categories/{categoryID}", OperationID: "internalDeleteStoreCategory",
+			Summary: "Delete an empty leaf store category", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("categoryID", "Category identifier"),
+			},
+			Responses: writeResponses("Deletion acknowledged", StatusResponse{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/categories/reorder", OperationID: "internalReorderStoreCategories",
+			Summary: "Reorder store categories with explicit (id, sort_order) pairs", Tags: []string{"Seller Catalog"},
+			Parameters:  []openapi.ParameterSpec{pathParam("storeID", "Store identifier")},
+			RequestBody: reorderStoreCategoriesRequest{},
+			Responses:   writeResponses("Reorder acknowledged", StatusResponse{}),
+		},
 		{
 			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/products/{productID}/variants", OperationID: "internalCreateProductVariant",
 			Summary: "Create a product variant", Tags: []string{"Seller Catalog"},

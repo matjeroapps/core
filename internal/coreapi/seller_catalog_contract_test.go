@@ -68,6 +68,7 @@ func setupP58Contract(t *testing.T) p58ContractEnv {
 		"000016_catalog_invariants",
 		"000025_seller_catalog_phase_b",
 		"000026_seller_catalog_phase_c",
+		"000044_store_scoped_categories",
 	}
 	migrationPaths := make([]string, 0, len(migrationNames))
 	for _, name := range migrationNames {
@@ -466,4 +467,60 @@ func TestP58SellerContractShapes(t *testing.T) {
 		t.Fatalf("timeline must contain the transition event")
 	}
 	_ = snapshot
+}
+
+func TestStoreProductCategoryContract(t *testing.T) {
+	env := setupP58Contract(t)
+
+	// Two categories in the seller's store, one in a foreign store.
+	catA, err := env.service.CreateStoreCategoryForSubject(env.ctx, p58Subject, env.storeID, "contract-cat-a", nil, nil, []commerce.StoreCategoryTranslation{{Locale: "en", Name: "Contract A"}})
+	if err != nil {
+		t.Fatalf("create store category A: %v", err)
+	}
+	_, err = env.service.CreateStoreCategoryForSubject(env.ctx, p58Subject, env.storeID, "contract-cat-b", nil, nil, []commerce.StoreCategoryTranslation{{Locale: "en", Name: "Contract B"}})
+	if err != nil {
+		t.Fatalf("create store category B: %v", err)
+	}
+
+	otherSubject := "contract-other-seller-" + fmt.Sprintf("%d", time.Now().UnixNano())
+	otherSeller, err := env.repo.CreateSeller(env.ctx, "contract-other-"+otherSubject, "Other Seller", "active", nil)
+	if err != nil {
+		t.Fatalf("create other seller: %v", err)
+	}
+	if _, err := env.repo.CreateSellerMember(env.ctx, otherSeller.ID, otherSubject, "owner", "active"); err != nil {
+		t.Fatalf("create other member: %v", err)
+	}
+	otherStore, err := env.repo.CreateStore(env.ctx, otherSeller.ID, "EG", "contract-other-store-"+otherSubject, "Other Store", "active", nil)
+	if err != nil {
+		t.Fatalf("create other store: %v", err)
+	}
+	foreignCat, err := env.service.CreateStoreCategoryForSubject(env.ctx, otherSubject, otherStore.ID, "contract-cat-foreign", nil, nil, []commerce.StoreCategoryTranslation{{Locale: "en", Name: "Foreign"}})
+	if err != nil {
+		t.Fatalf("create foreign category: %v", err)
+	}
+
+	// Create a product with store_category_ids; the detail response carries
+	// readable refs so clients never render raw ids.
+	createRec := env.do(t, http.MethodPost, "/internal/v1/stores/"+env.storeID+"/products", StoreProductCreateRequest{
+		Slug:             "contract-cat-product",
+		Translations:     []commerce.ProductTranslation{{Locale: "en", Name: "Contract Product"}},
+		StoreCategoryIDs: []string{catA.ID},
+	})
+	createBody := env.requireOK(t, createRec, http.StatusCreated)
+	jsonKeys(t, "create", createBody, "store_category_ids", "store_categories")
+	refs, _ := createBody["store_categories"].([]any)
+	if len(refs) != 1 {
+		t.Fatalf("store_categories = %v, want 1 ref", createBody["store_categories"])
+	}
+	ref := refs[0].(map[string]any)
+	if ref["name"] != "Contract A" || ref["slug"] != "contract-cat-a" {
+		t.Fatalf("ref = %v, want readable Contract A", ref)
+	}
+	productID, _ := createBody["product"].(map[string]any)["id"].(string)
+
+	// Updating with the foreign category is a validation error.
+	updateRec := env.do(t, http.MethodPut, "/internal/v1/stores/"+env.storeID+"/products/"+productID, StoreProductUpdateRequest{
+		StoreCategoryIDs: []string{foreignCat.ID},
+	})
+	env.requireOK(t, updateRec, http.StatusBadRequest)
 }

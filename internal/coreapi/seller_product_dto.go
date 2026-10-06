@@ -99,6 +99,8 @@ type sellerProductDetailResponse struct {
 	Source           string                              `json:"source"`
 	Translations     []commerce.ProductTranslation       `json:"translations"`
 	CategoryIDs      []string                            `json:"category_ids"`
+	StoreCategoryIDs []string                            `json:"store_category_ids"`
+	StoreCategories  []commerce.StoreCategoryRef         `json:"store_categories"`
 	Variants         []commerce.Variant                  `json:"variants"`
 	SKUs             []commerce.SKU                      `json:"skus"`
 	Media            []commerce.MediaMetadata            `json:"media"`
@@ -114,6 +116,13 @@ func toSellerProductDetailResponse(detail commerce.SellerProductDetail) sellerPr
 	categoryIDs := make([]string, 0, len(detail.Categories))
 	for _, c := range detail.Categories {
 		categoryIDs = append(categoryIDs, c.ID)
+	}
+
+	storeCategoryIDs := make([]string, 0, len(detail.StoreCategories))
+	storeCategories := make([]commerce.StoreCategoryRef, 0, len(detail.StoreCategories))
+	for _, ref := range detail.StoreCategories {
+		storeCategoryIDs = append(storeCategoryIDs, ref.ID)
+		storeCategories = append(storeCategories, ref)
 	}
 
 	var currentPrice *moneyDTO
@@ -136,12 +145,14 @@ func toSellerProductDetailResponse(detail commerce.SellerProductDetail) sellerPr
 			CreatedAt: detail.Product.CreatedAt,
 			UpdatedAt: detail.Product.UpdatedAt,
 		},
-		Source:       detail.Source,
-		Translations: detail.Translations,
-		CategoryIDs:  categoryIDs,
-		Variants:     detail.Variants,
-		SKUs:         detail.SKUs,
-		Media:        detail.Media,
+		Source:           detail.Source,
+		Translations:     detail.Translations,
+		CategoryIDs:      categoryIDs,
+		StoreCategoryIDs: storeCategoryIDs,
+		StoreCategories:  storeCategories,
+		Variants:         detail.Variants,
+		SKUs:             detail.SKUs,
+		Media:            detail.Media,
 		Listing: sellerListingDTO{
 			ID:         detail.Listing.ID,
 			StoreID:    detail.Listing.StoreID,
