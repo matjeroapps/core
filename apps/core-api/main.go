@@ -19,6 +19,8 @@ import (
 	"core/internal/coreapi"
 	"core/internal/finance"
 	"core/internal/integration"
+	"core/internal/inventory"
+	"core/internal/listings"
 	"core/internal/marketplace"
 	"core/internal/marketplace_finance"
 	"core/internal/merchants"
@@ -136,6 +138,8 @@ func run(ctx context.Context) error {
 		Balance:             balService,
 		Settlement:          settleService,
 		MarketplaceFinance:  mfService,
+		Inventory:           inventory.NewService(inventory.NewRepository(db.Pool)),
+		Listings:            listings.NewService(listings.NewPostgresRepository(db.Pool)),
 		Merchants:           merchantService,
 		MerchantBootstrap:   merchants.NewBootstrapService(db.Pool, merchants.NewPostgresRepository(db.Pool)),
 		MerchantValidation:  merchantValidationProvisioner,

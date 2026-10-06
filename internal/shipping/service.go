@@ -45,12 +45,22 @@ func (s Service) CreateShipment(ctx context.Context, params CreateShipmentParams
 	shipmentID := uuid.NewString()
 	initialStatus := StatusPending
 
+	tracking := strings.TrimSpace(params.TrackingNumber)
+	if tracking == "" {
+		shortOrder := params.OrderID
+		if len(shortOrder) > 8 {
+			shortOrder = shortOrder[:8]
+		}
+		tracking = fmt.Sprintf("TRK-%s-%s", shortOrder, shipmentID[:6])
+	}
+
 	shipment := Shipment{
 		ID:                    shipmentID,
 		OrderID:               params.OrderID,
 		FulfillmentLocationID: params.FulfillmentLocationID,
 		Status:                initialStatus,
-		TrackingNumber:        strings.TrimSpace(params.TrackingNumber),
+		CarrierName:           strings.TrimSpace(params.CarrierName),
+		TrackingNumber:        tracking,
 		ShippingCostMinor:     params.ShippingCostMinor,
 		CodAmountMinor:        params.CodAmountMinor,
 		Currency:              strings.ToUpper(strings.TrimSpace(params.Currency)),
@@ -185,4 +195,8 @@ func (s Service) GetShipment(ctx context.Context, shipmentID string) (*Shipment,
 
 func (s Service) ListShipmentsForOrder(ctx context.Context, orderID string) ([]Shipment, error) {
 	return s.repo.ListShipmentsByOrderID(ctx, nil, orderID)
+}
+
+func (s Service) ListShipmentsForStore(ctx context.Context, storeID string, status *string, page, pageSize int) ([]Shipment, int, error) {
+	return s.repo.ListShipmentsByStoreID(ctx, nil, storeID, status, page, pageSize)
 }

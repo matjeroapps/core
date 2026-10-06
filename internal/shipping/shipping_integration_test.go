@@ -42,6 +42,7 @@ func setupShippingDB(t *testing.T) (*database.Pool, shipping.Service, context.Co
 		"000015_media_upload_intent",
 		"000016_catalog_invariants",
 		"000017_create_shipping_schema",
+		"000042_inventory_thresholds_and_shipping_carrier",
 	}
 
 	for _, name := range migrations {

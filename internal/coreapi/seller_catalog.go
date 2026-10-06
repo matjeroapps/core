@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"core/internal/listings"
 	"core/internal/serviceauth"
 	"core/modules/commerce"
 	"core/packages/httpx"
@@ -194,9 +195,21 @@ type StoreProductUpdateRequest struct {
 	CategoryIDs  []string                      `json:"category_ids"`
 }
 
+type VariantDimensionsDTO struct {
+	LengthMM *int `json:"length_mm,omitempty"`
+	WidthMM  *int `json:"width_mm,omitempty"`
+	HeightMM *int `json:"height_mm,omitempty"`
+}
+
 type VariantCreateRequest struct {
-	Code   string `json:"code"`
-	Status string `json:"status"`
+	Code            string                             `json:"code"`
+	Status          string                             `json:"status"`
+	SKUCode         *string                            `json:"sku_code,omitempty"`
+	Barcode         *string                            `json:"barcode,omitempty"`
+	AttributeValues []commerce.VariantAttributeMapping `json:"attribute_values,omitempty"`
+	WeightGrams     *int                               `json:"weight_grams,omitempty"`
+	Dimensions      *VariantDimensionsDTO              `json:"dimensions,omitempty"`
+	PriceMinorUnits *int64                             `json:"price_minor_units,omitempty"`
 }
 
 type SKUCreateRequest struct {
@@ -335,6 +348,31 @@ func (s *server) handleCreateProductVariant(w http.ResponseWriter, r *http.Reque
 	var req VariantCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, CodeInvalidArgument)
+		return
+	}
+
+	if req.SKUCode != nil && *req.SKUCode != "" {
+		skuCode := *req.SKUCode
+		barcode := ""
+		if req.Barcode != nil {
+			barcode = *req.Barcode
+		}
+		var l, width, h *int
+		if req.Dimensions != nil {
+			l = req.Dimensions.LengthMM
+			width = req.Dimensions.WidthMM
+			h = req.Dimensions.HeightMM
+		}
+		res, err := s.deps.Commerce.CreateVariantWithAttributesAndSKU(
+			r.Context(), subject, storeID, productID,
+			req.Code, req.Status, skuCode, barcode,
+			req.AttributeValues, req.WeightGrams, l, width, h, req.PriceMinorUnits,
+		)
+		if err != nil {
+			writeDomainError(w, err)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusCreated, res)
 		return
 	}
 
@@ -980,7 +1018,18 @@ func (s *server) handleImportSupplierOffer(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	listing, err := s.deps.Commerce.ImportSupplierOfferForSubject(r.Context(), subject, storeID, offerID)
+	var req SupplierOfferImportRequest
+	if r.Body != nil && r.ContentLength > 0 {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	params := commerce.SupplierOfferImportParams{
+		MarkupPercentage:      req.MarkupPercentage,
+		RetailPriceMinorUnits: req.RetailPriceMinorUnits,
+		ShippingSubsidyPolicy: req.ShippingSubsidyPolicy,
+	}
+
+	listing, err := s.deps.Commerce.ImportSupplierOfferWithPricingForSubject(r.Context(), subject, storeID, offerID, params)
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -1040,7 +1089,40 @@ func (s *server) handleSetStoreListingPrice(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	price, err := s.deps.Commerce.SetListingPriceForSubject(r.Context(), subject, storeID, listingID, req.AmountMinor, req.Currency)
+	store, err := s.deps.Repo.GetStore(r.Context(), storeID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	if _, err := s.deps.Commerce.RequireSellerManagerAccess(r.Context(), subject, store.SellerID); err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	_, ownerErr := s.deps.Commerce.RequireSellerOwnerAccess(r.Context(), subject, store.SellerID)
+	isOwner := (ownerErr == nil)
+
+	retailMinor := req.AmountMinor
+	if req.RetailPriceMinorUnits != nil {
+		retailMinor = *req.RetailPriceMinorUnits
+	}
+
+	if s.deps.Listings != nil {
+		listingReq := listings.ListingPricingRequest{
+			RetailPriceMinorUnits: retailMinor,
+			AllowSubWholesale:     req.AllowSubWholesale,
+			AuditReason:           req.AuditReason,
+		}
+		resp, err := s.deps.Listings.SetListingPrice(r.Context(), storeID, listingID, listingReq, isOwner)
+		if err != nil {
+			writeDomainError(w, err)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, resp)
+		return
+	}
+
+	price, err := s.deps.Commerce.SetListingPriceForSubject(r.Context(), subject, storeID, listingID, retailMinor, req.Currency)
 	if err != nil {
 		writeDomainError(w, err)
 		return

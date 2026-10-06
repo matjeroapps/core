@@ -10286,12 +10286,23 @@
             "application/json": {
               "schema": {
                 "properties": {
+                  "allow_sub_wholesale": {
+                    "type": "boolean"
+                  },
                   "amount_minor": {
                     "format": "int64",
                     "type": "integer"
                   },
+                  "audit_reason": {
+                    "type": "string"
+                  },
                   "currency": {
                     "type": "string"
+                  },
+                  "retail_price_minor_units": {
+                    "format": "int64",
+                    "nullable": true,
+                    "type": "integer"
                   }
                 },
                 "required": [
@@ -18773,6 +18784,9 @@
                     "items": {
                       "items": {
                         "properties": {
+                          "carrier_name": {
+                            "type": "string"
+                          },
                           "cod_amount_minor": {
                             "format": "int64",
                             "type": "integer"
@@ -19053,6 +19067,9 @@
             "application/json": {
               "schema": {
                 "properties": {
+                  "carrier_name": {
+                    "type": "string"
+                  },
                   "cod_amount_minor": {
                     "format": "int64",
                     "type": "integer"
@@ -19109,6 +19126,9 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "carrier_name": {
+                      "type": "string"
+                    },
                     "cod_amount_minor": {
                       "format": "int64",
                       "type": "integer"
@@ -23912,6 +23932,9 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "carrier_name": {
+                      "type": "string"
+                    },
                     "cod_amount_minor": {
                       "format": "int64",
                       "type": "integer"
@@ -24211,6 +24234,9 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "carrier_name": {
+                      "type": "string"
+                    },
                     "cod_amount_minor": {
                       "format": "int64",
                       "type": "integer"
@@ -32125,6 +32151,319 @@
         ]
       }
     },
+    "/internal/v1/stores/{storeID}/inventory/adjustments": {
+      "post": {
+        "operationId": "internalAdjustStoreInventoryDualMode",
+        "parameters": [
+          {
+            "description": "Override locale resolution",
+            "in": "query",
+            "name": "locale",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Store identifier",
+            "in": "path",
+            "name": "storeID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "fulfillment_location_id": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "qty_delta": {
+                    "format": "int64",
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "reason_code": {
+                    "type": "string"
+                  },
+                  "sku_id": {
+                    "type": "string"
+                  },
+                  "target_qty": {
+                    "format": "int64",
+                    "nullable": true,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "fulfillment_location_id",
+                  "reason_code",
+                  "sku_id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "available_qty": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "fulfillment_location_id": {
+                      "type": "string"
+                    },
+                    "movement_id": {
+                      "type": "string"
+                    },
+                    "on_hand_qty": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "quantity_delta": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "reason_code": {
+                      "type": "string"
+                    },
+                    "reserved_qty": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "sku_id": {
+                      "type": "string"
+                    },
+                    "snapshot_id": {
+                      "type": "string"
+                    },
+                    "updated_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "available_qty",
+                    "fulfillment_location_id",
+                    "movement_id",
+                    "on_hand_qty",
+                    "quantity_delta",
+                    "reason_code",
+                    "reserved_qty",
+                    "sku_id",
+                    "snapshot_id",
+                    "updated_at"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Adjusted inventory stock"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Execute dual-mode inventory stock adjustment",
+        "tags": [
+          "Inventory"
+        ]
+      }
+    },
     "/internal/v1/stores/{storeID}/inventory/snapshots": {
       "post": {
         "operationId": "internalCreateStoreInventorySnapshot",
@@ -34609,12 +34948,23 @@
             "application/json": {
               "schema": {
                 "properties": {
+                  "allow_sub_wholesale": {
+                    "type": "boolean"
+                  },
                   "amount_minor": {
                     "format": "int64",
                     "type": "integer"
                   },
+                  "audit_reason": {
+                    "type": "string"
+                  },
                   "currency": {
                     "type": "string"
+                  },
+                  "retail_price_minor_units": {
+                    "format": "int64",
+                    "nullable": true,
+                    "type": "integer"
                   }
                 },
                 "required": [
@@ -39179,6 +39529,12 @@
                         "locale": {
                           "type": "string"
                         },
+                        "meta_description": {
+                          "type": "string"
+                        },
+                        "meta_title": {
+                          "type": "string"
+                        },
                         "name": {
                           "type": "string"
                         },
@@ -39518,8 +39874,23 @@
                             "format": "date-time",
                             "type": "string"
                           },
+                          "height_mm": {
+                            "format": "int32",
+                            "nullable": true,
+                            "type": "integer"
+                          },
                           "id": {
                             "type": "string"
+                          },
+                          "length_mm": {
+                            "format": "int32",
+                            "nullable": true,
+                            "type": "integer"
+                          },
+                          "price_minor_units": {
+                            "format": "int64",
+                            "nullable": true,
+                            "type": "integer"
                           },
                           "status": {
                             "type": "string"
@@ -39530,6 +39901,16 @@
                           },
                           "variant_id": {
                             "type": "string"
+                          },
+                          "weight_grams": {
+                            "format": "int32",
+                            "nullable": true,
+                            "type": "integer"
+                          },
+                          "width_mm": {
+                            "format": "int32",
+                            "nullable": true,
+                            "type": "integer"
                           }
                         },
                         "required": [
@@ -39554,6 +39935,12 @@
                             "type": "string"
                           },
                           "locale": {
+                            "type": "string"
+                          },
+                          "meta_description": {
+                            "type": "string"
+                          },
+                          "meta_title": {
                             "type": "string"
                           },
                           "name": {
@@ -40162,8 +40549,23 @@
                             "format": "date-time",
                             "type": "string"
                           },
+                          "height_mm": {
+                            "format": "int32",
+                            "nullable": true,
+                            "type": "integer"
+                          },
                           "id": {
                             "type": "string"
+                          },
+                          "length_mm": {
+                            "format": "int32",
+                            "nullable": true,
+                            "type": "integer"
+                          },
+                          "price_minor_units": {
+                            "format": "int64",
+                            "nullable": true,
+                            "type": "integer"
                           },
                           "status": {
                             "type": "string"
@@ -40174,6 +40576,16 @@
                           },
                           "variant_id": {
                             "type": "string"
+                          },
+                          "weight_grams": {
+                            "format": "int32",
+                            "nullable": true,
+                            "type": "integer"
+                          },
+                          "width_mm": {
+                            "format": "int32",
+                            "nullable": true,
+                            "type": "integer"
                           }
                         },
                         "required": [
@@ -40198,6 +40610,12 @@
                             "type": "string"
                           },
                           "locale": {
+                            "type": "string"
+                          },
+                          "meta_description": {
+                            "type": "string"
+                          },
+                          "meta_title": {
                             "type": "string"
                           },
                           "name": {
@@ -40455,6 +40873,12 @@
                           "type": "string"
                         },
                         "locale": {
+                          "type": "string"
+                        },
+                        "meta_description": {
+                          "type": "string"
+                        },
+                        "meta_title": {
                           "type": "string"
                         },
                         "name": {
@@ -40796,8 +41220,23 @@
                             "format": "date-time",
                             "type": "string"
                           },
+                          "height_mm": {
+                            "format": "int32",
+                            "nullable": true,
+                            "type": "integer"
+                          },
                           "id": {
                             "type": "string"
+                          },
+                          "length_mm": {
+                            "format": "int32",
+                            "nullable": true,
+                            "type": "integer"
+                          },
+                          "price_minor_units": {
+                            "format": "int64",
+                            "nullable": true,
+                            "type": "integer"
                           },
                           "status": {
                             "type": "string"
@@ -40808,6 +41247,16 @@
                           },
                           "variant_id": {
                             "type": "string"
+                          },
+                          "weight_grams": {
+                            "format": "int32",
+                            "nullable": true,
+                            "type": "integer"
+                          },
+                          "width_mm": {
+                            "format": "int32",
+                            "nullable": true,
+                            "type": "integer"
                           }
                         },
                         "required": [
@@ -40832,6 +41281,12 @@
                             "type": "string"
                           },
                           "locale": {
+                            "type": "string"
+                          },
+                          "meta_description": {
+                            "type": "string"
+                          },
+                          "meta_title": {
                             "type": "string"
                           },
                           "name": {
@@ -44582,11 +45037,68 @@
             "application/json": {
               "schema": {
                 "properties": {
+                  "attribute_values": {
+                    "items": {
+                      "properties": {
+                        "attribute_id": {
+                          "type": "string"
+                        },
+                        "attribute_value_id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "attribute_id",
+                        "attribute_value_id"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "barcode": {
+                    "nullable": true,
+                    "type": "string"
+                  },
                   "code": {
+                    "type": "string"
+                  },
+                  "dimensions": {
+                    "nullable": true,
+                    "properties": {
+                      "height_mm": {
+                        "format": "int32",
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "length_mm": {
+                        "format": "int32",
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "width_mm": {
+                        "format": "int32",
+                        "nullable": true,
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "price_minor_units": {
+                    "format": "int64",
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "sku_code": {
+                    "nullable": true,
                     "type": "string"
                   },
                   "status": {
                     "type": "string"
+                  },
+                  "weight_grams": {
+                    "format": "int32",
+                    "nullable": true,
+                    "type": "integer"
                   }
                 },
                 "required": [
@@ -44877,11 +45389,68 @@
             "application/json": {
               "schema": {
                 "properties": {
+                  "attribute_values": {
+                    "items": {
+                      "properties": {
+                        "attribute_id": {
+                          "type": "string"
+                        },
+                        "attribute_value_id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "attribute_id",
+                        "attribute_value_id"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "barcode": {
+                    "nullable": true,
+                    "type": "string"
+                  },
                   "code": {
+                    "type": "string"
+                  },
+                  "dimensions": {
+                    "nullable": true,
+                    "properties": {
+                      "height_mm": {
+                        "format": "int32",
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "length_mm": {
+                        "format": "int32",
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "width_mm": {
+                        "format": "int32",
+                        "nullable": true,
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "price_minor_units": {
+                    "format": "int64",
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "sku_code": {
+                    "nullable": true,
                     "type": "string"
                   },
                   "status": {
                     "type": "string"
+                  },
+                  "weight_grams": {
+                    "format": "int32",
+                    "nullable": true,
+                    "type": "integer"
                   }
                 },
                 "required": [
@@ -45209,8 +45778,23 @@
                       "format": "date-time",
                       "type": "string"
                     },
+                    "height_mm": {
+                      "format": "int32",
+                      "nullable": true,
+                      "type": "integer"
+                    },
                     "id": {
                       "type": "string"
+                    },
+                    "length_mm": {
+                      "format": "int32",
+                      "nullable": true,
+                      "type": "integer"
+                    },
+                    "price_minor_units": {
+                      "format": "int64",
+                      "nullable": true,
+                      "type": "integer"
                     },
                     "status": {
                       "type": "string"
@@ -45221,6 +45805,16 @@
                     },
                     "variant_id": {
                       "type": "string"
+                    },
+                    "weight_grams": {
+                      "format": "int32",
+                      "nullable": true,
+                      "type": "integer"
+                    },
+                    "width_mm": {
+                      "format": "int32",
+                      "nullable": true,
+                      "type": "integer"
                     }
                   },
                   "required": [
@@ -45520,8 +46114,23 @@
                       "format": "date-time",
                       "type": "string"
                     },
+                    "height_mm": {
+                      "format": "int32",
+                      "nullable": true,
+                      "type": "integer"
+                    },
                     "id": {
                       "type": "string"
+                    },
+                    "length_mm": {
+                      "format": "int32",
+                      "nullable": true,
+                      "type": "integer"
+                    },
+                    "price_minor_units": {
+                      "format": "int64",
+                      "nullable": true,
+                      "type": "integer"
                     },
                     "status": {
                       "type": "string"
@@ -45532,6 +46141,16 @@
                     },
                     "variant_id": {
                       "type": "string"
+                    },
+                    "weight_grams": {
+                      "format": "int32",
+                      "nullable": true,
+                      "type": "integer"
+                    },
+                    "width_mm": {
+                      "format": "int32",
+                      "nullable": true,
+                      "type": "integer"
                     }
                   },
                   "required": [
@@ -45737,6 +46356,320 @@
         "summary": "Update a SKU",
         "tags": [
           "Seller Catalog"
+        ]
+      }
+    },
+    "/internal/v1/stores/{storeID}/shipments": {
+      "get": {
+        "operationId": "internalListStoreShipments",
+        "parameters": [
+          {
+            "description": "Override locale resolution",
+            "in": "query",
+            "name": "locale",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Store identifier",
+            "in": "path",
+            "name": "storeID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Shipment status filter",
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Page size, capped by the service default",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Zero-based offset",
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "properties": {
+                          "carrier_name": {
+                            "type": "string"
+                          },
+                          "cod_amount_minor": {
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          "created_at": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "currency": {
+                            "type": "string"
+                          },
+                          "events": {
+                            "items": {
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "notes": {
+                                  "type": "string"
+                                },
+                                "occurred_at": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "shipment_id": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "occurred_at",
+                                "shipment_id",
+                                "status"
+                              ],
+                              "type": "object"
+                            },
+                            "type": "array"
+                          },
+                          "fulfillment_location_id": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "items": {
+                            "items": {
+                              "properties": {
+                                "created_at": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "id": {
+                                  "type": "string"
+                                },
+                                "order_item_id": {
+                                  "type": "string"
+                                },
+                                "quantity": {
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                "shipment_id": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "created_at",
+                                "id",
+                                "order_item_id",
+                                "quantity",
+                                "shipment_id"
+                              ],
+                              "type": "object"
+                            },
+                            "type": "array"
+                          },
+                          "order_id": {
+                            "type": "string"
+                          },
+                          "shipping_cost_minor": {
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "tracking_number": {
+                            "type": "string"
+                          },
+                          "updated_at": {
+                            "format": "date-time",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "cod_amount_minor",
+                          "created_at",
+                          "currency",
+                          "fulfillment_location_id",
+                          "id",
+                          "order_id",
+                          "shipping_cost_minor",
+                          "status",
+                          "updated_at"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Store shipment queue"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List all shipments for a store",
+        "tags": [
+          "Shipping"
         ]
       }
     },
@@ -54477,11 +55410,68 @@
             "application/json": {
               "schema": {
                 "properties": {
+                  "attribute_values": {
+                    "items": {
+                      "properties": {
+                        "attribute_id": {
+                          "type": "string"
+                        },
+                        "attribute_value_id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "attribute_id",
+                        "attribute_value_id"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "barcode": {
+                    "nullable": true,
+                    "type": "string"
+                  },
                   "code": {
+                    "type": "string"
+                  },
+                  "dimensions": {
+                    "nullable": true,
+                    "properties": {
+                      "height_mm": {
+                        "format": "int32",
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "length_mm": {
+                        "format": "int32",
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "width_mm": {
+                        "format": "int32",
+                        "nullable": true,
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "price_minor_units": {
+                    "format": "int64",
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "sku_code": {
+                    "nullable": true,
                     "type": "string"
                   },
                   "status": {
                     "type": "string"
+                  },
+                  "weight_grams": {
+                    "format": "int32",
+                    "nullable": true,
+                    "type": "integer"
                   }
                 },
                 "required": [
@@ -54809,8 +55799,23 @@
                       "format": "date-time",
                       "type": "string"
                     },
+                    "height_mm": {
+                      "format": "int32",
+                      "nullable": true,
+                      "type": "integer"
+                    },
                     "id": {
                       "type": "string"
+                    },
+                    "length_mm": {
+                      "format": "int32",
+                      "nullable": true,
+                      "type": "integer"
+                    },
+                    "price_minor_units": {
+                      "format": "int64",
+                      "nullable": true,
+                      "type": "integer"
                     },
                     "status": {
                       "type": "string"
@@ -54821,6 +55826,16 @@
                     },
                     "variant_id": {
                       "type": "string"
+                    },
+                    "weight_grams": {
+                      "format": "int32",
+                      "nullable": true,
+                      "type": "integer"
+                    },
+                    "width_mm": {
+                      "format": "int32",
+                      "nullable": true,
+                      "type": "integer"
                     }
                   },
                   "required": [

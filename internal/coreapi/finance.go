@@ -83,7 +83,36 @@ func (s *server) handleListStorePayouts(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	items := []PayoutResponse{}
+	page := parsePage(r)
+	pageNum := (page.Offset / page.Limit) + 1
+	if pageNum < 1 {
+		pageNum = 1
+	}
+
+	payouts, _, err := s.deps.Finance.ListStorePayouts(r.Context(), storeID, pageNum, page.Limit)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	items := make([]PayoutResponse, 0, len(payouts))
+	for _, p := range payouts {
+		ref := ""
+		if p.ReferenceNumber != nil {
+			ref = *p.ReferenceNumber
+		}
+		items = append(items, PayoutResponse{
+			ID:           p.ID,
+			StoreID:      p.StoreID,
+			AmountMinor:  p.AmountMinorUnits,
+			Currency:     p.Currency,
+			Status:       p.Status,
+			PayoutMethod: p.DestinationBank,
+			Reference:    ref,
+			CreatedAt:    p.CreatedAt,
+		})
+	}
+
 	httpx.WriteJSON(w, http.StatusOK, CollectionResponse[PayoutResponse]{
 		Items: items,
 	})

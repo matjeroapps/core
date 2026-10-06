@@ -24,6 +24,7 @@ type Shipment struct {
 	OrderID               string          `json:"order_id"`
 	FulfillmentLocationID string          `json:"fulfillment_location_id"`
 	Status                Status          `json:"status"`
+	CarrierName           string          `json:"carrier_name,omitempty"`
 	TrackingNumber        string          `json:"tracking_number,omitempty"`
 	ShippingCostMinor     int64           `json:"shipping_cost_minor"`
 	CodAmountMinor        int64           `json:"cod_amount_minor"`
@@ -53,6 +54,7 @@ type ShipmentEvent struct {
 type CreateShipmentParams struct {
 	OrderID               string
 	FulfillmentLocationID string
+	CarrierName           string
 	TrackingNumber        string
 	ShippingCostMinor     int64
 	CodAmountMinor        int64

@@ -27,4 +27,6 @@ var (
 	ErrMediaInUse               = errors.New("media in use")
 	ErrStoreMismatch            = errors.New("store mismatch")
 	ErrInternalError            = errors.New("internal error")
+	ErrOfferAlreadyImported     = errors.New("offer_already_imported")
+	ErrUnsafeMargin             = errors.New("unsafe_margin")
 )

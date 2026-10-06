@@ -387,6 +387,74 @@ func (s Service) CreateVariantForSubject(ctx context.Context, subject, storeID, 
 	return s.repo.CreateVariant(ctx, productID, code, status)
 }
 
+func (s Service) CreateVariantWithAttributesAndSKU(
+	ctx context.Context,
+	subject, storeID, productID string,
+	variantCode, variantStatus string,
+	skuCode, barcode string,
+	attributeValues []VariantAttributeMapping,
+	weightGrams, lengthMM, widthMM, heightMM *int,
+	priceMinorUnits *int64,
+) (VariantWithDetails, error) {
+	store, err := s.repo.GetStore(ctx, storeID)
+	if err != nil {
+		return VariantWithDetails{}, err
+	}
+	seller, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID)
+	if err != nil {
+		return VariantWithDetails{}, err
+	}
+	if _, err := s.repo.GetSellerProductBySellerAndProduct(ctx, seller.ID, productID); err != nil {
+		return VariantWithDetails{}, ErrNotFound
+	}
+	if _, err := s.repo.GetSellerListingByStoreAndProduct(ctx, storeID, productID); err != nil {
+		return VariantWithDetails{}, ErrNotFound
+	}
+
+	if variantStatus == "" {
+		variantStatus = "active"
+	}
+
+	variant, err := s.repo.CreateVariant(ctx, productID, variantCode, variantStatus)
+	if err != nil {
+		return VariantWithDetails{}, err
+	}
+
+	for _, av := range attributeValues {
+		if av.AttributeID != "" && av.AttributeValueID != "" {
+			if err := s.repo.AttachVariantAttributeValue(ctx, variant.ID, av.AttributeID, av.AttributeValueID); err != nil {
+				return VariantWithDetails{}, err
+			}
+		}
+	}
+
+	details, err := s.repo.ListVariantAttributeValues(ctx, variant.ID)
+	if err != nil {
+		details = []VariantAttributeValueDetail{}
+	}
+
+	res := VariantWithDetails{
+		ID:              variant.ID,
+		ProductID:       variant.ProductID,
+		Code:            variant.Code,
+		Status:          variant.Status,
+		AttributeValues: details,
+	}
+
+	if skuCode != "" {
+		sku, err := s.repo.CreateSKUWithSpecsReplacingActive(
+			ctx, variant.ID, skuCode, barcode, "active",
+			weightGrams, lengthMM, widthMM, heightMM, priceMinorUnits,
+		)
+		if err != nil {
+			return VariantWithDetails{}, err
+		}
+		res.SKU = &sku
+	}
+
+	return res, nil
+}
+
 func (s Service) UpdateVariantForSubject(ctx context.Context, subject, storeID, productID, variantID, code, status string) (Variant, error) {
 	store, err := s.repo.GetStore(ctx, storeID)
 	if err != nil {
@@ -1253,6 +1321,20 @@ func (s Service) ImportSupplierOfferForSubject(ctx context.Context, subject, sto
 		return SellerListing{}, err
 	}
 	return s.repo.ImportSupplierOfferAtomically(ctx, storeID, supplierOfferID, "")
+}
+
+func (s Service) ImportSupplierOfferWithPricingForSubject(ctx context.Context, subject, storeID, supplierOfferID string, params SupplierOfferImportParams) (*ImportedOfferResult, error) {
+	if subject == "" || storeID == "" || supplierOfferID == "" {
+		return nil, ErrInvalidInput
+	}
+	store, err := s.repo.GetStore(ctx, storeID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.RequireSellerManagerAccess(ctx, subject, store.SellerID); err != nil {
+		return nil, err
+	}
+	return s.repo.ImportSupplierOfferWithPricing(ctx, storeID, supplierOfferID, params)
 }
 
 func (s Service) GetSellerListingByIDForSubject(ctx context.Context, subject, storeID, listingID string) (SellerListing, error) {

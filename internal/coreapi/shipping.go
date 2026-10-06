@@ -35,6 +35,7 @@ func (s *server) handleCreateOrderShipment(w http.ResponseWriter, r *http.Reques
 	params := shipping.CreateShipmentParams{
 		OrderID:               orderID,
 		FulfillmentLocationID: req.FulfillmentLocationID,
+		CarrierName:           req.CarrierName,
 		TrackingNumber:        req.TrackingNumber,
 		ShippingCostMinor:     req.ShippingCostMinor,
 		CodAmountMinor:        req.CodAmountMinor,
@@ -121,6 +122,42 @@ func (s *server) handleListOrderShipments(w http.ResponseWriter, r *http.Request
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"shipments": res})
 }
 
+func (s *server) handleListStoreShipments(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	if storeID == "" {
+		writeError(w, CodeValidationError)
+		return
+	}
+
+	var statusPtr *string
+	if st := r.URL.Query().Get("status"); st != "" {
+		statusPtr = &st
+	}
+	page := parsePage(r)
+	pageNum := (page.Offset / page.Limit) + 1
+	if pageNum < 1 {
+		pageNum = 1
+	}
+
+	shipments, total, err := s.deps.Shipping.ListShipmentsForStore(r.Context(), storeID, statusPtr, pageNum, page.Limit)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	res := make([]ShipmentResponse, 0, len(shipments))
+	for i := range shipments {
+		res = append(res, toShipmentResponse(&shipments[i]))
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"items":       res,
+		"total_count": total,
+		"page":        pageNum,
+		"page_size":   page.Limit,
+	})
+}
+
 func toShipmentResponse(sh *shipping.Shipment) ShipmentResponse {
 	items := make([]ShipmentItemResponse, 0, len(sh.Items))
 	for _, item := range sh.Items {
@@ -149,6 +186,7 @@ func toShipmentResponse(sh *shipping.Shipment) ShipmentResponse {
 		OrderID:               sh.OrderID,
 		FulfillmentLocationID: sh.FulfillmentLocationID,
 		Status:                string(sh.Status),
+		CarrierName:           sh.CarrierName,
 		TrackingNumber:        sh.TrackingNumber,
 		ShippingCostMinor:     sh.ShippingCostMinor,
 		CodAmountMinor:        sh.CodAmountMinor,

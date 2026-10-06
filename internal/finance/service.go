@@ -23,6 +23,7 @@ type Service interface {
 	GetJournalEntry(ctx context.Context, id string) (*JournalEntry, error)
 	GetJournalEntryByReference(ctx context.Context, refType, refID string) (*JournalEntry, error)
 	GetJournalEntryByReferenceTx(ctx context.Context, tx pgx.Tx, refType, refID string) (*JournalEntry, error)
+	ListStorePayouts(ctx context.Context, storeID string, page, pageSize int) ([]StorePayout, int, error)
 }
 
 type OutboxStore interface {
@@ -263,4 +264,8 @@ func (s *service) GetJournalEntryByReferenceTx(ctx context.Context, tx pgx.Tx, r
 		return nil, ErrInvalidReference
 	}
 	return s.repo.GetJournalEntryByReference(ctx, tx, refType, refID)
+}
+
+func (s *service) ListStorePayouts(ctx context.Context, storeID string, page, pageSize int) ([]StorePayout, int, error) {
+	return s.repo.ListStorePayouts(ctx, storeID, page, pageSize)
 }

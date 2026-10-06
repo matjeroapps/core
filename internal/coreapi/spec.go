@@ -6,8 +6,10 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 
 	"core/internal/integration"
+	"core/internal/inventory"
 	"core/internal/marketplace"
 	"core/internal/merchants"
+	"core/internal/shipping"
 	"core/modules/commerce"
 	"core/modules/contracts"
 	"core/modules/markets"
@@ -1007,6 +1009,13 @@ func internalRoutes() []openapi.RouteSpec {
 			Responses:   writeResponses("Adjusted inventory", commerce.InventorySnapshot{}),
 		},
 		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/inventory/adjustments", OperationID: "internalAdjustStoreInventoryDualMode",
+			Summary: "Execute dual-mode inventory stock adjustment", Tags: []string{"Inventory"},
+			Parameters:  []openapi.ParameterSpec{pathParam("storeID", "Store identifier")},
+			RequestBody: StoreInventoryDualModeAdjustmentRequest{},
+			Responses:   writeResponses("Adjusted inventory stock", inventory.AdjustmentResult{}),
+		},
+		{
 			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/listings/{listingID}/presentation", OperationID: "internalGetListingPresentation",
 			Summary: "Get the structured product page presentation of a listing", Tags: []string{"Seller Catalog"},
 			Parameters: []openapi.ParameterSpec{
@@ -1385,6 +1394,17 @@ func internalRoutes() []openapi.RouteSpec {
 			Summary: "Get shipment by ID", Tags: []string{"Shipping"},
 			Parameters: []openapi.ParameterSpec{pathParam("shipmentID", "Shipment identifier")},
 			Responses:  readResponses("Shipment details", ShipmentResponse{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/shipments", OperationID: "internalListStoreShipments",
+			Summary: "List all shipments for a store", Tags: []string{"Shipping"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				openapi.StringParam("status", "Shipment status filter", false),
+				openapi.LimitParam(),
+				openapi.OffsetParam(),
+			},
+			Responses: readResponses("Store shipment queue", CollectionResponse[shipping.Shipment]{}),
 		},
 		{
 			Method: http.MethodPost, Path: "/internal/v1/orders/{orderID}/payments", OperationID: "internalInitializePayment",
