@@ -67,9 +67,9 @@ func (r Repository) AdjustStoreInventory(ctx context.Context, params AdjustParam
 	if strings.TrimSpace(params.IdempotencyKey) != "" {
 		var (
 			existingID, existingSnapID, existingReason, existingLocID, existingSKUID string
-			existingDelta, existingOnHand, existingReserved                         int64
-			existingFP                                                              sql.NullString
-			existingUpdatedAt                                                       time.Time
+			existingDelta, existingOnHand, existingReserved                          int64
+			existingFP                                                               sql.NullString
+			existingUpdatedAt                                                        time.Time
 		)
 		err = tx.QueryRow(ctx, `
 			SELECT im.id, im.inventory_snapshot_id, im.quantity_delta, im.on_hand_qty, im.reserved_qty,
@@ -105,14 +105,14 @@ func (r Repository) AdjustStoreInventory(ctx context.Context, params AdjustParam
 
 	// 4. Pessimistic lock on snapshot row
 	var (
-		snapshotID           string
-		currentOnHand        int64
-		currentReserved      int64
-		version              int64
-		updatedAt            time.Time
-		newOnHand            int64
-		delta                int64
-		movementType         = "adjustment"
+		snapshotID      string
+		currentOnHand   int64
+		currentReserved int64
+		version         int64
+		updatedAt       time.Time
+		newOnHand       int64
+		delta           int64
+		movementType    = "adjustment"
 	)
 
 	if params.TargetQty != nil {
