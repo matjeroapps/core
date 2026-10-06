@@ -556,41 +556,20 @@ func (s Service) PresignStoreMediaUpload(ctx context.Context, subject, storeID s
 			if s.S3Storage == nil {
 				return PresignMediaUploadResponse{}, fmt.Errorf("%w: media storage is not configured", ErrInvalidInput)
 			}
-			tokenBytes := make([]byte, 32)
-			if _, err := rand.Read(tokenBytes); err != nil {
-				return PresignMediaUploadResponse{}, fmt.Errorf("failed to generate upload token: %w", err)
-			}
-			rawToken := hex.EncodeToString(tokenBytes)
-			digestBytes := sha256.Sum256([]byte(rawToken))
-			tokenDigest := hex.EncodeToString(digestBytes[:])
-
-			expiresAt := time.Now().Add(s.S3Storage.Config().URLTTL)
-			_ = s.repo.UpdateMediaUploadIntentToken(ctx, existingIntent.ID, tokenDigest, expiresAt)
-
-			uploadURL, err := s.S3Storage.PresignPutObject(ctx, existingIntent.StorageKey, req.ContentType)
-			if err != nil {
-				return PresignMediaUploadResponse{}, err
-			}
-
-			return PresignMediaUploadResponse{
-				Mode:        "upload",
-				IntentID:    existingIntent.ID,
-				UploadURL:   uploadURL,
-				UploadToken: rawToken,
-				StorageKey:  existingIntent.StorageKey,
-				RequiredHeaders: map[string]string{
-					"Content-Type":          req.ContentType,
-					"x-amz-checksum-sha256": checksum,
-				},
-				ExpiresAt: &expiresAt,
-			}, nil
+			return s.reissueStoreMediaUpload(ctx, existingIntent, req.ContentType, checksum)
 		}
 	}
 
 	if checksum != "" {
-		_, err = s.repo.GetMediaUploadIntentByChecksum(ctx, storeID, checksum)
+		existingIntent, err := s.repo.GetMediaUploadIntentByChecksum(ctx, storeID, checksum)
 		if err == nil {
-			return PresignMediaUploadResponse{}, ErrUploadInProgress
+			if existingIntent.ContentType != req.ContentType || existingIntent.ByteSize != req.SizeBytes {
+				return PresignMediaUploadResponse{}, ErrUploadInProgress
+			}
+			if s.S3Storage == nil {
+				return PresignMediaUploadResponse{}, fmt.Errorf("%w: media storage is not configured", ErrInvalidInput)
+			}
+			return s.reissueStoreMediaUpload(ctx, existingIntent, req.ContentType, checksum)
 		}
 	}
 
@@ -652,8 +631,39 @@ func (s Service) PresignStoreMediaUpload(ctx context.Context, subject, storeID s
 		UploadToken: rawToken,
 		StorageKey:  storageKey,
 		RequiredHeaders: map[string]string{
-			"Content-Type":          req.ContentType,
-			"x-amz-checksum-sha256": checksum,
+			"Content-Type": req.ContentType,
+		},
+		ExpiresAt: &expiresAt,
+	}, nil
+}
+
+func (s Service) reissueStoreMediaUpload(ctx context.Context, intent MediaUploadIntent, contentType, checksum string) (PresignMediaUploadResponse, error) {
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return PresignMediaUploadResponse{}, fmt.Errorf("failed to generate upload token: %w", err)
+	}
+	rawToken := hex.EncodeToString(tokenBytes)
+	digestBytes := sha256.Sum256([]byte(rawToken))
+	tokenDigest := hex.EncodeToString(digestBytes[:])
+
+	expiresAt := time.Now().Add(s.S3Storage.Config().URLTTL)
+	if err := s.repo.UpdateMediaUploadIntentToken(ctx, intent.ID, tokenDigest, expiresAt); err != nil {
+		return PresignMediaUploadResponse{}, err
+	}
+
+	uploadURL, err := s.S3Storage.PresignPutObject(ctx, intent.StorageKey, contentType)
+	if err != nil {
+		return PresignMediaUploadResponse{}, err
+	}
+
+	return PresignMediaUploadResponse{
+		Mode:        "upload",
+		IntentID:    intent.ID,
+		UploadURL:   uploadURL,
+		UploadToken: rawToken,
+		StorageKey:  intent.StorageKey,
+		RequiredHeaders: map[string]string{
+			"Content-Type": contentType,
 		},
 		ExpiresAt: &expiresAt,
 	}, nil
@@ -691,6 +701,14 @@ func (s Service) CompleteStoreMediaUpload(ctx context.Context, subject, storeID,
 		return StoreMediaAsset{}, fmt.Errorf("%w: upload token verification failed", ErrInvalidInput)
 	}
 
+	storageKey := intent.StorageKey
+	if req.StorageKey != "" {
+		if req.StorageKey != intent.StorageKey {
+			return StoreMediaAsset{}, fmt.Errorf("%w: upload storage key mismatch", ErrInvalidInput)
+		}
+		storageKey = req.StorageKey
+	}
+
 	if intent.CompletedAt != nil {
 		asset, err := s.repo.GetReadyStoreMediaAssetByChecksum(ctx, storeID, intent.ChecksumSHA256)
 		if err != nil {
@@ -700,7 +718,7 @@ func (s Service) CompleteStoreMediaUpload(ctx context.Context, subject, storeID,
 		return asset, nil
 	}
 
-	head, err := s.S3Storage.HeadObject(ctx, req.StorageKey)
+	head, err := s.S3Storage.HeadObject(ctx, storageKey)
 	if err != nil {
 		return StoreMediaAsset{}, fmt.Errorf("%w: uploaded object does not exist in storage: %v", ErrInvalidInput, err)
 	}
@@ -717,7 +735,7 @@ func (s Service) CompleteStoreMediaUpload(ctx context.Context, subject, storeID,
 		return StoreMediaAsset{}, fmt.Errorf("%w: uploaded object size %d exceeds limit %d", ErrInvalidInput, *head.ContentLength, intent.MaxBytes)
 	}
 
-	rc, err := s.S3Storage.GetObject(ctx, req.StorageKey)
+	rc, err := s.S3Storage.GetObject(ctx, storageKey)
 	if err != nil {
 		return StoreMediaAsset{}, fmt.Errorf("%w: failed to read object from storage: %v", ErrInvalidInput, err)
 	}
@@ -736,7 +754,7 @@ func (s Service) CompleteStoreMediaUpload(ctx context.Context, subject, storeID,
 	actualChecksum := hex.EncodeToString(h.Sum(nil))
 	if intent.ChecksumSHA256 != "" {
 		if actualChecksum != intent.ChecksumSHA256 {
-			_ = s.S3Storage.DeleteObject(ctx, req.StorageKey)
+			_ = s.S3Storage.DeleteObject(ctx, storageKey)
 			return StoreMediaAsset{}, ErrChecksumMismatch
 		}
 	} else {
@@ -746,7 +764,7 @@ func (s Service) CompleteStoreMediaUpload(ctx context.Context, subject, storeID,
 	asset := StoreMediaAsset{
 		StoreID:          storeID,
 		ChecksumSHA256:   actualChecksum,
-		StorageKey:       req.StorageKey,
+		StorageKey:       storageKey,
 		ContentType:      intent.ContentType,
 		ByteSize:         written,
 		OriginalFilename: intent.OriginalFilename,

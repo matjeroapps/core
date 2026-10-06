@@ -90,6 +90,7 @@ func run(ctx context.Context) error {
 	if cfg.MediaS3Bucket != "" {
 		s3Storage = commerce.NewS3Storage(commerce.S3Config{
 			Endpoint:        cfg.MediaS3Endpoint,
+			PresignEndpoint: cfg.MediaS3PresignEndpoint,
 			Region:          cfg.MediaS3Region,
 			Bucket:          cfg.MediaS3Bucket,
 			AccessKeyID:     cfg.MediaS3AccessKeyID,

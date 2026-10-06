@@ -15,6 +15,7 @@ import (
 
 type S3Config struct {
 	Endpoint        string
+	PresignEndpoint string
 	Region          string
 	Bucket          string
 	AccessKeyID     string
@@ -46,29 +47,42 @@ func NewS3Storage(cfg S3Config) *S3Storage {
 		cfg.MaxBytes = 10 * 1024 * 1024 // 10MB
 	}
 
-	customResolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-		if cfg.Endpoint != "" {
-			return aws.Endpoint{
-				PartitionID:       "aws",
-				URL:               cfg.Endpoint,
-				SigningRegion:     cfg.Region,
-				HostnameImmutable: cfg.ForcePathStyle,
-			}, nil
-		}
-		return aws.Endpoint{}, &aws.EndpointNotFoundError{}
-	})
+	endpointResolver := func(endpoint string) aws.EndpointResolverWithOptions {
+		return aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
+			if endpoint != "" {
+				return aws.Endpoint{
+					PartitionID:       "aws",
+					URL:               endpoint,
+					SigningRegion:     cfg.Region,
+					HostnameImmutable: cfg.ForcePathStyle,
+				}, nil
+			}
+			return aws.Endpoint{}, &aws.EndpointNotFoundError{}
+		})
+	}
 
 	awsCfg := aws.Config{
 		Region:                      cfg.Region,
 		Credentials:                 credentials.NewStaticCredentialsProvider(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
-		EndpointResolverWithOptions: customResolver,
+		EndpointResolverWithOptions: endpointResolver(cfg.Endpoint),
 	}
 
 	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
 		o.UsePathStyle = cfg.ForcePathStyle
 	})
 
-	presignClient := s3.NewPresignClient(client)
+	presignEndpoint := cfg.PresignEndpoint
+	if presignEndpoint == "" {
+		presignEndpoint = cfg.Endpoint
+	}
+	presignCfg := awsCfg
+	if presignEndpoint != cfg.Endpoint {
+		presignCfg.EndpointResolverWithOptions = endpointResolver(presignEndpoint)
+	}
+
+	presignClient := s3.NewPresignClient(s3.NewFromConfig(presignCfg, func(o *s3.Options) {
+		o.UsePathStyle = cfg.ForcePathStyle
+	}))
 
 	return &S3Storage{
 		cfg:           cfg,

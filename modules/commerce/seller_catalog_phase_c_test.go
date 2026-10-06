@@ -115,6 +115,50 @@ func TestStoreMediaAsset_DeduplicationPerStore(t *testing.T) {
 	require.NotEqual(t, asset1.ID, asset2.ID)
 }
 
+func TestCompleteStoreMediaUpload_UsesIntentStorageKeyWhenRequestOmitsIt(t *testing.T) {
+	_, service, repo, _ := setupSellerCatalogTestDB(t)
+	ctx := context.Background()
+
+	sub, _, store := createTestStoreAndSubject(t, service, repo, "complete-intent-key")
+
+	content := []byte("media content uploaded by browser")
+	hash := sha256.Sum256(content)
+	checksumHex := hex.EncodeToString(hash[:])
+
+	service.S3Storage = &S3Storage{
+		cfg: S3Config{URLTTL: 15 * time.Minute},
+		MockGetObject: func(ctx context.Context, storageKey string) (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(content)), nil
+		},
+		MockPresignPutObject: func(ctx context.Context, storageKey, contentType string) (string, error) {
+			return "https://s3.test/" + storageKey, nil
+		},
+	}
+
+	presign, err := service.PresignStoreMediaUpload(ctx, sub, store, PresignMediaUploadRequest{
+		ClientUploadID: "browser-complete-without-key",
+		Filename:       "browser.png",
+		ContentType:    "image/png",
+		SizeBytes:      int64(len(content)),
+		ChecksumSHA256: checksumHex,
+	})
+	require.NoError(t, err)
+
+	asset, err := service.CompleteStoreMediaUpload(ctx, sub, store, presign.IntentID, CompleteMediaUploadRequest{
+		UploadToken: presign.UploadToken,
+	})
+	require.NoError(t, err)
+	require.Equal(t, presign.StorageKey, asset.StorageKey)
+	require.Equal(t, checksumHex, asset.ChecksumSHA256)
+
+	_, err = service.CompleteStoreMediaUpload(ctx, sub, store, presign.IntentID, CompleteMediaUploadRequest{
+		UploadToken: presign.UploadToken,
+		StorageKey:  "stores/" + store + "/media/forged.png",
+	})
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrInvalidInput)
+}
+
 func TestPresignStoreMediaUpload_IdempotencyAndFingerprintConflict(t *testing.T) {
 	_, service, repo, _ := setupSellerCatalogTestDB(t)
 	ctx := context.Background()
@@ -151,6 +195,44 @@ func TestPresignStoreMediaUpload_IdempotencyAndFingerprintConflict(t *testing.T)
 	_, err = service.PresignStoreMediaUpload(ctx, sub, store, reqMismatch)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrIdempotencyConflict)
+}
+
+func TestPresignStoreMediaUpload_ReissuesActiveChecksumIntentForBrowserRetry(t *testing.T) {
+	_, service, repo, _ := setupSellerCatalogTestDB(t)
+	ctx := context.Background()
+
+	sub, _, store := createTestStoreAndSubject(t, service, repo, "presign-browser-retry")
+	checksum := "b1b2c3d4e5f60000000000000000000000000000000000000000000000000000"
+	var presignedKeys []string
+	service.S3Storage = &S3Storage{
+		cfg: S3Config{URLTTL: 15 * time.Minute},
+		MockPresignPutObject: func(ctx context.Context, storageKey, contentType string) (string, error) {
+			presignedKeys = append(presignedKeys, storageKey)
+			return "https://s3.test/" + storageKey, nil
+		},
+	}
+
+	first, err := service.PresignStoreMediaUpload(ctx, sub, store, PresignMediaUploadRequest{
+		ClientUploadID: "browser-retry-1",
+		Filename:       "same-file.png",
+		ContentType:    "image/png",
+		SizeBytes:      68,
+		ChecksumSHA256: checksum,
+	})
+	require.NoError(t, err)
+
+	retry, err := service.PresignStoreMediaUpload(ctx, sub, store, PresignMediaUploadRequest{
+		ClientUploadID: "browser-retry-2",
+		Filename:       "same-file.png",
+		ContentType:    "image/png",
+		SizeBytes:      68,
+		ChecksumSHA256: checksum,
+	})
+	require.NoError(t, err)
+	require.Equal(t, first.IntentID, retry.IntentID)
+	require.Equal(t, first.StorageKey, retry.StorageKey)
+	require.NotEqual(t, first.UploadToken, retry.UploadToken)
+	require.Equal(t, []string{first.StorageKey, first.StorageKey}, presignedKeys)
 }
 
 func TestCompleteStoreMediaUpload_ChecksumMismatchAndDeletion(t *testing.T) {

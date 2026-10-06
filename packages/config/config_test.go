@@ -56,6 +56,23 @@ func TestLoadReadsPlatformInternalToken(t *testing.T) {
 	}
 }
 
+func TestLoadReadsMediaS3PresignEndpoint(t *testing.T) {
+	t.Setenv("MEDIA_S3_ENDPOINT", "http://minio:9000")
+	t.Setenv("MEDIA_S3_PRESIGN_ENDPOINT", "http://localhost:9000")
+
+	cfg, err := config.Load("test-service")
+	if err != nil {
+		t.Fatalf("expected clean config load, got: %v", err)
+	}
+
+	if cfg.MediaS3Endpoint != "http://minio:9000" {
+		t.Fatalf("MediaS3Endpoint = %q", cfg.MediaS3Endpoint)
+	}
+	if cfg.MediaS3PresignEndpoint != "http://localhost:9000" {
+		t.Fatalf("MediaS3PresignEndpoint = %q", cfg.MediaS3PresignEndpoint)
+	}
+}
+
 func TestLoadRejectsInvalidStoreDefaultMaxActiveStores(t *testing.T) {
 	invalidValues := []string{"not-an-int", "0", "-1", "-5"}
 	for _, val := range invalidValues {
