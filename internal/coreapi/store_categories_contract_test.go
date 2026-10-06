@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -290,4 +291,103 @@ func TestStoreCategoryContractIsolation(t *testing.T) {
 	if verifyBody["slug"] != "store-a-secret" {
 		t.Fatalf("category mutated by foreign attempts: %v", verifyBody["slug"])
 	}
+}
+
+func TestStoreCategoryContractLifecycleEndpoints(t *testing.T) {
+	env := setupStoreCategoryContract(t)
+	base := "/internal/v1/stores/" + env.storeAID + "/categories"
+
+	createRec := env.do(t, serviceauth.CallerSeller, testSellerToken, env.subjectA, http.MethodPost, base, map[string]any{
+		"slug":         "lifecycle-root",
+		"translations": map[string]any{"en": map[string]any{"name": "Lifecycle Root"}},
+	})
+	createBody := env.requireStatus(t, createRec, http.StatusCreated)
+	rootID, _ := createBody["id"].(string)
+
+	childRec := env.do(t, serviceauth.CallerSeller, testSellerToken, env.subjectA, http.MethodPost, base, map[string]any{
+		"slug":               "lifecycle-child",
+		"parent_category_id": rootID,
+		"translations":       map[string]any{"en": map[string]any{"name": "Lifecycle Child"}},
+	})
+	childBody := env.requireStatus(t, childRec, http.StatusCreated)
+	childID, _ := childBody["id"].(string)
+
+	// Status transition to archived.
+	statusRec := env.do(t, serviceauth.CallerSeller, testSellerToken, env.subjectA, http.MethodPost, base+"/"+rootID+"/status", map[string]any{"status": "archived"})
+	statusBody := env.requireStatus(t, statusRec, http.StatusOK)
+	if statusBody["status"] != "archived" {
+		t.Fatalf("status = %v, want archived", statusBody["status"])
+	}
+	// Per-node: the child keeps its own status.
+	childGet := env.do(t, serviceauth.CallerSeller, testSellerToken, env.subjectA, http.MethodGet, base+"/"+childID, nil)
+	childAfter := env.requireStatus(t, childGet, http.StatusOK)
+	if childAfter["status"] != "active" {
+		t.Fatalf("child status changed with parent: %v", childAfter["status"])
+	}
+	// Invalid status value is a validation error.
+	invalidRec := env.do(t, serviceauth.CallerSeller, testSellerToken, env.subjectA, http.MethodPost, base+"/"+rootID+"/status", map[string]any{"status": "discontinued"})
+	env.requireStatus(t, invalidRec, http.StatusBadRequest)
+
+	// Delete of a parent with children is rejected as a validation error. The
+	// closed error vocabulary keeps the response coarse ("invalid input"); the
+	// "archive instead" guidance is provided by the UI, which disables the
+	// action for non-empty categories.
+	deleteParentRec := env.do(t, serviceauth.CallerSeller, testSellerToken, env.subjectA, http.MethodDelete, base+"/"+rootID, nil)
+	if deleteParentRec.Code != http.StatusBadRequest {
+		t.Fatalf("delete parent status = %d, want 400 (body %q)", deleteParentRec.Code, deleteParentRec.Body.String())
+	}
+	if !strings.Contains(deleteParentRec.Body.String(), "validation_error") {
+		t.Fatalf("delete parent body should carry validation_error: %q", deleteParentRec.Body.String())
+	}
+	// Delete of the empty leaf succeeds; the former parent becomes deletable.
+	deleteChildRec := env.do(t, serviceauth.CallerSeller, testSellerToken, env.subjectA, http.MethodDelete, base+"/"+childID, nil)
+	env.requireStatus(t, deleteChildRec, http.StatusOK)
+	deleteRootRec := env.do(t, serviceauth.CallerSeller, testSellerToken, env.subjectA, http.MethodDelete, base+"/"+rootID, nil)
+	env.requireStatus(t, deleteRootRec, http.StatusOK)
+	// Re-delete is a not-found.
+	reDelete := env.do(t, serviceauth.CallerSeller, testSellerToken, env.subjectA, http.MethodDelete, base+"/"+rootID, nil)
+	env.requireStatus(t, reDelete, http.StatusNotFound)
+
+	// Reorder uses fresh nodes (the lifecycle pair above was deleted).
+	reorderARec := env.do(t, serviceauth.CallerSeller, testSellerToken, env.subjectA, http.MethodPost, base, map[string]any{
+		"slug":         "reorder-a",
+		"translations": map[string]any{"en": map[string]any{"name": "Reorder A"}},
+	})
+	reorderABody := env.requireStatus(t, reorderARec, http.StatusCreated)
+	reorderAID, _ := reorderABody["id"].(string)
+	reorderBRec := env.do(t, serviceauth.CallerSeller, testSellerToken, env.subjectA, http.MethodPost, base, map[string]any{
+		"slug":         "reorder-b",
+		"translations": map[string]any{"en": map[string]any{"name": "Reorder B"}},
+	})
+	reorderBBody := env.requireStatus(t, reorderBRec, http.StatusCreated)
+	reorderBID, _ := reorderBBody["id"].(string)
+
+	// Explicit pairs apply; a foreign id is a not-found that leaves
+	// everything untouched.
+	reorderRec := env.do(t, serviceauth.CallerSeller, testSellerToken, env.subjectA, http.MethodPost, base+"/reorder", map[string]any{
+		"order": []map[string]any{
+			{"id": reorderAID, "sort_order": 3},
+			{"id": reorderBID, "sort_order": 4},
+		},
+	})
+	env.requireStatus(t, reorderRec, http.StatusOK)
+	reorderAGet := env.do(t, serviceauth.CallerSeller, testSellerToken, env.subjectA, http.MethodGet, base+"/"+reorderAID, nil)
+	reorderABody2 := env.requireStatus(t, reorderAGet, http.StatusOK)
+	if reorderABody2["sort_order"].(float64) != 3 {
+		t.Fatalf("sort_order = %v, want 3", reorderABody2["sort_order"])
+	}
+
+	// Idempotent re-submission of the same pairs succeeds with the same result.
+	reorderAgain := env.do(t, serviceauth.CallerSeller, testSellerToken, env.subjectA, http.MethodPost, base+"/reorder", map[string]any{
+		"order": []map[string]any{
+			{"id": reorderAID, "sort_order": 3},
+			{"id": reorderBID, "sort_order": 4},
+		},
+	})
+	env.requireStatus(t, reorderAgain, http.StatusOK)
+
+	foreignReorder := env.do(t, serviceauth.CallerSeller, testSellerToken, env.subjectB, http.MethodPost, base+"/reorder", map[string]any{
+		"order": []map[string]any{{"id": reorderAID, "sort_order": 9}},
+	})
+	env.requireStatus(t, foreignReorder, http.StatusNotFound)
 }

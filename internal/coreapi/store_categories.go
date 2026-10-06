@@ -197,3 +197,71 @@ func (s *server) handleUpdateStoreCategory(w http.ResponseWriter, r *http.Reques
 	}
 	httpx.WriteJSON(w, http.StatusOK, toStoreCategoryResponse(category))
 }
+
+type storeCategoryStatusRequest struct {
+	Status string `json:"status"`
+}
+
+func (s *server) handleTransitionStoreCategoryStatus(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	categoryID := chi.URLParam(r, "categoryID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+
+	var req storeCategoryStatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, CodeInvalidArgument)
+		return
+	}
+
+	category, err := s.deps.Commerce.TransitionStoreCategoryForSubject(r.Context(), subject, storeID, categoryID, req.Status)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toStoreCategoryResponse(category))
+}
+
+func (s *server) handleDeleteStoreCategory(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	categoryID := chi.URLParam(r, "categoryID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+
+	if err := s.deps.Commerce.DeleteStoreCategoryForSubject(r.Context(), subject, storeID, categoryID); err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, StatusResponse{Status: "ok"})
+}
+
+type reorderStoreCategoriesRequest struct {
+	Order []commerce.StoreCategoryOrder `json:"order"`
+}
+
+func (s *server) handleReorderStoreCategories(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+
+	var req reorderStoreCategoriesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, CodeInvalidArgument)
+		return
+	}
+
+	if err := s.deps.Commerce.ReorderStoreCategoriesForSubject(r.Context(), subject, storeID, req.Order); err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, StatusResponse{Status: "ok"})
+}
