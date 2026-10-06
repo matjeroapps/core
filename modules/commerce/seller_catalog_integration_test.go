@@ -346,4 +346,19 @@ func TestSellerProductTenantIsolationAndSecurity(t *testing.T) {
 	if _, err := service.CreateSellerListingForSubject(ctx, subjectB, storeB.ID, detailA.Product.ID, nil, "EG", "active"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Expected ErrNotFound when Seller B creates seller-owned listing for Seller A product, got %v", err)
 	}
+
+	// A legacy or fixture path can still leave a mismatched seller-owned listing
+	// in the database when it bypasses the subject-aware service. The store
+	// product list must not expose that row, otherwise the detail page correctly
+	// returns 404 after the user follows the leaked product link.
+	if _, err := repo.CreateSellerListing(ctx, storeB.ID, detailA.Product.ID, nil, "EG", "active"); err != nil {
+		t.Fatalf("Create mismatched seller-owned listing fixture: %v", err)
+	}
+	items, total, err := service.ListSellerProductViewsForSubject(ctx, subjectB, storeB.ID, "", "", "", 20, 0)
+	if err != nil {
+		t.Fatalf("ListSellerProductViewsForSubject: %v", err)
+	}
+	if total != 0 || len(items) != 0 {
+		t.Fatalf("mismatched seller-owned listing leaked into store catalog: total=%d items=%+v", total, items)
+	}
 }
