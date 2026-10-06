@@ -49,15 +49,20 @@ func (r Repository) CreateShipmentTx(ctx context.Context, tx pgx.Tx, shipment Sh
 		tn := strings.TrimSpace(shipment.TrackingNumber)
 		tracking = &tn
 	}
+	var carrier *string
+	if strings.TrimSpace(shipment.CarrierName) != "" {
+		cn := strings.TrimSpace(shipment.CarrierName)
+		carrier = &cn
+	}
 
 	_, err := tx.Exec(ctx, `
 		INSERT INTO shipments (
 			id, order_id, fulfillment_location_id, status, tracking_number,
-			shipping_cost_minor, cod_amount_minor, currency, created_at, updated_at
+			shipping_cost_minor, cod_amount_minor, currency, carrier_name, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`, shipment.ID, shipment.OrderID, shipment.FulfillmentLocationID, string(shipment.Status), tracking,
-		shipment.ShippingCostMinor, shipment.CodAmountMinor, shipment.Currency, shipment.CreatedAt, shipment.UpdatedAt)
+		shipment.ShippingCostMinor, shipment.CodAmountMinor, shipment.Currency, carrier, shipment.CreatedAt, shipment.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("insert shipment: %w", err)
 	}
@@ -189,16 +194,17 @@ func (r Repository) GetShipmentByID(ctx context.Context, exec DBExecutor, shipme
 		s          Shipment
 		statusStr  string
 		dbTracking sql.NullString
+		dbCarrier  sql.NullString
 	)
 
 	err := db.QueryRow(ctx, `
 		SELECT id, order_id, fulfillment_location_id, status, tracking_number,
-		       shipping_cost_minor, cod_amount_minor, currency, created_at, updated_at
+		       shipping_cost_minor, cod_amount_minor, currency, carrier_name, created_at, updated_at
 		FROM shipments
 		WHERE id = $1
 	`, shipmentID).Scan(
 		&s.ID, &s.OrderID, &s.FulfillmentLocationID, &statusStr, &dbTracking,
-		&s.ShippingCostMinor, &s.CodAmountMinor, &s.Currency, &s.CreatedAt, &s.UpdatedAt,
+		&s.ShippingCostMinor, &s.CodAmountMinor, &s.Currency, &dbCarrier, &s.CreatedAt, &s.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -210,6 +216,9 @@ func (r Repository) GetShipmentByID(ctx context.Context, exec DBExecutor, shipme
 	s.Status = Status(statusStr)
 	if dbTracking.Valid {
 		s.TrackingNumber = dbTracking.String
+	}
+	if dbCarrier.Valid {
+		s.CarrierName = dbCarrier.String
 	}
 
 	items, err := r.ListShipmentItems(ctx, db, s.ID)
@@ -235,7 +244,7 @@ func (r Repository) ListShipmentsByOrderID(ctx context.Context, exec DBExecutor,
 
 	rows, err := db.Query(ctx, `
 		SELECT id, order_id, fulfillment_location_id, status, tracking_number,
-		       shipping_cost_minor, cod_amount_minor, currency, created_at, updated_at
+		       shipping_cost_minor, cod_amount_minor, currency, carrier_name, created_at, updated_at
 		FROM shipments
 		WHERE order_id = $1
 		ORDER BY created_at ASC
@@ -251,16 +260,20 @@ func (r Repository) ListShipmentsByOrderID(ctx context.Context, exec DBExecutor,
 			s          Shipment
 			statusStr  string
 			dbTracking sql.NullString
+			dbCarrier  sql.NullString
 		)
 		if err := rows.Scan(
 			&s.ID, &s.OrderID, &s.FulfillmentLocationID, &statusStr, &dbTracking,
-			&s.ShippingCostMinor, &s.CodAmountMinor, &s.Currency, &s.CreatedAt, &s.UpdatedAt,
+			&s.ShippingCostMinor, &s.CodAmountMinor, &s.Currency, &dbCarrier, &s.CreatedAt, &s.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan shipment row: %w", err)
 		}
 		s.Status = Status(statusStr)
 		if dbTracking.Valid {
 			s.TrackingNumber = dbTracking.String
+		}
+		if dbCarrier.Valid {
+			s.CarrierName = dbCarrier.String
 		}
 		shipments = append(shipments, s)
 	}
@@ -283,6 +296,100 @@ func (r Repository) ListShipmentsByOrderID(ctx context.Context, exec DBExecutor,
 	}
 
 	return shipments, nil
+}
+
+func (r Repository) ListShipmentsByStoreID(ctx context.Context, exec DBExecutor, storeID string, status *string, page, pageSize int) ([]Shipment, int, error) {
+	if strings.TrimSpace(storeID) == "" {
+		return nil, 0, ErrInvalidInput
+	}
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+	offset := (page - 1) * pageSize
+	db := r.getExec(exec)
+
+	var totalCount int
+	countQuery := `
+		SELECT COUNT(s.id)
+		FROM shipments s
+		JOIN orders o ON o.id = s.order_id
+		WHERE o.store_id = $1
+	`
+	countArgs := []any{storeID}
+	if status != nil && strings.TrimSpace(*status) != "" {
+		countQuery += ` AND s.status = $2`
+		countArgs = append(countArgs, strings.ToUpper(strings.TrimSpace(*status)))
+	}
+	if err := db.QueryRow(ctx, countQuery, countArgs...).Scan(&totalCount); err != nil {
+		return nil, 0, fmt.Errorf("count store shipments: %w", err)
+	}
+
+	query := `
+		SELECT s.id, s.order_id, s.fulfillment_location_id, s.status, s.tracking_number,
+		       s.shipping_cost_minor, s.cod_amount_minor, s.currency, s.carrier_name, s.created_at, s.updated_at
+		FROM shipments s
+		JOIN orders o ON o.id = s.order_id
+		WHERE o.store_id = $1
+	`
+	queryArgs := []any{storeID}
+	if status != nil && strings.TrimSpace(*status) != "" {
+		query += ` AND s.status = $2`
+		queryArgs = append(queryArgs, strings.ToUpper(strings.TrimSpace(*status)))
+		query += fmt.Sprintf(` ORDER BY s.created_at DESC LIMIT $%d OFFSET $%d`, len(queryArgs)+1, len(queryArgs)+2)
+		queryArgs = append(queryArgs, pageSize, offset)
+	} else {
+		query += ` ORDER BY s.created_at DESC LIMIT $2 OFFSET $3`
+		queryArgs = append(queryArgs, pageSize, offset)
+	}
+
+	rows, err := db.Query(ctx, query, queryArgs...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list store shipments: %w", err)
+	}
+	defer rows.Close()
+
+	var shipments []Shipment
+	for rows.Next() {
+		var (
+			s          Shipment
+			statusStr  string
+			dbTracking sql.NullString
+			dbCarrier  sql.NullString
+		)
+		if err := rows.Scan(
+			&s.ID, &s.OrderID, &s.FulfillmentLocationID, &statusStr, &dbTracking,
+			&s.ShippingCostMinor, &s.CodAmountMinor, &s.Currency, &dbCarrier, &s.CreatedAt, &s.UpdatedAt,
+		); err != nil {
+			return nil, 0, fmt.Errorf("scan store shipment row: %w", err)
+		}
+		s.Status = Status(statusStr)
+		if dbTracking.Valid {
+			s.TrackingNumber = dbTracking.String
+		}
+		if dbCarrier.Valid {
+			s.CarrierName = dbCarrier.String
+		}
+		shipments = append(shipments, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("rows error listing store shipments: %w", err)
+	}
+
+	for i := range shipments {
+		items, err := r.ListShipmentItems(ctx, db, shipments[i].ID)
+		if err != nil {
+			return nil, 0, err
+		}
+		shipments[i].Items = items
+	}
+
+	if shipments == nil {
+		shipments = []Shipment{}
+	}
+	return shipments, totalCount, nil
 }
 
 func (r Repository) ListShipmentItems(ctx context.Context, exec DBExecutor, shipmentID string) ([]ShipmentItem, error) {

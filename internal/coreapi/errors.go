@@ -6,6 +6,7 @@ import (
 
 	"core/internal/balance"
 	"core/internal/finance"
+	"core/internal/listings"
 	"core/internal/marketplace"
 	"core/internal/marketplace_finance"
 	"core/internal/payments"
@@ -56,6 +57,7 @@ const (
 	CodeUploadInProgress          = "upload_in_progress"
 	CodeChecksumMismatch          = "checksum_mismatch"
 	CodeMediaInUse                = "media_in_use"
+	CodeUnsafeMargin              = "unsafe_margin"
 	CodeInternalError             = "internal_error"
 )
 
@@ -66,7 +68,7 @@ func statusFor(code string) int {
 		return http.StatusNotFound
 	case CodeInvalidArgument, CodeValidationError, CodeSchemaMismatch, CodeUnsafeContent:
 		return http.StatusBadRequest
-	case CodeUnprocessableEntity:
+	case CodeUnprocessableEntity, CodePublishNotReady, CodeChecksumMismatch, CodeUnsafeMargin:
 		return http.StatusUnprocessableEntity
 	case CodeUnauthorized:
 		return http.StatusUnauthorized
@@ -74,8 +76,6 @@ func statusFor(code string) int {
 		return http.StatusForbidden
 	case CodeConflict, CodeMarketMismatch, CodeInsufficientInventory, CodeCheckoutExpired, CodeIdempotencyConflict, CodeInvalidOrderTransition, CodeInvalidShipmentTransition, CodeInvalidPaymentTransition, CodePriceChanged, CodeListingUnavailable, CodeStoreEntitlementExceeded, CodeOfferUnavailable, CodeResourceInUse, CodeUploadInProgress, CodeMediaInUse:
 		return http.StatusConflict
-	case CodePublishNotReady, CodeChecksumMismatch:
-		return http.StatusUnprocessableEntity
 	case CodeUnavailable, CodePreviewUnavailable, CodeCheckoutPaused:
 		return http.StatusServiceUnavailable
 	default:
@@ -142,6 +142,8 @@ func messageFor(code string) string {
 		return "checksum mismatch"
 	case CodeMediaInUse:
 		return "media in use"
+	case CodeUnsafeMargin:
+		return "unsafe margin: retail price cannot be lower than wholesale cost"
 	case CodeSchemaMismatch:
 
 		return "configuration does not match the theme schema"
@@ -310,6 +312,12 @@ func codeFor(err error) string {
 		return CodeSchemaMismatch
 	case errors.Is(err, themes.ErrUnsafeContent):
 		return CodeUnsafeContent
+	case errors.Is(err, listings.ErrUnsafeMargin), errors.Is(err, commerce.ErrUnsafeMargin):
+		return CodeUnsafeMargin
+	case errors.Is(err, listings.ErrOwnerOverrideRequired):
+		return CodeForbidden
+	case errors.Is(err, listings.ErrOfferAlreadyImported), errors.Is(err, commerce.ErrOfferAlreadyImported):
+		return CodeConflict
 	case errors.Is(err, themes.ErrPreviewNotConfigured):
 		return CodePreviewUnavailable
 	default:

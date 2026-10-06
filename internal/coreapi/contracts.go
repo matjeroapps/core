@@ -298,8 +298,19 @@ type SellerListingImportRequest struct {
 
 // PriceUpdateRequest sets a listing or offer price in minor units.
 type PriceUpdateRequest struct {
-	AmountMinor int64  `json:"amount_minor"`
-	Currency    string `json:"currency"`
+	AmountMinor           int64  `json:"amount_minor"`
+	Currency              string `json:"currency"`
+	RetailPriceMinorUnits *int64 `json:"retail_price_minor_units,omitempty"`
+	AllowSubWholesale     bool   `json:"allow_sub_wholesale,omitempty"`
+	AuditReason           string `json:"audit_reason,omitempty"`
+}
+
+// SupplierOfferImportRequest imports a supplier offer with optional initial pricing/markup.
+type SupplierOfferImportRequest struct {
+	MarkupPercentage          *float64 `json:"markup_percentage,omitempty"`
+	RetailPriceMinorUnits     *int64   `json:"retail_price_minor_units,omitempty"`
+	ShippingSubsidyMinorUnits *int64   `json:"shipping_subsidy_minor_units,omitempty"`
+	ShippingSubsidyPolicy     string   `json:"shipping_subsidy_policy,omitempty"`
 }
 
 // --- Admin ---
@@ -356,6 +367,7 @@ type ThemeUpgradeRequest struct {
 
 type CreateShipmentRequest struct {
 	FulfillmentLocationID string                      `json:"fulfillment_location_id"`
+	CarrierName           string                      `json:"carrier_name,omitempty"`
 	TrackingNumber        string                      `json:"tracking_number,omitempty"`
 	ShippingCostMinor     int64                       `json:"shipping_cost_minor"`
 	CodAmountMinor        int64                       `json:"cod_amount_minor"`
@@ -395,6 +407,7 @@ type ShipmentResponse struct {
 	OrderID               string                  `json:"order_id"`
 	FulfillmentLocationID string                  `json:"fulfillment_location_id"`
 	Status                string                  `json:"status"`
+	CarrierName           string                  `json:"carrier_name,omitempty"`
 	TrackingNumber        string                  `json:"tracking_number,omitempty"`
 	ShippingCostMinor     int64                   `json:"shipping_cost_minor"`
 	CodAmountMinor        int64                   `json:"cod_amount_minor"`

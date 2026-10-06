@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -1820,6 +1821,107 @@ func (r Repository) CreateSKUReplacingActive(ctx context.Context, variantID, cod
 	return created, err
 }
 
+func (r Repository) CreateSKUWithSpecsReplacingActive(
+	ctx context.Context,
+	variantID, code, barcode, status string,
+	weightGrams, lengthMM, widthMM, heightMM *int,
+	priceMinorUnits *int64,
+) (SKU, error) {
+	if variantID == "" || code == "" || status == "" {
+		return SKU{}, ErrInvalidInput
+	}
+
+	var created SKU
+	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		if status == "active" {
+			if _, err := tx.Exec(ctx, `
+				UPDATE skus SET status = 'inactive', updated_at = now()
+				WHERE variant_id = $1 AND status = 'active'
+			`, variantID); err != nil {
+				return translatePGError(err, "deactivate previous active sku")
+			}
+		}
+
+		var barcodeParam *string
+		if barcode != "" {
+			barcodeParam = &barcode
+		}
+		id := uuid.NewString()
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO skus (id, variant_id, code, barcode, status, weight_grams, length_mm, width_mm, height_mm, price_minor_units)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			RETURNING created_at, updated_at
+		`, id, variantID, code, barcodeParam, status, weightGrams, lengthMM, widthMM, heightMM, priceMinorUnits).Scan(&created.CreatedAt, &created.UpdatedAt); err != nil {
+			return translatePGError(err, "create sku with specs")
+		}
+
+		created = SKU{
+			ID:              id,
+			VariantID:       variantID,
+			Code:            code,
+			Barcode:         barcode,
+			Status:          status,
+			WeightGrams:     weightGrams,
+			LengthMM:        lengthMM,
+			WidthMM:         widthMM,
+			HeightMM:        heightMM,
+			PriceMinorUnits: priceMinorUnits,
+			CreatedAt:       created.CreatedAt,
+			UpdatedAt:       created.UpdatedAt,
+		}
+		return bumpStorefrontRevisions(ctx, tx, revisionStoresByVariant, variantID)
+	})
+
+	return created, err
+}
+
+func (r Repository) AttachVariantAttributeValue(ctx context.Context, variantID, attributeID, attributeValueID string) error {
+	query := `
+		INSERT INTO variant_attribute_values (variant_id, attribute_id, attribute_value_id, created_at)
+		VALUES ($1, $2, $3, now())
+		ON CONFLICT (variant_id, attribute_id)
+		DO UPDATE SET attribute_value_id = EXCLUDED.attribute_value_id, created_at = now()
+	`
+	_, err := r.pool.Exec(ctx, query, variantID, attributeID, attributeValueID)
+	if err != nil {
+		return translatePGError(err, "attach variant attribute value")
+	}
+	return nil
+}
+
+func (r Repository) ListVariantAttributeValues(ctx context.Context, variantID string) ([]VariantAttributeValueDetail, error) {
+	query := `
+		SELECT 
+			vav.variant_id,
+			vav.attribute_id,
+			COALESCE(at.name, a.code) as attribute_name,
+			vav.attribute_value_id,
+			COALESCE(avt.name, av.code) as attribute_value_name
+		FROM variant_attribute_values vav
+		JOIN attributes a ON a.id = vav.attribute_id
+		LEFT JOIN attribute_translations at ON at.attribute_id = a.id AND at.locale = 'en'
+		JOIN attribute_values av ON av.id = vav.attribute_value_id
+		LEFT JOIN attribute_value_translations avt ON avt.attribute_value_id = av.id AND avt.locale = 'en'
+		WHERE vav.variant_id = $1
+		ORDER BY a.code ASC
+	`
+	rows, err := r.pool.Query(ctx, query, variantID)
+	if err != nil {
+		return nil, translatePGError(err, "query variant attribute values")
+	}
+	defer rows.Close()
+
+	var details []VariantAttributeValueDetail
+	for rows.Next() {
+		var d VariantAttributeValueDetail
+		if err := rows.Scan(&d.VariantID, &d.AttributeID, &d.AttributeName, &d.AttributeValueID, &d.AttributeValueName); err != nil {
+			return nil, translatePGError(err, "scan variant attribute value")
+		}
+		details = append(details, d)
+	}
+	return details, nil
+}
+
 // UpdateSKUReplacingActive updates a SKU and, when the target status is
 // active, deactivates the other active SKUs of the same variant in the same
 // transaction.
@@ -2801,6 +2903,173 @@ func (r Repository) ImportSupplierOfferAtomically(ctx context.Context, storeID, 
 	}
 
 	return listing, err
+}
+
+func (r Repository) ImportSupplierOfferWithPricing(ctx context.Context, storeID, supplierOfferID string, params SupplierOfferImportParams) (*ImportedOfferResult, error) {
+	if storeID == "" || supplierOfferID == "" {
+		return nil, ErrInvalidInput
+	}
+
+	var result ImportedOfferResult
+	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		// 1. Check if offer already imported by this store
+		var existingListingID string
+		var existingCreatedAt time.Time
+		var existingStatus string
+		var existingProductID string
+		errExisting := tx.QueryRow(ctx, `
+			SELECT id, product_id, status, created_at
+			FROM seller_listings
+			WHERE store_id = $1 AND supplier_offer_id = $2
+		`, storeID, supplierOfferID).Scan(&existingListingID, &existingProductID, &existingStatus, &existingCreatedAt)
+		if errExisting == nil {
+			if params.MarkupPercentage != nil || params.RetailPriceMinorUnits != nil {
+				return fmt.Errorf("%w: offer %s already imported as listing %s", ErrOfferAlreadyImported, supplierOfferID, existingListingID)
+			}
+			// Idempotent return for uncustomized import
+			result = ImportedOfferResult{
+				ID:              existingListingID,
+				ListingID:       existingListingID,
+				StoreID:         storeID,
+				ProductID:       existingProductID,
+				SupplierOfferID: supplierOfferID,
+				Status:          existingStatus,
+				CreatedAt:       existingCreatedAt,
+			}
+			return nil
+		} else if !errors.Is(errExisting, pgx.ErrNoRows) {
+			return translatePGError(errExisting, "check existing supplier offer import")
+		}
+
+		// 2. Fetch store market code
+		var storeMarketCode string
+		if err := tx.QueryRow(ctx, `SELECT market_code FROM stores WHERE id = $1`, storeID).Scan(&storeMarketCode); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrNotFound
+			}
+			return translatePGError(err, "get store market code for import")
+		}
+
+		// 3. Fetch offer status, market, supplier product status, product status, global product id
+		var offerStatus, offerMarket, supplierProductStatus, productStatus, globalProductID string
+		errOffer := tx.QueryRow(ctx, `
+			SELECT so.status, so.market_code, sp.status, p.status, sp.product_id
+			FROM supplier_offers so
+			JOIN supplier_products sp ON sp.id = so.supplier_product_id
+			JOIN products p ON p.id = sp.product_id
+			WHERE so.id = $1
+		`, supplierOfferID).Scan(&offerStatus, &offerMarket, &supplierProductStatus, &productStatus, &globalProductID)
+		if errOffer != nil {
+			if errors.Is(errOffer, pgx.ErrNoRows) {
+				return ErrNotFound
+			}
+			return translatePGError(errOffer, "get supplier offer for import")
+		}
+		if offerStatus != "active" {
+			return fmt.Errorf("%w: supplier offer %s is not active", ErrOfferUnavailable, supplierOfferID)
+		}
+		if supplierProductStatus != "active" {
+			return fmt.Errorf("%w: supplier product %s is not active", ErrOfferUnavailable, supplierOfferID)
+		}
+		if productStatus != "active" && productStatus != "published" {
+			return fmt.Errorf("%w: product %s is not published", ErrOfferUnavailable, globalProductID)
+		}
+		if offerMarket != storeMarketCode {
+			return fmt.Errorf("%w: supplier offer market %s does not match store market %s", ErrMarketMismatch, offerMarket, storeMarketCode)
+		}
+
+		// 4. Fetch current wholesale price
+		var wholesaleMinor int64
+		var wholesaleCurrency string
+		errPrice := tx.QueryRow(ctx, `
+			SELECT amount_minor, currency_code
+			FROM supplier_offer_prices
+			WHERE supplier_offer_id = $1 AND is_current = true
+		`, supplierOfferID).Scan(&wholesaleMinor, &wholesaleCurrency)
+		if errPrice != nil {
+			if errors.Is(errPrice, pgx.ErrNoRows) {
+				if params.MarkupPercentage != nil || params.RetailPriceMinorUnits != nil {
+					return fmt.Errorf("%w: wholesale price not found for offer %s", ErrOfferUnavailable, supplierOfferID)
+				}
+				wholesaleCurrency = "SAR"
+				if storeMarketCode == "EG" {
+					wholesaleCurrency = "EGP"
+				} else if storeMarketCode == "AE" {
+					wholesaleCurrency = "AED"
+				}
+			} else {
+				return translatePGError(errPrice, "get wholesale price")
+			}
+		}
+
+		// 5. Calculate retail price
+		var retailPrice int64
+		if params.RetailPriceMinorUnits != nil {
+			retailPrice = *params.RetailPriceMinorUnits
+		} else if params.MarkupPercentage != nil {
+			markupRatio := *params.MarkupPercentage / 100.0
+			markupAmount := int64(math.Round(float64(wholesaleMinor) * markupRatio))
+			retailPrice = wholesaleMinor + markupAmount
+		} else {
+			retailPrice = wholesaleMinor
+		}
+
+		// 6. Enforce margin invariant: retail price cannot be below wholesale
+		if wholesaleMinor > 0 && retailPrice < wholesaleMinor {
+			return fmt.Errorf("%w: retail price (%d) cannot be lower than wholesale cost (%d)", ErrUnsafeMargin, retailPrice, wholesaleMinor)
+		}
+
+		// 7. Insert listing
+		listingID := uuid.NewString()
+		var createdAt time.Time
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO seller_listings (id, store_id, product_id, supplier_offer_id, market_code, status)
+			VALUES ($1, $2, $3, $4, $5, 'draft')
+			RETURNING created_at
+		`, listingID, storeID, globalProductID, supplierOfferID, storeMarketCode).Scan(&createdAt); err != nil {
+			return translatePGError(err, "create imported seller listing")
+		}
+
+		// 8. Insert price if priced
+		if retailPrice > 0 {
+			priceID := uuid.NewString()
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO seller_listing_prices (id, seller_listing_id, amount_minor, currency_code, is_current, updated_at)
+				VALUES ($1, $2, $3, $4, true, now())
+			`, priceID, listingID, retailPrice, wholesaleCurrency); err != nil {
+				return translatePGError(err, "create imported listing price")
+			}
+		}
+
+		if err := bumpStorefrontRevisions(ctx, tx, revisionStoreItself, storeID); err != nil {
+			return err
+		}
+
+		marginPct := 0.0
+		if wholesaleMinor > 0 {
+			marginPct = math.Round((float64(retailPrice-wholesaleMinor)/float64(wholesaleMinor)*100.0)*100) / 100
+		}
+
+		result = ImportedOfferResult{
+			ID:                       listingID,
+			ListingID:                listingID,
+			StoreID:                  storeID,
+			ProductID:                globalProductID,
+			SupplierOfferID:          supplierOfferID,
+			RetailPriceMinorUnits:    retailPrice,
+			WholesalePriceMinorUnits: wholesaleMinor,
+			Currency:                 wholesaleCurrency,
+			MarginPercentage:         marginPct,
+			Status:                   "draft",
+			CreatedAt:                createdAt,
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 func (r Repository) GetSellerListingLifecycleStatus(ctx context.Context, storeID, listingID string) (ListingLifecycleStatus, error) {

@@ -75,6 +75,10 @@ func (m *mockFinanceService) GetJournalEntryByReferenceTx(ctx context.Context, t
 	return nil, finance.ErrJournalEntryNotFound
 }
 
+func (m *mockFinanceService) ListStorePayouts(ctx context.Context, storeID string, page, pageSize int) ([]finance.StorePayout, int, error) {
+	return nil, 0, nil
+}
+
 func TestAccountRegistry(t *testing.T) {
 	financeSvc := newMockFinanceService()
 	registry := accounting.NewAccountRegistry(financeSvc)

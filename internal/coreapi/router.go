@@ -20,6 +20,8 @@ import (
 	"core/internal/balance"
 	"core/internal/finance"
 	"core/internal/integration"
+	"core/internal/inventory"
+	"core/internal/listings"
 	"core/internal/marketplace"
 	"core/internal/marketplace_finance"
 	"core/internal/merchants"
@@ -74,6 +76,7 @@ type ShippingService interface {
 	UpdateShipmentStatus(ctx context.Context, params shipping.UpdateStatusParams) (*shipping.Shipment, error)
 	GetShipment(ctx context.Context, shipmentID string) (*shipping.Shipment, error)
 	ListShipmentsForOrder(ctx context.Context, orderID string) ([]shipping.Shipment, error)
+	ListShipmentsForStore(ctx context.Context, storeID string, status *string, page, pageSize int) ([]shipping.Shipment, int, error)
 }
 
 // PaymentService manages payment lifecycle and webhook inbox.
@@ -92,6 +95,7 @@ type FinanceService interface {
 	ListAccounts(ctx context.Context, page commerce.Page) ([]finance.Account, error)
 	PostJournalEntry(ctx context.Context, params finance.PostJournalEntryParams) (*finance.JournalEntry, error)
 	GetJournalEntry(ctx context.Context, id string) (*finance.JournalEntry, error)
+	ListStorePayouts(ctx context.Context, storeID string, page, pageSize int) ([]finance.StorePayout, int, error)
 }
 
 // BalanceService manages financial balance projections.
@@ -118,11 +122,22 @@ type MarketplaceFinanceService interface {
 	ListAllocations(ctx context.Context, settlementID string) ([]marketplace_finance.SettlementAllocation, error)
 }
 
+// InventoryService manages inventory snapshots, dual-mode adjustments, and cycle counting.
+type InventoryService interface {
+	AdjustStoreInventory(ctx context.Context, params inventory.AdjustParams) (*inventory.AdjustmentResult, error)
+}
+
+// ListingsService manages listing pricing and margin guardrails.
+type ListingsService interface {
+	SetListingPrice(ctx context.Context, storeID, listingID string, req listings.ListingPricingRequest, isOwner bool) (*listings.ListingPricingResponse, error)
+}
+
 // Dependencies wires the internal API. Every field is a Core-owned capability;
 // no actor ever constructs these directly.
 type Dependencies struct {
 	Commerce            commerce.Service
 	Repo                commerce.Repository
+	Listings            ListingsService
 	Markets             MarketService
 	Catalog             CatalogReader
 	Stores              StoreLocator
@@ -134,6 +149,7 @@ type Dependencies struct {
 	Balance             BalanceService
 	Settlement          SettlementService
 	MarketplaceFinance  MarketplaceFinanceService
+	Inventory           InventoryService
 	Merchants           *merchants.Service
 	MerchantBootstrap   *merchants.BootstrapService
 	MerchantValidation  MerchantValidationProvisioner
@@ -403,6 +419,7 @@ func NewRouter(deps Dependencies) chi.Router {
 			r.Get("/stores/{storeID}/inventory", server.handleListStoreInventory)
 			r.Post("/stores/{storeID}/inventory/snapshots", server.handleCreateStoreInventorySnapshot)
 			r.Post("/stores/{storeID}/inventory/{snapshotID}/adjustments", server.handleAdjustStoreInventory)
+			r.Post("/stores/{storeID}/inventory/adjustments", server.handleAdjustStoreInventoryDualMode)
 			r.Get("/stores/{storeID}/listings/{listingID}/presentation", server.handleGetListingPresentation)
 			r.Put("/stores/{storeID}/listings/{listingID}/presentation", server.handleUpdateListingPresentation)
 			r.Post("/stores/{storeID}/products/{productID}/publish", server.handlePublishStoreProduct)
@@ -471,6 +488,7 @@ func NewRouter(deps Dependencies) chi.Router {
 			r.Get("/orders/{orderID}/shipments", server.handleListOrderShipments)
 			r.Patch("/shipments/{shipmentID}/status", server.handleUpdateShipmentStatus)
 			r.Get("/shipments/{shipmentID}", server.handleGetShipment)
+			r.Get("/stores/{storeID}/shipments", server.handleListStoreShipments)
 		})
 
 		// Payment capabilities.

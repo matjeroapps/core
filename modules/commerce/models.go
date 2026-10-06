@@ -204,10 +204,12 @@ type Product struct {
 }
 
 type ProductTranslation struct {
-	ProductID   string `json:"product_id"`
-	Locale      string `json:"locale"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	ProductID       string `json:"product_id"`
+	Locale          string `json:"locale"`
+	Name            string `json:"name"`
+	Description     string `json:"description"`
+	MetaTitle       string `json:"meta_title,omitempty"`
+	MetaDescription string `json:"meta_description,omitempty"`
 }
 
 type Category struct {
@@ -235,14 +237,48 @@ type Variant struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+type VariantAttributeValue struct {
+	VariantID        string    `json:"variant_id"`
+	AttributeID      string    `json:"attribute_id"`
+	AttributeValueID string    `json:"attribute_value_id"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
+type VariantAttributeValueDetail struct {
+	VariantID          string `json:"variant_id,omitempty"`
+	AttributeID        string `json:"attribute_id"`
+	AttributeName      string `json:"attribute_name"`
+	AttributeValueID   string `json:"attribute_value_id"`
+	AttributeValueName string `json:"attribute_value_name"`
+}
+
+type VariantAttributeMapping struct {
+	AttributeID      string `json:"attribute_id"`
+	AttributeValueID string `json:"attribute_value_id"`
+}
+
+type VariantWithDetails struct {
+	ID              string                        `json:"id"`
+	ProductID       string                        `json:"product_id"`
+	Code            string                        `json:"code"`
+	Status          string                        `json:"status"`
+	AttributeValues []VariantAttributeValueDetail `json:"attribute_values"`
+	SKU             *SKU                          `json:"sku,omitempty"`
+}
+
 type SKU struct {
-	ID        string    `json:"id"`
-	VariantID string    `json:"variant_id"`
-	Code      string    `json:"code"`
-	Barcode   string    `json:"barcode,omitempty"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID              string    `json:"id"`
+	VariantID       string    `json:"variant_id"`
+	Code            string    `json:"code"`
+	Barcode         string    `json:"barcode,omitempty"`
+	Status          string    `json:"status"`
+	WeightGrams     *int      `json:"weight_grams,omitempty"`
+	LengthMM        *int      `json:"length_mm,omitempty"`
+	WidthMM         *int      `json:"width_mm,omitempty"`
+	HeightMM        *int      `json:"height_mm,omitempty"`
+	PriceMinorUnits *int64    `json:"price_minor_units,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 type Attribute struct {
@@ -543,4 +579,24 @@ type MediaUploadIntent struct {
 	ExpiresAt          time.Time  `json:"expires_at"`
 	CompletedAt        *time.Time `json:"completed_at,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
+}
+
+type SupplierOfferImportParams struct {
+	MarkupPercentage      *float64 `json:"markup_percentage,omitempty"`
+	RetailPriceMinorUnits *int64   `json:"retail_price_minor_units,omitempty"`
+	ShippingSubsidyPolicy string   `json:"shipping_subsidy_policy,omitempty"`
+}
+
+type ImportedOfferResult struct {
+	ID                       string    `json:"id"`
+	ListingID                string    `json:"listing_id"`
+	StoreID                  string    `json:"store_id"`
+	ProductID                string    `json:"product_id"`
+	SupplierOfferID          string    `json:"supplier_offer_id"`
+	RetailPriceMinorUnits    int64     `json:"retail_price_minor_units"`
+	WholesalePriceMinorUnits int64     `json:"wholesale_price_minor_units"`
+	Currency                 string    `json:"currency"`
+	MarginPercentage         float64   `json:"margin_percentage"`
+	Status                   string    `json:"status"`
+	CreatedAt                time.Time `json:"created_at"`
 }
