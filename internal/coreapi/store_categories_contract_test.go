@@ -27,14 +27,14 @@ import (
 )
 
 type storeCategoryContractEnv struct {
-	ctx          context.Context
-	db           *database.Pool
-	repo         commerce.Repository
-	handler      http.Handler
-	storeAID     string
-	storeBID     string
-	subjectA     string
-	subjectB     string
+	ctx      context.Context
+	db       *database.Pool
+	repo     commerce.Repository
+	handler  http.Handler
+	storeAID string
+	storeBID string
+	subjectA string
+	subjectB string
 }
 
 func setupStoreCategoryContract(t *testing.T) storeCategoryContractEnv {
@@ -277,9 +277,9 @@ func TestStoreCategoryContractIsolation(t *testing.T) {
 		t.Fatalf("foreign create status = %d, want 404", foreignCreate.Code)
 	}
 	crossParent := env.do(t, serviceauth.CallerSeller, testSellerToken, env.subjectB, http.MethodPost, "/internal/v1/stores/"+env.storeBID+"/categories", map[string]any{
-		"slug":                "cross-parent",
-		"parent_category_id":  categoryID,
-		"translations":        map[string]any{"en": map[string]any{"name": "Cross"}},
+		"slug":               "cross-parent",
+		"parent_category_id": categoryID,
+		"translations":       map[string]any{"en": map[string]any{"name": "Cross"}},
 	})
 	if crossParent.Code != http.StatusNotFound {
 		t.Fatalf("cross-store parent status = %d, want 404 (body %q)", crossParent.Code, crossParent.Body.String())

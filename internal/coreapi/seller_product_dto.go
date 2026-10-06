@@ -151,8 +151,8 @@ func toSellerProductDetailResponse(detail commerce.SellerProductDetail) sellerPr
 		StoreCategoryIDs: storeCategoryIDs,
 		StoreCategories:  storeCategories,
 		Variants:         detail.Variants,
-		SKUs:         detail.SKUs,
-		Media:        detail.Media,
+		SKUs:             detail.SKUs,
+		Media:            detail.Media,
 		Listing: sellerListingDTO{
 			ID:         detail.Listing.ID,
 			StoreID:    detail.Listing.StoreID,

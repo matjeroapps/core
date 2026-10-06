@@ -24,17 +24,17 @@ type storeCategoryTranslationDTO struct {
 }
 
 type storeCategoryResponse struct {
-	ID               string                            `json:"id"`
-	StoreID          string                            `json:"store_id"`
-	ParentCategoryID *string                           `json:"parent_category_id"`
-	Slug             string                            `json:"slug"`
-	Status           string                            `json:"status"`
-	SortOrder        int                               `json:"sort_order"`
+	ID               string                                 `json:"id"`
+	StoreID          string                                 `json:"store_id"`
+	ParentCategoryID *string                                `json:"parent_category_id"`
+	Slug             string                                 `json:"slug"`
+	Status           string                                 `json:"status"`
+	SortOrder        int                                    `json:"sort_order"`
 	Translations     map[string]storeCategoryTranslationDTO `json:"translations"`
-	ProductCount     int                               `json:"product_count"`
-	ChildCount       int                               `json:"child_count"`
-	CreatedAt        time.Time                         `json:"created_at"`
-	UpdatedAt        time.Time                         `json:"updated_at"`
+	ProductCount     int                                    `json:"product_count"`
+	ChildCount       int                                    `json:"child_count"`
+	CreatedAt        time.Time                              `json:"created_at"`
+	UpdatedAt        time.Time                              `json:"updated_at"`
 }
 
 type storeCategoryListResponse struct {
@@ -109,10 +109,10 @@ func (s *server) handleListStoreCategories(w http.ResponseWriter, r *http.Reques
 }
 
 type createStoreCategoryRequest struct {
-	Slug             string                                   `json:"slug"`
-	ParentCategoryID *string                                  `json:"parent_category_id"`
-	SortOrder        *int                                     `json:"sort_order"`
-	Translations     map[string]storeCategoryTranslationDTO   `json:"translations"`
+	Slug             string                                 `json:"slug"`
+	ParentCategoryID *string                                `json:"parent_category_id"`
+	SortOrder        *int                                   `json:"sort_order"`
+	Translations     map[string]storeCategoryTranslationDTO `json:"translations"`
 }
 
 func (s *server) handleCreateStoreCategory(w http.ResponseWriter, r *http.Request) {
@@ -155,11 +155,11 @@ func (s *server) handleGetStoreCategory(w http.ResponseWriter, r *http.Request) 
 }
 
 type updateStoreCategoryRequest struct {
-	Slug             *string                                 `json:"slug"`
-	ParentCategoryID *string                                 `json:"parent_category_id"`
-	ClearParent      bool                                    `json:"clear_parent"`
-	SortOrder        *int                                    `json:"sort_order"`
-	Translations     map[string]storeCategoryTranslationDTO  `json:"translations"`
+	Slug             *string                                `json:"slug"`
+	ParentCategoryID *string                                `json:"parent_category_id"`
+	ClearParent      bool                                   `json:"clear_parent"`
+	SortOrder        *int                                   `json:"sort_order"`
+	Translations     map[string]storeCategoryTranslationDTO `json:"translations"`
 }
 
 func (s *server) handleUpdateStoreCategory(w http.ResponseWriter, r *http.Request) {
