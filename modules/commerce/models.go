@@ -228,6 +228,79 @@ type CategoryTranslation struct {
 	Description string `json:"description"`
 }
 
+// Store-scoped categories (seller-managed). Structurally separate from the
+// platform-global Category: isolation is enforced by table separation, not by
+// query discipline.
+const (
+	StoreCategoryStatusActive   = "active"
+	StoreCategoryStatusInactive = "inactive"
+	StoreCategoryStatusArchived = "archived"
+)
+
+func IsValidStoreCategoryStatus(status string) bool {
+	switch status {
+	case StoreCategoryStatusActive, StoreCategoryStatusInactive, StoreCategoryStatusArchived:
+		return true
+	default:
+		return false
+	}
+}
+
+type StoreCategory struct {
+	ID               string    `json:"id"`
+	StoreID          string    `json:"store_id"`
+	ParentCategoryID *string   `json:"parent_category_id,omitempty"`
+	Slug             string    `json:"slug"`
+	Status           string    `json:"status"`
+	SortOrder        int       `json:"sort_order"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+type StoreCategoryTranslation struct {
+	CategoryID  string `json:"category_id"`
+	Locale      string `json:"locale"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// StoreCategoryWithMeta is a list/detail node: the category plus its
+// translations and the counts the UI needs for confirmation dialogs
+// (descendants and products referencing the node).
+type StoreCategoryWithMeta struct {
+	StoreCategory
+	Translations []StoreCategoryTranslation `json:"translations"`
+	ProductCount int                        `json:"product_count"`
+	ChildCount   int                        `json:"child_count"`
+}
+
+// StoreCategoryRef is a readable product-assignment reference: enough for a
+// picker label, never a bare ID. The English name is always present (required
+// at creation); NameAr is empty when no Arabic translation exists.
+type StoreCategoryRef struct {
+	ID     string `json:"id"`
+	Slug   string `json:"slug"`
+	Status string `json:"status"`
+	Name   string `json:"name"`
+	NameAr string `json:"name_ar,omitempty"`
+}
+
+// StoreCategoryPatch is the update payload. Nil pointers mean "unchanged";
+// ClearParent distinguishes "remove parent" from "leave parent alone".
+// A non-nil Translations slice replaces all translations.
+type StoreCategoryPatch struct {
+	Slug             *string
+	ParentCategoryID *string
+	ClearParent      bool
+	SortOrder        *int
+	Translations     []StoreCategoryTranslation
+}
+
+type StoreCategoryOrder struct {
+	ID        string `json:"id"`
+	SortOrder int    `json:"sort_order"`
+}
+
 type Variant struct {
 	ID        string    `json:"id"`
 	ProductID string    `json:"product_id"`
