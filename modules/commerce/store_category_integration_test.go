@@ -5,10 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"core/internal/testdb"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // Store-scoped category integration tests. These run against an isolated
@@ -374,3 +378,70 @@ func TestStoreCategoryIsolation(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+func TestStoreCategoriesNeverExposeGlobalCategories(t *testing.T) {
+	env := setupStoreCategoryEnv(t)
+	ctx := context.Background()
+
+	// A platform-global category exists (admin-managed surface).
+	global, err := env.repo.CreateCategory(ctx, "global-brand-"+fmt.Sprintf("%d", time.Now().UnixNano()), nil, "active")
+	if err != nil {
+		t.Fatalf("create global category: %v", err)
+	}
+	if err := env.repo.UpsertCategoryTranslation(ctx, CategoryTranslation{CategoryID: global.ID, Locale: "en", Name: "Global Brand"}); err != nil {
+		t.Fatalf("upsert global translation: %v", err)
+	}
+
+	storeCat, err := env.service.CreateStoreCategoryForSubject(ctx, env.subjectA, env.storeAID, "store-local", nil, nil, storeCategoryTranslations("Store Local", ""))
+	if err != nil {
+		t.Fatalf("create store category: %v", err)
+	}
+
+	items, total, err := env.service.ListStoreCategoriesForSubject(ctx, env.subjectA, env.storeAID, "", 100, 0)
+	if err != nil {
+		t.Fatalf("list store categories: %v", err)
+	}
+	if total != 1 || len(items) != 1 || items[0].ID != storeCat.ID {
+		t.Fatalf("store list leaked global categories: total=%d items=%+v", total, items)
+	}
+	for _, item := range items {
+		if item.ID == global.ID || item.Slug == global.Slug {
+			t.Fatalf("global category %s exposed through store endpoint", global.ID)
+		}
+	}
+}
+
+// The composite same-store FK is the structural backstop behind the service
+// check: a direct repository-level cross-store parent must be rejected by the
+// database, and the error must map to a domain error without leaking SQL text.
+func TestStoreCategoryCrossStoreParentRejectedAtDatabase(t *testing.T) {
+	env := setupStoreCategoryEnv(t)
+	ctx := context.Background()
+
+	catA, err := env.repo.CreateStoreCategory(ctx, env.storeAID, "cat-in-a", nil, 0, storeCategoryTranslations("A", ""))
+	if err != nil {
+		t.Fatalf("create in store A: %v", err)
+	}
+
+	err = env.repo.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO store_categories (id, store_id, parent_category_id, slug, status)
+			VALUES ($1, $2, $3, $4, 'active')
+		`, uuid.NewString(), env.storeBID, catA.ID, "cross-child")
+		return err
+	})
+	if err == nil {
+		t.Fatal("cross-store parent insert must violate the composite FK")
+	}
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "23503" {
+		t.Fatalf("raw err = %v, want FK violation 23503", err)
+	}
+	mapped := translatePGError(err, "create store category")
+	if !errors.Is(mapped, ErrInvalidInput) {
+		t.Fatalf("mapped err = %v, want ErrInvalidInput", mapped)
+	}
+	if strings.Contains(mapped.Error(), "store_categories_parent_same_store_fk") {
+		t.Fatalf("mapped error leaks constraint name: %v", mapped)
+	}
+}
