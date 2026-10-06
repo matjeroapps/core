@@ -1454,9 +1454,13 @@ func (r Repository) ListStoreProducts(ctx context.Context, storeID, statusFilter
 			COUNT(*) OVER() AS total_count
 		FROM seller_listings l
 		JOIN products p ON p.id = l.product_id
-		LEFT JOIN seller_products sp ON sp.product_id = p.id
+		JOIN stores st ON st.id = l.store_id
+		LEFT JOIN seller_products sp ON sp.product_id = p.id AND sp.seller_id = st.seller_id
 		LEFT JOIN seller_listing_prices pr ON pr.seller_listing_id = l.id AND pr.is_current = true
 		WHERE l.store_id = $1
+		  -- Seller-owned listings must have a product owned by this store's seller.
+		  -- Supplier-backed listings are intentionally allowed without seller_products.
+		  AND (l.supplier_offer_id IS NOT NULL OR sp.id IS NOT NULL)
 	`)
 
 	args := []any{storeID}
