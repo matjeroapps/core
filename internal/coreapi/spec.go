@@ -885,7 +885,12 @@ func internalRoutes() []openapi.RouteSpec {
 				pathParam("productID", "Product identifier"),
 			},
 			RequestBody: VariantCreateRequest{},
-			Responses:   createResponses("Created variant", commerce.Variant{}),
+			Responses: append([]openapi.ResponseSpec{
+				// A canonical combination a prior successful write already
+				// created returns the existing variant detail with 200;
+				// first writes return 201.
+				openapi.OKResponse("Existing variant for the canonical combination returned unchanged (already_exists)", commerce.VariantWithDetails{}),
+			}, createResponses("Created variant", commerce.VariantWithDetails{})...),
 		},
 		{
 			Method: http.MethodPut, Path: "/internal/v1/stores/{storeID}/products/{productID}/variants/{variantID}", OperationID: "internalUpdateProductVariant",
@@ -897,6 +902,26 @@ func internalRoutes() []openapi.RouteSpec {
 			},
 			RequestBody: VariantCreateRequest{},
 			Responses:   writeResponses("Updated variant", commerce.Variant{}),
+		},
+		{
+			Method: http.MethodDelete, Path: "/internal/v1/stores/{storeID}/products/{productID}/variants/{variantID}", OperationID: "internalDeleteProductVariant",
+			Summary: "Delete an unreferenced product variant", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("productID", "Product identifier"),
+				pathParam("variantID", "Variant identifier"),
+			},
+			Responses: writeResponses("Deleted variant", StatusResponse{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/products/{productID}/variants/{variantID}/archive", OperationID: "internalArchiveProductVariant",
+			Summary: "Archive a product variant and deactivate its active SKU", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("productID", "Product identifier"),
+				pathParam("variantID", "Variant identifier"),
+			},
+			Responses: writeResponses("Archived variant", commerce.Variant{}),
 		},
 		{
 			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/products/{productID}/variants/{variantID}/skus", OperationID: "internalCreateVariantSKU",
