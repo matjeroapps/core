@@ -210,6 +210,13 @@ func (s Service) CreateStoreForSubject(ctx context.Context, subject, sellerID, m
 	if _, err := s.RequireSellerOwnerAccess(ctx, subject, sellerID); err != nil {
 		return Store{}, err
 	}
+	merchantLinked, err := s.repo.SellerHasMerchantLink(ctx, sellerID)
+	if err != nil {
+		return Store{}, err
+	}
+	if merchantLinked {
+		return s.createFirstStoreForMerchantSeller(ctx, sellerID, marketCode, code, name, status, settings)
+	}
 	return s.createStoreForSeller(ctx, sellerID, marketCode, code, name, status, settings)
 }
 
@@ -221,7 +228,7 @@ func (s Service) CreateStoreForMerchantSubject(ctx context.Context, subject, mer
 	if err != nil {
 		return Store{}, err
 	}
-	return s.createStoreForSeller(ctx, seller.ID, marketCode, code, name, status, settings)
+	return s.createFirstStoreForMerchantSeller(ctx, seller.ID, marketCode, code, name, status, settings)
 }
 
 func (s Service) CreateSupplierStoreForSubject(ctx context.Context, subject, supplierID, marketCode, code, name, status string, settings map[string]any) (Store, error) {
@@ -251,6 +258,23 @@ func (s Service) UpdateStoreStatusByAdmin(ctx context.Context, storeID, targetSt
 		return Store{}, err
 	}
 	return s.repo.GetStore(ctx, storeID)
+}
+
+func (s Service) createFirstStoreForMerchantSeller(ctx context.Context, sellerID, marketCode, code, name, status string, settings map[string]any) (Store, error) {
+	limit := s.StoreEntitlement.EffectiveLimit()
+	if s.PlatformDomain == "" {
+		return s.repo.CreateFirstStoreForMerchantSeller(ctx, sellerID, marketCode, code, name, status, settings, limit)
+	}
+
+	normalizedCode := strings.ToLower(strings.TrimSpace(code))
+	for _, reserved := range s.ReservedSubdomains {
+		if normalizedCode == strings.ToLower(strings.TrimSpace(reserved)) {
+			return Store{}, ErrConflict
+		}
+	}
+	domain := normalizedCode + "." + strings.TrimSpace(s.PlatformDomain)
+	store, _, err := s.repo.CreateFirstStoreWithDomainForMerchantSeller(ctx, sellerID, marketCode, normalizedCode, name, status, settings, domain, "platform", "active", true, nil, nil, limit)
+	return store, err
 }
 
 func (s Service) createStoreForSeller(ctx context.Context, sellerID, marketCode, code, name, status string, settings map[string]any) (Store, error) {

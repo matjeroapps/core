@@ -218,6 +218,89 @@ func (r Repository) CreateStore(ctx context.Context, sellerID, marketCode, code,
 	return created, err
 }
 
+func (r Repository) CreateFirstStoreForMerchantSeller(ctx context.Context, sellerID, marketCode, code, name, status string, settings map[string]any, maxActiveStores ...int) (Store, error) {
+	if sellerID == "" || marketCode == "" || code == "" || name == "" {
+		return Store{}, ErrInvalidInput
+	}
+	maxActive := 1
+	if len(maxActiveStores) > 0 && maxActiveStores[0] > 0 {
+		maxActive = maxActiveStores[0]
+	}
+
+	var created Store
+	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		if err := lockMerchantSellerWithoutStores(ctx, tx, sellerID); err != nil {
+			return err
+		}
+		s, err := createStoreInTx(ctx, tx, sellerID, marketCode, code, name, status, settings, maxActive)
+		if err != nil {
+			return err
+		}
+		created = s
+		return nil
+	})
+	return created, err
+}
+
+func (r Repository) CreateFirstStoreWithDomainForMerchantSeller(ctx context.Context, sellerID, marketCode, code, name, status string, settings map[string]any, domain, domainType, domainStatus string, isPrimary bool, verifiedAt *time.Time, verificationToken *string, maxActiveStores ...int) (Store, StoreDomain, error) {
+	if sellerID == "" || marketCode == "" || code == "" || name == "" || domain == "" || domainStatus == "" {
+		return Store{}, StoreDomain{}, ErrInvalidInput
+	}
+	normalizedDomain, err := NormalizeDomain(domain)
+	if err != nil {
+		return Store{}, StoreDomain{}, ErrInvalidInput
+	}
+	maxActive := 1
+	if len(maxActiveStores) > 0 && maxActiveStores[0] > 0 {
+		maxActive = maxActiveStores[0]
+	}
+
+	var store Store
+	var storeDomain StoreDomain
+	err = r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		if err := lockMerchantSellerWithoutStores(ctx, tx, sellerID); err != nil {
+			return err
+		}
+		s, err := createStoreInTx(ctx, tx, sellerID, marketCode, code, name, status, settings, maxActive)
+		if err != nil {
+			return err
+		}
+		store = s
+
+		d, err := createStoreDomainInTx(ctx, tx, store.ID, normalizedDomain, domainType, domainStatus, isPrimary, verifiedAt, verificationToken)
+		if err != nil {
+			return err
+		}
+		storeDomain = d
+		return nil
+	})
+	return store, storeDomain, err
+}
+
+func lockMerchantSellerWithoutStores(ctx context.Context, tx pgx.Tx, sellerID string) error {
+	var merchantID *string
+	if err := tx.QueryRow(ctx, `
+		SELECT merchant_id
+		FROM sellers
+		WHERE id = $1
+		FOR UPDATE
+	`, sellerID).Scan(&merchantID); err != nil {
+		return translatePGError(err, "lock merchant seller for first store")
+	}
+	if merchantID == nil || strings.TrimSpace(*merchantID) == "" {
+		return ErrInvalidInput
+	}
+
+	var storeCount int
+	if err := tx.QueryRow(ctx, `SELECT COUNT(*) FROM stores WHERE seller_id = $1`, sellerID).Scan(&storeCount); err != nil {
+		return translatePGError(err, "count merchant stores")
+	}
+	if storeCount > 0 {
+		return ErrMerchantStoreAlreadyExists
+	}
+	return nil
+}
+
 // createStoreInTx inserts a store row and its settings within the provided
 // transaction. It is the single store-creation primitive reused by both
 // CreateStore and the atomic CreateStoreWithDomain.
