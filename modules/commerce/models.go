@@ -533,6 +533,21 @@ type ProductPageSection struct {
 	Content   map[string]any `json:"content"`
 }
 
+type ProductAttributeOptionValue struct {
+	ID     string `json:"id"`
+	Code   string `json:"code"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+}
+
+type ProductAttributeOption struct {
+	ID     string                        `json:"id"`
+	Code   string                        `json:"code"`
+	Name   string                        `json:"name"`
+	Status string                        `json:"status"`
+	Values []ProductAttributeOptionValue `json:"values"`
+}
+
 type SellerProductDetail struct {
 	Product          Product                    `json:"product"`
 	Source           string                     `json:"source"` // seller_owned, supplier_backed
@@ -541,6 +556,7 @@ type SellerProductDetail struct {
 	StoreCategories  []StoreCategoryRef         `json:"store_categories"`
 	Variants         []Variant                  `json:"variants"`
 	SKUs             []SKU                      `json:"skus"`
+	Attributes       []ProductAttributeOption   `json:"attributes"`
 	Media            []MediaMetadata            `json:"media"`
 	Listing          SellerListing              `json:"listing"`
 	Price            *SellerListingPrice        `json:"price,omitempty"`

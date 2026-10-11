@@ -364,13 +364,23 @@ func (s *server) handleCreateProductVariant(w http.ResponseWriter, r *http.Reque
 			width = req.Dimensions.WidthMM
 			h = req.Dimensions.HeightMM
 		}
-		res, err := s.deps.Commerce.CreateVariantWithAttributesAndSKU(
+		res, created, err := s.deps.Commerce.CreateVariantWithAttributesAndSKU(
 			r.Context(), subject, storeID, productID,
 			req.Code, req.Status, skuCode, barcode,
 			req.AttributeValues, req.WeightGrams, l, width, h, req.PriceMinorUnits,
 		)
 		if err != nil {
-			writeDomainError(w, err)
+			// The conflict detail names the conflicting variant/SKU code and the
+			// actionable next step, so a failed batch item can be corrected on
+			// retry without inspecting internals.
+			writeVariantConflictDetail(w, err)
+			return
+		}
+		// A retry of a canonical combination that a prior successful write
+		// already created returns the existing resource with 200 instead of
+		// creating a second variant; first writes return 201.
+		if !created {
+			httpx.WriteJSON(w, http.StatusOK, res)
 			return
 		}
 		httpx.WriteJSON(w, http.StatusCreated, res)
@@ -402,6 +412,19 @@ func (s *server) handleUpdateProductVariant(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	if req.AttributeValues != nil {
+		// Reference-aware update: when an attribute signature is supplied, an
+		// unreferenced variant can atomically replace its combination, while a
+		// variant referenced by inventory/orders answers with an actionable 409.
+		res, err := s.deps.Commerce.UpdateVariantWithAttributesForSubject(r.Context(), subject, storeID, productID, variantID, req.Code, req.Status, req.AttributeValues)
+		if err != nil {
+			writeDomainError(w, err)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, res)
+		return
+	}
+
 	v, err := s.deps.Commerce.UpdateVariantForSubject(r.Context(), subject, storeID, productID, variantID, req.Code, req.Status)
 	if err != nil {
 		writeDomainError(w, err)
@@ -409,6 +432,39 @@ func (s *server) handleUpdateProductVariant(w http.ResponseWriter, r *http.Reque
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, v)
+}
+
+func (s *server) handleDeleteProductVariant(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	productID := chi.URLParam(r, "productID")
+	variantID := chi.URLParam(r, "variantID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+	if err := s.deps.Commerce.DeleteVariantForSubject(r.Context(), subject, storeID, productID, variantID); err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *server) handleArchiveProductVariant(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	productID := chi.URLParam(r, "productID")
+	variantID := chi.URLParam(r, "variantID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+	variant, err := s.deps.Commerce.ArchiveVariantForSubject(r.Context(), subject, storeID, productID, variantID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, variant)
 }
 
 func (s *server) handleCreateVariantSKU(w http.ResponseWriter, r *http.Request) {

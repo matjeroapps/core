@@ -1,6 +1,9 @@
 package commerce
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 var (
 	ErrNotFound                   = errors.New("commerce entity not found")
@@ -30,4 +33,10 @@ var (
 	ErrInternalError              = errors.New("internal error")
 	ErrOfferAlreadyImported       = errors.New("offer_already_imported")
 	ErrUnsafeMargin               = errors.New("unsafe_margin")
+
+	// Per-item variant creation conflicts. Both wrap ErrConflict so existing
+	// coarse conflict behavior keeps working, while the conflicting code can be
+	// reported as an actionable per-item batch error detail.
+	ErrVariantCodeConflict = fmt.Errorf("%w: variant code already used in this product", ErrConflict)
+	ErrSKUCodeConflict     = fmt.Errorf("%w: SKU code already used in this store catalog", ErrConflict)
 )

@@ -93,6 +93,22 @@ func writeError(w http.ResponseWriter, code string) {
 	httpx.WriteError(w, statusFor(code), code, messageFor(code))
 }
 
+// writeVariantConflictDetail emits the internal error envelope for per-item
+// variant creation. Variant and SKU code conflicts carry the conflicting code
+// and the actionable next step in the envelope message so a failed batch item
+// can be corrected on retry; every other failure keeps the standard coarse
+// message.
+func writeVariantConflictDetail(w http.ResponseWriter, err error) {
+	if err == nil {
+		return
+	}
+	if errors.Is(err, commerce.ErrVariantCodeConflict) || errors.Is(err, commerce.ErrSKUCodeConflict) {
+		httpx.WriteError(w, statusFor(CodeConflict), CodeConflict, err.Error())
+		return
+	}
+	writeDomainError(w, err)
+}
+
 // messageFor returns a public-safe, non-revealing message for a code. Messages
 // never include the underlying cause: a caller that is not entitled to a
 // resource learns nothing more than the coarse category.

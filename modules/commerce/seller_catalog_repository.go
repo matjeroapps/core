@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -447,6 +448,206 @@ func (r Repository) UpdateVariant(ctx context.Context, variantID, code, status s
 	return updated, err
 }
 
+// variantHasOperationalReferencesTx reports whether the variant or any of its
+// SKUs are referenced by orders or inventory, inside an open transaction.
+func variantHasOperationalReferencesTx(ctx context.Context, tx pgx.Tx, variantID string) (bool, error) {
+	var exists bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM order_items oi WHERE oi.variant_id = $1 OR oi.sku_id IN (SELECT id FROM skus WHERE variant_id = $1)
+			UNION ALL
+			SELECT 1 FROM inventory_snapshots inv WHERE inv.sku_id IN (SELECT id FROM skus WHERE variant_id = $1)
+			UNION ALL
+			SELECT 1 FROM inventory_reservations res JOIN inventory_snapshots inv ON inv.id = res.inventory_snapshot_id WHERE inv.sku_id IN (SELECT id FROM skus WHERE variant_id = $1)
+		)
+	`, variantID).Scan(&exists); err != nil {
+		return false, translatePGError(err, "detect variant references")
+	}
+	return exists, nil
+}
+
+func variantSignaturesEqual(current []VariantAttributeValueDetail, canonical []VariantAttributeMapping) bool {
+	if len(current) != len(canonical) {
+		return false
+	}
+	currentPairs := map[string]string{}
+	for _, detail := range current {
+		currentPairs[detail.AttributeID] = detail.AttributeValueID
+	}
+	for _, mapping := range canonical {
+		if valueID, ok := currentPairs[mapping.AttributeID]; !ok || valueID != mapping.AttributeValueID {
+			return false
+		}
+	}
+	return true
+}
+
+// UpdateVariantWithAttributesAtomically updates a variant's code, status, and —
+// only when an attribute signature is supplied and the variant is unreferenced —
+// its selected attribute junction rows in one transaction.
+//
+// A nil attributeValues parameter leaves the existing combination untouched, so
+// referenced variants can still edit code/status. A supplied signature that
+// differs from the current one is rejected with an actionable conflict for
+// referenced variants, and for unreferenced variants it is atomically replaced
+// only when it introduces a conflicting variant code, product combination, or
+// SKU code (no existing data is overwritten on conflict).
+func (r Repository) UpdateVariantWithAttributesAtomically(ctx context.Context, storeID, productID, variantID, code, status string, attributeValues []VariantAttributeMapping) (VariantWithDetails, error) {
+	if storeID == "" || productID == "" || variantID == "" || code == "" || status == "" {
+		return VariantWithDetails{}, ErrInvalidInput
+	}
+	if status != "active" && status != "inactive" && status != "archived" {
+		return VariantWithDetails{}, fmt.Errorf("%w: invalid variant status", ErrInvalidInput)
+	}
+
+	var result VariantWithDetails
+	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var listingStoreID string
+		if err := tx.QueryRow(ctx, `
+			SELECT store_id FROM seller_listings
+			WHERE store_id = $1 AND product_id = $2
+			FOR UPDATE
+		`, storeID, productID).Scan(&listingStoreID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrNotFound
+			}
+			return translatePGError(err, "resolve listing store for variant update")
+		}
+
+		var variant Variant
+		if err := tx.QueryRow(ctx, `
+			SELECT id, product_id, code, status, created_at, updated_at
+			FROM variants
+			WHERE id = $1 AND product_id = $2
+			FOR UPDATE
+		`, variantID, productID).Scan(&variant.ID, &variant.ProductID, &variant.Code, &variant.Status, &variant.CreatedAt, &variant.UpdatedAt); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrNotFound
+			}
+			return translatePGError(err, "lock variant for update")
+		}
+
+		referenced, err := variantHasOperationalReferencesTx(ctx, tx, variantID)
+		if err != nil {
+			return err
+		}
+
+		if attributeValues != nil {
+			canonical, err := validateVariantAttributeMappingsTx(ctx, tx, attributeValues)
+			if err != nil {
+				return err
+			}
+			current, err := listVariantAttributeValuesTx(ctx, tx, variantID)
+			if err != nil {
+				return err
+			}
+			if !variantSignaturesEqual(current, canonical) {
+				if referenced {
+					return fmt.Errorf("%w: variant has inventory or order references; its attribute combination cannot be changed — create a new variant instead", ErrConflict)
+				}
+				exists, err := variantCombinationExistsTx(ctx, tx, productID, variantID, canonical)
+				if err != nil {
+					return err
+				}
+				if exists {
+					return fmt.Errorf("%w: variant combination already exists", ErrConflict)
+				}
+				if _, err := tx.Exec(ctx, `DELETE FROM variant_attribute_values WHERE variant_id = $1`, variantID); err != nil {
+					return translatePGError(err, "replace variant attribute values")
+				}
+				for _, av := range canonical {
+					if _, err := tx.Exec(ctx, `
+						INSERT INTO variant_attribute_values (variant_id, attribute_id, attribute_value_id, created_at)
+						VALUES ($1, $2, $3, now())
+					`, variantID, av.AttributeID, av.AttributeValueID); err != nil {
+						return translatePGError(err, "replace variant attribute value atomically")
+					}
+				}
+			}
+		}
+
+		if err := tx.QueryRow(ctx, `
+			UPDATE variants
+			SET code = $2, status = $3, updated_at = now()
+			WHERE id = $1
+			RETURNING id, product_id, code, status, created_at, updated_at
+		`, variantID, code, status).Scan(&variant.ID, &variant.ProductID, &variant.Code, &variant.Status, &variant.CreatedAt, &variant.UpdatedAt); err != nil {
+			return translatePGError(err, "update variant with attributes")
+		}
+
+		details, err := listVariantAttributeValuesTx(ctx, tx, variantID)
+		if err != nil {
+			return err
+		}
+		result = VariantWithDetails{
+			ID:              variant.ID,
+			ProductID:       variant.ProductID,
+			Code:            variant.Code,
+			Status:          variant.Status,
+			AttributeValues: details,
+		}
+		return bumpStorefrontRevisions(ctx, tx, revisionStoresByVariant, variantID)
+	})
+	return result, err
+}
+
+func (r Repository) ArchiveVariant(ctx context.Context, variantID string) (Variant, error) {
+	if variantID == "" {
+		return Variant{}, ErrInvalidInput
+	}
+	var updated Variant
+	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `
+			UPDATE variants
+			SET status = 'archived', updated_at = now()
+			WHERE id = $1
+			RETURNING id, product_id, code, status, created_at, updated_at
+		`, variantID).Scan(&updated.ID, &updated.ProductID, &updated.Code, &updated.Status, &updated.CreatedAt, &updated.UpdatedAt); err != nil {
+			return translatePGError(err, "archive variant")
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE skus SET status = 'inactive', updated_at = now()
+			WHERE variant_id = $1 AND status = 'active'
+		`, variantID); err != nil {
+			return translatePGError(err, "deactivate variant active sku")
+		}
+		return bumpStorefrontRevisions(ctx, tx, revisionStoresByVariant, variantID)
+	})
+	return updated, err
+}
+
+func (r Repository) DeleteVariantIfUnreferenced(ctx context.Context, storeID, productID, variantID string) error {
+	if storeID == "" || productID == "" || variantID == "" {
+		return ErrInvalidInput
+	}
+	return r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM variants WHERE id = $1 AND product_id = $2 FOR UPDATE)`, variantID, productID).Scan(&exists); err != nil {
+			return translatePGError(err, "lock variant for delete")
+		}
+		if !exists {
+			return ErrNotFound
+		}
+		referenced, err := variantHasOperationalReferencesTx(ctx, tx, variantID)
+		if err != nil {
+			return err
+		}
+		if referenced {
+			return ErrResourceInUse
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM skus WHERE variant_id = $1`, variantID); err != nil {
+			return translatePGError(err, "delete variant skus")
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM variant_attribute_values WHERE variant_id = $1`, variantID); err != nil {
+			return translatePGError(err, "delete variant attribute values")
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM variants WHERE id = $1 AND product_id = $2`, variantID, productID); err != nil {
+			return translatePGError(err, "delete variant")
+		}
+		return bumpStorefrontRevisions(ctx, tx, revisionStoresByProduct, productID)
+	})
+}
+
 func (r Repository) ListSKUsByVariantID(ctx context.Context, variantID string) ([]SKU, error) {
 	if variantID == "" {
 		return nil, ErrInvalidInput
@@ -474,6 +675,49 @@ func (r Repository) ListSKUsByVariantID(ctx context.Context, variantID string) (
 			s.Barcode = bc.String
 		}
 		result = append(result, s)
+	}
+	return result, nil
+}
+
+func (r Repository) ListProductAttributeOptions(ctx context.Context) ([]ProductAttributeOption, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT a.id, a.code, COALESCE(at.name, a.code), a.status,
+		       av.id, av.code, COALESCE(avt.name, av.code), av.status
+		FROM attributes a
+		LEFT JOIN attribute_translations at ON at.attribute_id = a.id AND at.locale = 'en'
+		JOIN attribute_values av ON av.attribute_id = a.id
+		LEFT JOIN attribute_value_translations avt ON avt.attribute_value_id = av.id AND avt.locale = 'en'
+		WHERE a.status = 'active'
+		ORDER BY a.code ASC, av.code ASC
+	`)
+	if err != nil {
+		return nil, translatePGError(err, "list product attribute options")
+	}
+	defer rows.Close()
+
+	byID := map[string]*ProductAttributeOption{}
+	order := []string{}
+	for rows.Next() {
+		var attr ProductAttributeOption
+		var value ProductAttributeOptionValue
+		if err := rows.Scan(&attr.ID, &attr.Code, &attr.Name, &attr.Status, &value.ID, &value.Code, &value.Name, &value.Status); err != nil {
+			return nil, translatePGError(err, "scan product attribute option")
+		}
+		current := byID[attr.ID]
+		if current == nil {
+			attr.Values = []ProductAttributeOptionValue{}
+			byID[attr.ID] = &attr
+			order = append(order, attr.ID)
+			current = byID[attr.ID]
+		}
+		current.Values = append(current.Values, value)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, translatePGError(err, "iterate product attribute options")
+	}
+	result := make([]ProductAttributeOption, 0, len(order))
+	for _, id := range order {
+		result = append(result, *byID[id])
 	}
 	return result, nil
 }
@@ -1801,6 +2045,38 @@ func (r Repository) GetMediaMetadataByStorageKey(ctx context.Context, productID,
 	return m, nil
 }
 
+func skuStoreIDColumnExistsTx(ctx context.Context, tx pgx.Tx) (bool, error) {
+	var exists bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_name = 'skus' AND column_name = 'store_id'
+		)
+	`).Scan(&exists); err != nil {
+		return false, translatePGError(err, "check sku store column")
+	}
+	return exists, nil
+}
+
+func resolveStoreIDForVariantTx(ctx context.Context, tx pgx.Tx, variantID string) (*string, error) {
+	var storeID string
+	err := tx.QueryRow(ctx, `
+		SELECT sl.store_id
+		FROM seller_listings sl
+		JOIN variants v ON v.product_id = sl.product_id
+		WHERE v.id = $1
+		ORDER BY sl.created_at ASC, sl.id ASC
+		LIMIT 1
+	`, variantID).Scan(&storeID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, translatePGError(err, "resolve sku store")
+	}
+	return &storeID, nil
+}
+
 // CreateSKUReplacingActive enforces the 1-active-SKU-per-variant invariant
 // inside one transaction: creating an active SKU first deactivates the
 // currently active SKU of the same variant. The partial unique index
@@ -1826,12 +2102,29 @@ func (r Repository) CreateSKUReplacingActive(ctx context.Context, variantID, cod
 		if barcode != "" {
 			barcodeParam = &barcode
 		}
+		storeID, err := resolveStoreIDForVariantTx(ctx, tx, variantID)
+		if err != nil {
+			return err
+		}
+		hasStoreID, err := skuStoreIDColumnExistsTx(ctx, tx)
+		if err != nil {
+			return err
+		}
 		id := uuid.NewString()
-		if err := tx.QueryRow(ctx, `
-			INSERT INTO skus (id, variant_id, code, barcode, status)
-			VALUES ($1, $2, $3, $4, $5)
-			RETURNING created_at, updated_at
-		`, id, variantID, code, barcodeParam, status).Scan(&created.CreatedAt, &created.UpdatedAt); err != nil {
+		if hasStoreID {
+			err = tx.QueryRow(ctx, `
+				INSERT INTO skus (id, store_id, variant_id, code, barcode, status)
+				VALUES ($1, $2, $3, $4, $5, $6)
+				RETURNING created_at, updated_at
+			`, id, storeID, variantID, code, barcodeParam, status).Scan(&created.CreatedAt, &created.UpdatedAt)
+		} else {
+			err = tx.QueryRow(ctx, `
+				INSERT INTO skus (id, variant_id, code, barcode, status)
+				VALUES ($1, $2, $3, $4, $5)
+				RETURNING created_at, updated_at
+			`, id, variantID, code, barcodeParam, status).Scan(&created.CreatedAt, &created.UpdatedAt)
+		}
+		if err != nil {
 			return translatePGError(err, "create sku")
 		}
 
@@ -1877,12 +2170,29 @@ func (r Repository) CreateSKUWithSpecsReplacingActive(
 		if barcode != "" {
 			barcodeParam = &barcode
 		}
+		storeID, err := resolveStoreIDForVariantTx(ctx, tx, variantID)
+		if err != nil {
+			return err
+		}
+		hasStoreID, err := skuStoreIDColumnExistsTx(ctx, tx)
+		if err != nil {
+			return err
+		}
 		id := uuid.NewString()
-		if err := tx.QueryRow(ctx, `
-			INSERT INTO skus (id, variant_id, code, barcode, status, weight_grams, length_mm, width_mm, height_mm, price_minor_units)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-			RETURNING created_at, updated_at
-		`, id, variantID, code, barcodeParam, status, weightGrams, lengthMM, widthMM, heightMM, priceMinorUnits).Scan(&created.CreatedAt, &created.UpdatedAt); err != nil {
+		if hasStoreID {
+			err = tx.QueryRow(ctx, `
+				INSERT INTO skus (id, store_id, variant_id, code, barcode, status, weight_grams, length_mm, width_mm, height_mm, price_minor_units)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+				RETURNING created_at, updated_at
+			`, id, storeID, variantID, code, barcodeParam, status, weightGrams, lengthMM, widthMM, heightMM, priceMinorUnits).Scan(&created.CreatedAt, &created.UpdatedAt)
+		} else {
+			err = tx.QueryRow(ctx, `
+				INSERT INTO skus (id, variant_id, code, barcode, status, weight_grams, length_mm, width_mm, height_mm, price_minor_units)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+				RETURNING created_at, updated_at
+			`, id, variantID, code, barcodeParam, status, weightGrams, lengthMM, widthMM, heightMM, priceMinorUnits).Scan(&created.CreatedAt, &created.UpdatedAt)
+		}
+		if err != nil {
 			return translatePGError(err, "create sku with specs")
 		}
 
@@ -1904,6 +2214,321 @@ func (r Repository) CreateSKUWithSpecsReplacingActive(
 	})
 
 	return created, err
+}
+
+func (r Repository) CreateVariantWithAttributesAndSKUAtomically(
+	ctx context.Context,
+	storeID, productID, variantCode, variantStatus, skuCode, barcode string,
+	attributeValues []VariantAttributeMapping,
+	weightGrams, lengthMM, widthMM, heightMM *int,
+	priceMinorUnits *int64,
+) (VariantWithDetails, bool, error) {
+	if storeID == "" || productID == "" || variantCode == "" || variantStatus == "" {
+		return VariantWithDetails{}, false, ErrInvalidInput
+	}
+	if skuCode == "" {
+		return VariantWithDetails{}, false, fmt.Errorf("%w: sku code is required", ErrInvalidInput)
+	}
+
+	var result VariantWithDetails
+	created := false
+	err := r.withTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		var listingStoreID string
+		if err := tx.QueryRow(ctx, `
+			SELECT store_id FROM seller_listings
+			WHERE store_id = $1 AND product_id = $2
+			FOR UPDATE
+		`, storeID, productID).Scan(&listingStoreID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrNotFound
+			}
+			return translatePGError(err, "resolve listing store for variant sku")
+		}
+
+		canonical, err := validateVariantAttributeMappingsTx(ctx, tx, attributeValues)
+		if err != nil {
+			return err
+		}
+		if len(canonical) > 0 {
+			existingVariantID, exists, err := variantCombinationVariantIDTx(ctx, tx, productID, "", canonical)
+			if err != nil {
+				return err
+			}
+			if exists {
+				// A prior successful write for the canonical combination already
+				// exists. Per-item batch semantics treat this as
+				// already_exists: return the existing resource without creating
+				// a second variant for the same signature.
+				details, err := variantWithDetailsTx(ctx, tx, productID, existingVariantID)
+				if err != nil {
+					return err
+				}
+				result = details
+				return nil
+			}
+		}
+
+		var existingVariantCode string
+		err = tx.QueryRow(ctx, `
+			SELECT code FROM variants WHERE product_id = $1 AND code = $2
+		`, productID, variantCode).Scan(&existingVariantCode)
+		switch {
+		case err == nil:
+			return fmt.Errorf("%w: variant code %q is already used in this product; choose a different code for this combination", ErrVariantCodeConflict, variantCode)
+		case errors.Is(err, pgx.ErrNoRows):
+		default:
+			return translatePGError(err, "check variant code uniqueness")
+		}
+
+		hasStoreID, err := skuStoreIDColumnExistsTx(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if hasStoreID {
+			var existingSKUCode string
+			err = tx.QueryRow(ctx, `
+				SELECT code FROM skus WHERE store_id = $1 AND code = $2
+			`, listingStoreID, skuCode).Scan(&existingSKUCode)
+			switch {
+			case err == nil:
+				return fmt.Errorf("%w: SKU code %q is already used in this store catalog; choose a different SKU code for this combination", ErrSKUCodeConflict, skuCode)
+			case errors.Is(err, pgx.ErrNoRows):
+			default:
+				return translatePGError(err, "check store-scoped SKU code uniqueness")
+			}
+		}
+
+		variantID := uuid.NewString()
+		var variant Variant
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO variants (id, product_id, code, status)
+			VALUES ($1, $2, $3, $4)
+			RETURNING id, product_id, code, status, created_at, updated_at
+		`, variantID, productID, variantCode, variantStatus).Scan(&variant.ID, &variant.ProductID, &variant.Code, &variant.Status, &variant.CreatedAt, &variant.UpdatedAt); err != nil {
+			return translatePGError(err, "create variant with attributes and sku")
+		}
+
+		for _, av := range canonical {
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO variant_attribute_values (variant_id, attribute_id, attribute_value_id, created_at)
+				VALUES ($1, $2, $3, now())
+			`, variantID, av.AttributeID, av.AttributeValueID); err != nil {
+				return translatePGError(err, "attach variant attribute value atomically")
+			}
+		}
+
+		var barcodeParam *string
+		if barcode != "" {
+			barcodeParam = &barcode
+		}
+		skuID := uuid.NewString()
+		var sku SKU
+		var barcodeOut sql.NullString
+		if hasStoreID {
+			err = tx.QueryRow(ctx, `
+				INSERT INTO skus (id, store_id, variant_id, code, barcode, status, weight_grams, length_mm, width_mm, height_mm, price_minor_units)
+				VALUES ($1, $2, $3, $4, $5, 'active', $6, $7, $8, $9, $10)
+				RETURNING id, variant_id, code, barcode, status, weight_grams, length_mm, width_mm, height_mm, price_minor_units, created_at, updated_at
+			`, skuID, listingStoreID, variantID, skuCode, barcodeParam, weightGrams, lengthMM, widthMM, heightMM, priceMinorUnits).Scan(
+				&sku.ID, &sku.VariantID, &sku.Code, &barcodeOut, &sku.Status, &sku.WeightGrams, &sku.LengthMM, &sku.WidthMM, &sku.HeightMM, &sku.PriceMinorUnits, &sku.CreatedAt, &sku.UpdatedAt,
+			)
+		} else {
+			err = tx.QueryRow(ctx, `
+				INSERT INTO skus (id, variant_id, code, barcode, status, weight_grams, length_mm, width_mm, height_mm, price_minor_units)
+				VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9)
+				RETURNING id, variant_id, code, barcode, status, weight_grams, length_mm, width_mm, height_mm, price_minor_units, created_at, updated_at
+			`, skuID, variantID, skuCode, barcodeParam, weightGrams, lengthMM, widthMM, heightMM, priceMinorUnits).Scan(
+				&sku.ID, &sku.VariantID, &sku.Code, &barcodeOut, &sku.Status, &sku.WeightGrams, &sku.LengthMM, &sku.WidthMM, &sku.HeightMM, &sku.PriceMinorUnits, &sku.CreatedAt, &sku.UpdatedAt,
+			)
+		}
+		if err != nil {
+			return translatePGError(err, "create store-scoped sku with specs")
+		}
+		if barcodeOut.Valid {
+			sku.Barcode = barcodeOut.String
+		}
+
+		details, err := listVariantAttributeValuesTx(ctx, tx, variantID)
+		if err != nil {
+			return err
+		}
+		result = VariantWithDetails{
+			ID:              variant.ID,
+			ProductID:       variant.ProductID,
+			Code:            variant.Code,
+			Status:          variant.Status,
+			AttributeValues: details,
+			SKU:             &sku,
+		}
+		created = true
+		return bumpStorefrontRevisions(ctx, tx, revisionStoresByProduct, productID)
+	})
+	return result, created, err
+}
+
+func validateVariantAttributeMappingsTx(ctx context.Context, tx pgx.Tx, mappings []VariantAttributeMapping) ([]VariantAttributeMapping, error) {
+	seenAttributes := map[string]bool{}
+	canonical := make([]VariantAttributeMapping, 0, len(mappings))
+	for _, mapping := range mappings {
+		if mapping.AttributeID == "" || mapping.AttributeValueID == "" {
+			return nil, ErrInvalidInput
+		}
+		if seenAttributes[mapping.AttributeID] {
+			return nil, fmt.Errorf("%w: duplicate variant attribute dimension", ErrInvalidInput)
+		}
+		seenAttributes[mapping.AttributeID] = true
+
+		var status string
+		if err := tx.QueryRow(ctx, `
+			SELECT status FROM attribute_values
+			WHERE id = $1 AND attribute_id = $2
+		`, mapping.AttributeValueID, mapping.AttributeID).Scan(&status); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, ErrInvalidInput
+			}
+			return nil, translatePGError(err, "validate variant attribute value")
+		}
+		if status != "active" {
+			return nil, fmt.Errorf("%w: attribute value is not active", ErrInvalidInput)
+		}
+		canonical = append(canonical, mapping)
+	}
+	sort.Slice(canonical, func(i, j int) bool {
+		if canonical[i].AttributeID == canonical[j].AttributeID {
+			return canonical[i].AttributeValueID < canonical[j].AttributeValueID
+		}
+		return canonical[i].AttributeID < canonical[j].AttributeID
+	})
+	return canonical, nil
+}
+
+func variantCombinationExistsTx(ctx context.Context, tx pgx.Tx, productID, excludeVariantID string, canonical []VariantAttributeMapping) (bool, error) {
+	_, ok, err := variantCombinationVariantIDTx(ctx, tx, productID, excludeVariantID, canonical)
+	return ok, err
+}
+
+func variantCombinationVariantIDTx(ctx context.Context, tx pgx.Tx, productID, excludeVariantID string, canonical []VariantAttributeMapping) (string, bool, error) {
+	if len(canonical) == 0 {
+		return "", false, nil
+	}
+	attributeIDs := make([]string, 0, len(canonical))
+	valueIDs := make([]string, 0, len(canonical))
+	for _, mapping := range canonical {
+		attributeIDs = append(attributeIDs, mapping.AttributeID)
+		valueIDs = append(valueIDs, mapping.AttributeValueID)
+	}
+
+	var existingID string
+	err := tx.QueryRow(ctx, `
+		SELECT v.id
+		FROM variants v
+		JOIN variant_attribute_values vav ON vav.variant_id = v.id
+		WHERE v.product_id = $1
+		  AND ($4 = '' OR v.id <> $4::uuid)
+		GROUP BY v.id
+		HAVING count(*) = $2
+		   AND count(*) FILTER (WHERE vav.attribute_id = ANY($3::uuid[]) AND vav.attribute_value_id = ANY($5::uuid[])) = $2
+		LIMIT 1
+	`, productID, len(canonical), attributeIDs, excludeVariantID, valueIDs).Scan(&existingID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", false, nil
+		}
+		return "", false, translatePGError(err, "check variant combination")
+	}
+	return existingID, true, nil
+}
+
+// variantWithDetailsTx loads one variant with its attribute values and its
+// active SKU inside the active transaction. It backs already_exists outcomes:
+// a caller retried a canonical combination that a prior successful write had
+// already materialised, so the existing resource is returned unchanged.
+func variantWithDetailsTx(ctx context.Context, tx pgx.Tx, productID, variantID string) (VariantWithDetails, error) {
+	var variant Variant
+	if err := tx.QueryRow(ctx, `
+		SELECT id, product_id, code, status, created_at, updated_at
+		FROM variants
+		WHERE id = $1 AND product_id = $2
+	`, variantID, productID).Scan(&variant.ID, &variant.ProductID, &variant.Code, &variant.Status, &variant.CreatedAt, &variant.UpdatedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return VariantWithDetails{}, ErrNotFound
+		}
+		return VariantWithDetails{}, translatePGError(err, "load existing variant for combination")
+	}
+
+	details, err := listVariantAttributeValuesTx(ctx, tx, variantID)
+	if err != nil {
+		return VariantWithDetails{}, err
+	}
+
+	var sku *SKU
+	hasStoreID, err := skuStoreIDColumnExistsTx(ctx, tx)
+	if err != nil {
+		return VariantWithDetails{}, err
+	}
+	skuQuery := `
+		SELECT id, variant_id, code, barcode, status, weight_grams, length_mm, width_mm, height_mm, price_minor_units, created_at, updated_at
+		FROM skus
+		WHERE variant_id = $1 AND status = 'active'
+		ORDER BY created_at DESC
+		LIMIT 1
+	`
+	var scanned SKU
+	var barcodeOut sql.NullString
+	if err := tx.QueryRow(ctx, skuQuery, variantID).Scan(
+		&scanned.ID, &scanned.VariantID, &scanned.Code, &barcodeOut, &scanned.Status,
+		&scanned.WeightGrams, &scanned.LengthMM, &scanned.WidthMM, &scanned.HeightMM, &scanned.PriceMinorUnits,
+		&scanned.CreatedAt, &scanned.UpdatedAt,
+	); err == nil {
+		if barcodeOut.Valid {
+			scanned.Barcode = barcodeOut.String
+		}
+		_ = hasStoreID
+		sku = &scanned
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return VariantWithDetails{}, translatePGError(err, "load active SKU for existing variant")
+	}
+
+	return VariantWithDetails{
+		ID:              variant.ID,
+		ProductID:       variant.ProductID,
+		Code:            variant.Code,
+		Status:          variant.Status,
+		AttributeValues: details,
+		SKU:             sku,
+	}, nil
+}
+
+func listVariantAttributeValuesTx(ctx context.Context, tx pgx.Tx, variantID string) ([]VariantAttributeValueDetail, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT 
+			vav.variant_id,
+			vav.attribute_id,
+			COALESCE(at.name, a.code) as attribute_name,
+			vav.attribute_value_id,
+			COALESCE(avt.name, av.code) as attribute_value_name
+		FROM variant_attribute_values vav
+		JOIN attributes a ON a.id = vav.attribute_id
+		LEFT JOIN attribute_translations at ON at.attribute_id = a.id AND at.locale = 'en'
+		JOIN attribute_values av ON av.id = vav.attribute_value_id
+		LEFT JOIN attribute_value_translations avt ON avt.attribute_value_id = av.id AND avt.locale = 'en'
+		WHERE vav.variant_id = $1
+		ORDER BY a.code ASC
+	`, variantID)
+	if err != nil {
+		return nil, translatePGError(err, "query variant attribute values")
+	}
+	defer rows.Close()
+
+	var details []VariantAttributeValueDetail
+	for rows.Next() {
+		var d VariantAttributeValueDetail
+		if err := rows.Scan(&d.VariantID, &d.AttributeID, &d.AttributeName, &d.AttributeValueID, &d.AttributeValueName); err != nil {
+			return nil, translatePGError(err, "scan variant attribute value")
+		}
+		details = append(details, d)
+	}
+	return details, rows.Err()
 }
 
 func (r Repository) AttachVariantAttributeValue(ctx context.Context, variantID, attributeID, attributeValueID string) error {
@@ -1976,12 +2601,30 @@ func (r Repository) UpdateSKUReplacingActive(ctx context.Context, skuID, variant
 		if barcode != "" {
 			barcodeParam = &barcode
 		}
-		if err := tx.QueryRow(ctx, `
-			UPDATE skus
-			SET code = $3, barcode = $4, status = $5, updated_at = now()
-			WHERE id = $1 AND variant_id = $2
-			RETURNING created_at, updated_at
-		`, skuID, variantID, code, barcodeParam, status).Scan(&updated.CreatedAt, &updated.UpdatedAt); err != nil {
+		storeID, err := resolveStoreIDForVariantTx(ctx, tx, variantID)
+		if err != nil {
+			return err
+		}
+		hasStoreID, err := skuStoreIDColumnExistsTx(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if hasStoreID {
+			err = tx.QueryRow(ctx, `
+				UPDATE skus
+				SET store_id = COALESCE(store_id, $6), code = $3, barcode = $4, status = $5, updated_at = now()
+				WHERE id = $1 AND variant_id = $2
+				RETURNING created_at, updated_at
+			`, skuID, variantID, code, barcodeParam, status, storeID).Scan(&updated.CreatedAt, &updated.UpdatedAt)
+		} else {
+			err = tx.QueryRow(ctx, `
+				UPDATE skus
+				SET code = $3, barcode = $4, status = $5, updated_at = now()
+				WHERE id = $1 AND variant_id = $2
+				RETURNING created_at, updated_at
+			`, skuID, variantID, code, barcodeParam, status).Scan(&updated.CreatedAt, &updated.UpdatedAt)
+		}
+		if err != nil {
 			return translatePGError(err, "update sku")
 		}
 
