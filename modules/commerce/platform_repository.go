@@ -48,6 +48,39 @@ func (r Repository) GetSellerByID(ctx context.Context, sellerID string) (Seller,
 	return seller, nil
 }
 
+func (r Repository) SellerHasMerchantLink(ctx context.Context, sellerID string) (bool, error) {
+	if sellerID == "" {
+		return false, ErrInvalidInput
+	}
+
+	var hasMerchantColumn bool
+	if err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.columns
+			WHERE table_schema = current_schema()
+			  AND table_name = 'sellers'
+			  AND column_name = 'merchant_id'
+		)
+	`).Scan(&hasMerchantColumn); err != nil {
+		return false, translatePGError(err, "check seller merchant link column")
+	}
+	if !hasMerchantColumn {
+		return false, nil
+	}
+
+	var merchantID sql.NullString
+	err := r.pool.QueryRow(ctx, `
+		SELECT merchant_id
+		FROM sellers
+		WHERE id = $1
+	`, sellerID).Scan(&merchantID)
+	if err != nil {
+		return false, translatePGError(err, "get seller merchant link")
+	}
+	return merchantID.Valid && strings.TrimSpace(merchantID.String) != "", nil
+}
+
 func (r Repository) GetSupplierForSubject(ctx context.Context, subject string) (Supplier, error) {
 	if subject == "" {
 		return Supplier{}, ErrInvalidInput

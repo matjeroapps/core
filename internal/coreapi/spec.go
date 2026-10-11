@@ -756,7 +756,7 @@ func internalRoutes() []openapi.RouteSpec {
 			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/finance/balance", OperationID: "internalGetStoreBalance",
 			Summary: "Get store financial balance", Tags: []string{"Stores"},
 			Parameters: []openapi.ParameterSpec{pathParam("storeID", "Store identifier")},
-			Responses:  readResponses("Store balance", AccountBalanceResponse{}),
+			Responses:  readResponses("Store balance", StoreBalanceResponse{}),
 		},
 		{
 			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/finance/ledger", OperationID: "internalListStoreLedgerEntries",
@@ -774,7 +774,7 @@ func internalRoutes() []openapi.RouteSpec {
 			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/finance/payouts", OperationID: "internalListStorePayouts",
 			Summary: "List store payouts", Tags: []string{"Stores"},
 			Parameters: append([]openapi.ParameterSpec{pathParam("storeID", "Store identifier")}, pageParams...),
-			Responses:  readResponses("Payout collection", CollectionResponse[SettlementResponse]{}),
+			Responses:  readResponses("Payout collection", CollectionResponse[PayoutResponse]{}),
 		},
 
 		// --- P5.8 Seller catalog operations ---

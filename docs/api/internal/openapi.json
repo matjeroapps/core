@@ -33046,21 +33046,14 @@
               "application/json": {
                 "schema": {
                   "properties": {
-                    "account_id": {
-                      "type": "string"
-                    },
-                    "balance_minor": {
-                      "format": "int64",
-                      "type": "integer"
-                    },
-                    "credit_total_minor": {
+                    "available_minor": {
                       "format": "int64",
                       "type": "integer"
                     },
                     "currency": {
                       "type": "string"
                     },
-                    "debit_total_minor": {
+                    "pending_minor": {
                       "format": "int64",
                       "type": "integer"
                     },
@@ -33070,11 +33063,9 @@
                     }
                   },
                   "required": [
-                    "account_id",
-                    "balance_minor",
-                    "credit_total_minor",
+                    "available_minor",
                     "currency",
-                    "debit_total_minor",
+                    "pending_minor",
                     "updated_at"
                   ],
                   "type": "object"
@@ -33529,17 +33520,9 @@
                     "items": {
                       "items": {
                         "properties": {
-                          "account_id": {
-                            "type": "string"
-                          },
-                          "adjustment_amount_minor": {
+                          "amount_minor": {
                             "format": "int64",
                             "type": "integer"
-                          },
-                          "calculated_at": {
-                            "format": "date-time",
-                            "nullable": true,
-                            "type": "string"
                           },
                           "created_at": {
                             "format": "date-time",
@@ -33548,39 +33531,30 @@
                           "currency": {
                             "type": "string"
                           },
-                          "finalized_at": {
-                            "format": "date-time",
-                            "nullable": true,
-                            "type": "string"
-                          },
-                          "gross_amount_minor": {
-                            "format": "int64",
-                            "type": "integer"
-                          },
                           "id": {
                             "type": "string"
                           },
-                          "net_amount_minor": {
-                            "format": "int64",
-                            "type": "integer"
+                          "payout_method": {
+                            "type": "string"
                           },
-                          "settlement_period_id": {
+                          "reference": {
                             "type": "string"
                           },
                           "status": {
                             "type": "string"
+                          },
+                          "store_id": {
+                            "type": "string"
                           }
                         },
                         "required": [
-                          "account_id",
-                          "adjustment_amount_minor",
+                          "amount_minor",
                           "created_at",
                           "currency",
-                          "gross_amount_minor",
                           "id",
-                          "net_amount_minor",
-                          "settlement_period_id",
-                          "status"
+                          "payout_method",
+                          "status",
+                          "store_id"
                         ],
                         "type": "object"
                       },

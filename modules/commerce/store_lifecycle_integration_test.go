@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"core/internal/merchants"
 	"core/internal/testdb"
 	"core/modules/commerce"
 	"core/packages/database"
@@ -36,6 +37,9 @@ func setupTestEnv(t *testing.T, dsn string) *testEnv {
 		"000010_customer_cart_domain",
 		"000011_checkout_sessions",
 		"000024_store_lifecycle_and_entitlements",
+		"000034_merchant_identity_foundation",
+		"000035_seller_supplier_merchant_linkage",
+		"000036_merchant_profile_cardinality",
 	}
 	applyExternalMigrationBatch(t, db, migrationNames...)
 	ctx := context.Background()
@@ -85,6 +89,145 @@ func createTestSellerWithMembers(t *testing.T, env *testEnv, suffix string) test
 		OwnerSubject: ownerSub,
 		MgrSubject:   mgrSub,
 		StaffSubject: staffSub,
+	}
+}
+
+func createTestMerchant(t *testing.T, env *testEnv, suffix string) *merchants.Merchant {
+	t.Helper()
+	merchantSvc := merchants.NewService(merchants.NewPostgresRepository(env.db.Pool))
+	merchant, err := merchantSvc.CreateMerchant(env.ctx, "MERCH-"+suffix, "Merchant "+suffix, merchants.CapabilityTypeRetail)
+	if err != nil {
+		t.Fatalf("create merchant: %v", err)
+	}
+	return merchant
+}
+
+func TestMerchantStoreCreationRejectsAnyExistingStoreStatus(t *testing.T) {
+	dsn := "postgres://commerce:commerce@localhost:5432/commerce?sslmode=disable"
+	env := setupTestEnv(t, dsn)
+
+	for _, status := range []string{"draft", "active", "inactive"} {
+		t.Run(status, func(t *testing.T) {
+			suffix := status + "-" + uuid.NewString()[:8]
+			merchant := createTestMerchant(t, env, suffix)
+			subject := "merchant-store-" + suffix
+
+			first, err := env.service.CreateStoreForMerchantSubject(env.ctx, subject, merchant.ID.String(), "EG", "merchant-"+suffix+"-one", "Merchant Store One", status, nil)
+			if err != nil {
+				t.Fatalf("first merchant store create: %v", err)
+			}
+			if first.Status != status {
+				t.Fatalf("first status = %s, want %s", first.Status, status)
+			}
+
+			_, err = env.service.CreateStoreForMerchantSubject(env.ctx, subject, merchant.ID.String(), "EG", "merchant-"+suffix+"-two", "Merchant Store Two", "draft", nil)
+			if !errors.Is(err, commerce.ErrMerchantStoreAlreadyExists) {
+				t.Fatalf("second merchant store create expected ErrMerchantStoreAlreadyExists, got %v", err)
+			}
+		})
+	}
+}
+
+func TestMerchantStoreCreationPreservesExistingMultipleStoresAndAuthorization(t *testing.T) {
+	dsn := "postgres://commerce:commerce@localhost:5432/commerce?sslmode=disable"
+	env := setupTestEnv(t, dsn)
+
+	suffix := uuid.NewString()[:8]
+	merchant := createTestMerchant(t, env, "legacy-"+suffix)
+	subject := "merchant-legacy-owner-" + suffix
+	seller, err := env.repo.EnsureRetailSellerForMerchant(env.ctx, merchant.ID.String(), subject)
+	if err != nil {
+		t.Fatalf("ensure merchant retail seller: %v", err)
+	}
+	storeA, err := env.repo.CreateStore(env.ctx, seller.ID, "EG", "legacy-a-"+suffix, "Legacy A", "draft", nil)
+	if err != nil {
+		t.Fatalf("seed legacy store A: %v", err)
+	}
+	storeB, err := env.repo.CreateStore(env.ctx, seller.ID, "EG", "legacy-b-"+suffix, "Legacy B", "draft", nil)
+	if err != nil {
+		t.Fatalf("seed legacy store B: %v", err)
+	}
+
+	activated, err := env.service.UpdateStoreStatusForSubject(env.ctx, subject, storeA.ID, "active")
+	if err != nil {
+		t.Fatalf("activate existing legacy store: %v", err)
+	}
+	if activated.ID != storeA.ID || activated.Status != "active" {
+		t.Fatalf("activated store = %+v", activated)
+	}
+	_, err = env.service.CreateStoreForMerchantSubject(env.ctx, subject, merchant.ID.String(), "EG", "legacy-c-"+suffix, "Legacy C", "draft", nil)
+	if !errors.Is(err, commerce.ErrMerchantStoreAlreadyExists) {
+		t.Fatalf("new merchant store with legacy rows expected ErrMerchantStoreAlreadyExists, got %v", err)
+	}
+	fetchedB, err := env.repo.GetStore(env.ctx, storeB.ID)
+	if err != nil {
+		t.Fatalf("fetch untouched legacy store: %v", err)
+	}
+	if fetchedB.Status != "draft" {
+		t.Fatalf("legacy store B status = %s, want draft", fetchedB.Status)
+	}
+}
+
+func TestMerchantStoreCreationConcurrentSecondAttemptCannotPass(t *testing.T) {
+	dsn := "postgres://commerce:commerce@localhost:5432/commerce?sslmode=disable"
+	env := setupTestEnv(t, dsn)
+
+	suffix := uuid.NewString()[:8]
+	merchant := createTestMerchant(t, env, "conc-create-"+suffix)
+	subject := "merchant-conc-create-owner-" + suffix
+	const attempts = 2
+
+	var wg sync.WaitGroup
+	errs := make([]error, attempts)
+	startSignal := make(chan struct{})
+	for i := 0; i < attempts; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			<-startSignal
+			_, errs[idx] = env.service.CreateStoreForMerchantSubject(env.ctx, subject, merchant.ID.String(), "EG", fmt.Sprintf("merchant-conc-%d-%s", idx, suffix), fmt.Sprintf("Merchant Concurrent %d", idx), "draft", nil)
+		}(i)
+	}
+	close(startSignal)
+	wg.Wait()
+
+	successCount := 0
+	alreadyExistsCount := 0
+	for _, err := range errs {
+		if err == nil {
+			successCount++
+		} else if errors.Is(err, commerce.ErrMerchantStoreAlreadyExists) {
+			alreadyExistsCount++
+		} else {
+			t.Fatalf("unexpected concurrent create error: %v", err)
+		}
+	}
+	if successCount != 1 || alreadyExistsCount != 1 {
+		t.Fatalf("successes=%d alreadyExists=%d, want 1/1", successCount, alreadyExistsCount)
+	}
+}
+
+func TestSupplierStoreCreationIsNotLimitedByMerchantTotalStoreRule(t *testing.T) {
+	dsn := "postgres://commerce:commerce@localhost:5432/commerce?sslmode=disable"
+	env := setupTestEnv(t, dsn)
+
+	suffix := uuid.NewString()[:8]
+	subject := "supplier-store-owner-" + suffix
+	supplier, err := env.repo.CreateSupplier(env.ctx, "sup-merchant-rule-"+suffix, "Supplier Merchant Rule", "active", nil)
+	if err != nil {
+		t.Fatalf("create supplier: %v", err)
+	}
+	if _, err := env.repo.CreateSupplierMember(env.ctx, supplier.ID, subject, "owner", "active"); err != nil {
+		t.Fatalf("create supplier member: %v", err)
+	}
+	if _, _, err := env.service.CreateSupplierRetailCapabilityForSubject(env.ctx, subject, supplier.ID, commerce.RetailCapabilityDraft{Code: "sup-retail-" + suffix, Name: "Supplier Retail"}); err != nil {
+		t.Fatalf("create supplier retail capability: %v", err)
+	}
+	if _, err := env.service.CreateSupplierStoreForSubject(env.ctx, subject, supplier.ID, "EG", "supplier-one-"+suffix, "Supplier One", "draft", nil); err != nil {
+		t.Fatalf("create first supplier store: %v", err)
+	}
+	if _, err := env.service.CreateSupplierStoreForSubject(env.ctx, subject, supplier.ID, "EG", "supplier-two-"+suffix, "Supplier Two", "draft", nil); err != nil {
+		t.Fatalf("create second supplier store should ignore merchant total-store rule: %v", err)
 	}
 }
 

@@ -2,6 +2,7 @@ package coreapi
 
 import (
 	"net/http"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -201,4 +202,57 @@ func TestStorefrontBootstrapDeclaresPreviewHeader(t *testing.T) {
 		}
 	}
 	t.Fatalf("storefront bootstrap does not document %s", HeaderStorefrontPreview)
+}
+
+func TestStoreFinanceRoutesDocumentCurrencyBearingSuccessAndErrors(t *testing.T) {
+	cases := []struct {
+		path     string
+		wantBody any
+	}{
+		{path: "/internal/v1/stores/{storeID}/finance/balance", wantBody: StoreBalanceResponse{}},
+		{path: "/internal/v1/stores/{storeID}/finance/ledger", wantBody: CollectionResponse[JournalEntryResponse]{}},
+		{path: "/internal/v1/stores/{storeID}/finance/settlements", wantBody: CollectionResponse[SettlementResponse]{}},
+		{path: "/internal/v1/stores/{storeID}/finance/payouts", wantBody: CollectionResponse[PayoutResponse]{}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			route := findInternalRoute(t, http.MethodGet, tc.path)
+			assertRouteResponseBody(t, route, http.StatusOK, tc.wantBody)
+			for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusInternalServerError} {
+				assertRouteResponseBody(t, route, status, errorResponseBody())
+			}
+		})
+	}
+}
+
+func findInternalRoute(t *testing.T, method, path string) openapi.RouteSpec {
+	t.Helper()
+	for _, route := range internalRoutes() {
+		if route.Method == method && route.Path == path {
+			return route
+		}
+	}
+	t.Fatalf("internal route %s %s is missing", method, path)
+	return openapi.RouteSpec{}
+}
+
+func assertRouteResponseBody(t *testing.T, route openapi.RouteSpec, status int, want any) {
+	t.Helper()
+	for _, response := range route.Responses {
+		if response.Status != status {
+			continue
+		}
+		gotType := reflect.TypeOf(response.Body)
+		wantType := reflect.TypeOf(want)
+		if gotType != wantType {
+			t.Fatalf("%s %s response %d body = %v, want %v", route.Method, route.Path, status, gotType, wantType)
+		}
+		return
+	}
+	t.Fatalf("%s %s does not declare response %d", route.Method, route.Path, status)
+}
+
+func errorResponseBody() ErrorResponse {
+	return ErrorResponse{}
 }

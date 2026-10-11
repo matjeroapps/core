@@ -2,7 +2,6 @@ package coreapi
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -18,13 +17,7 @@ func (s *server) handleGetStoreBalance(w http.ResponseWriter, r *http.Request) {
 
 	bal, err := s.deps.Balance.GetAccountBalance(r.Context(), storeID)
 	if err != nil {
-		// Fallback for store accounts not yet initialized in ledger/balance
-		httpx.WriteJSON(w, http.StatusOK, StoreBalanceResponse{
-			AvailableMinor: 0,
-			PendingMinor:   0,
-			Currency:       "SAR",
-			UpdatedAt:      time.Now().UTC(),
-		})
+		writeDomainError(w, err)
 		return
 	}
 

@@ -244,7 +244,8 @@ func codeFor(err error) string {
 	case errors.Is(err, suppliers.ErrForbidden),
 		errors.Is(err, commerce.ErrForbidden):
 		return CodeForbidden
-	case errors.Is(err, commerce.ErrStoreEntitlementExceeded):
+	case errors.Is(err, commerce.ErrStoreEntitlementExceeded),
+		errors.Is(err, commerce.ErrMerchantStoreAlreadyExists):
 		return CodeStoreEntitlementExceeded
 	case errors.Is(err, commerce.ErrMarketMismatch):
 
