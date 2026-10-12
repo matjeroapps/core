@@ -103,6 +103,7 @@ type sellerProductDetailResponse struct {
 	StoreCategories  []commerce.StoreCategoryRef         `json:"store_categories"`
 	Variants         []commerce.Variant                  `json:"variants"`
 	SKUs             []commerce.SKU                      `json:"skus"`
+	Attributes       []commerce.ProductAttributeOption   `json:"attributes"`
 	Media            []commerce.MediaMetadata            `json:"media"`
 	Listing          sellerListingDTO                    `json:"listing"`
 	CurrentPrice     *moneyDTO                           `json:"current_price"`
@@ -152,6 +153,7 @@ func toSellerProductDetailResponse(detail commerce.SellerProductDetail) sellerPr
 		StoreCategories:  storeCategories,
 		Variants:         detail.Variants,
 		SKUs:             detail.SKUs,
+		Attributes:       detail.Attributes,
 		Media:            detail.Media,
 		Listing: sellerListingDTO{
 			ID:         detail.Listing.ID,

@@ -221,7 +221,7 @@ func resolveCartListing(ctx context.Context, tx pgx.Tx, storeID, marketCode, sku
 		WITH listing AS (`+catalog.CanonicalListingSQL+`)
 		SELECT l.listing_id, $3, l.price_minor, l.price_currency, l.market_currency
 		FROM listing l
-		JOIN variants v ON v.product_id = l.product_id AND v.status = 'active'
+		JOIN variants v ON v.product_id = l.product_id AND v.status = 'active' AND v.deleted_at IS NULL
 		JOIN skus sk ON sk.variant_id = v.id AND sk.id = $3 AND sk.status = 'active'
 	`, storeID, marketCode, skuID).Scan(&out.ListingID, &out.SKUID, &out.Price, &out.Currency, &out.MarketCurrency)
 	if err != nil {

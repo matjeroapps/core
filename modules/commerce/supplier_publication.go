@@ -239,7 +239,7 @@ func (r Repository) evaluateSupplierPublicationReadiness(ctx context.Context, su
 		{"English product name is required", `SELECT EXISTS (SELECT 1 FROM product_translations WHERE product_id = $1 AND locale = 'en' AND name <> '')`},
 		{"Arabic product name is required", `SELECT EXISTS (SELECT 1 FROM product_translations WHERE product_id = $1 AND locale = 'ar' AND name <> '')`},
 		{"At least one category is required", `SELECT EXISTS (SELECT 1 FROM product_categories WHERE product_id = $1)`},
-		{"At least one active SKU is required", `SELECT EXISTS (SELECT 1 FROM variants v JOIN skus s ON s.variant_id = v.id WHERE v.product_id = $1 AND v.status = 'active' AND s.status = 'active')`},
+		{"At least one active SKU is required", `SELECT EXISTS (SELECT 1 FROM variants v JOIN skus s ON s.variant_id = v.id WHERE v.product_id = $1 AND v.status = 'active' AND v.deleted_at IS NULL AND s.status = 'active')`},
 		{"A completed primary media asset is required", `SELECT EXISTS (SELECT 1 FROM media_metadata WHERE product_id = $1 AND is_primary = true)`},
 	}
 	for _, check := range checks {

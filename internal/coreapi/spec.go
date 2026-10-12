@@ -956,16 +956,6 @@ func internalRoutes() []openapi.RouteSpec {
 			Responses: writeResponses("Deleted variant", StatusResponse{}),
 		},
 		{
-			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/products/{productID}/variants/{variantID}/archive", OperationID: "internalArchiveProductVariant",
-			Summary: "Archive a product variant and deactivate its active SKU", Tags: []string{"Seller Catalog"},
-			Parameters: []openapi.ParameterSpec{
-				pathParam("storeID", "Store identifier"),
-				pathParam("productID", "Product identifier"),
-				pathParam("variantID", "Variant identifier"),
-			},
-			Responses: writeResponses("Archived variant", commerce.Variant{}),
-		},
-		{
 			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/products/{productID}/variants/{variantID}/skus", OperationID: "internalCreateVariantSKU",
 			Summary: "Create a SKU for a variant", Tags: []string{"Seller Catalog"},
 			Parameters: []openapi.ParameterSpec{

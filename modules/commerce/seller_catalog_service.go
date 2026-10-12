@@ -94,7 +94,7 @@ func (s Service) GetSellerProductDetailForSubject(ctx context.Context, subject, 
 		return SellerProductDetail{}, err
 	}
 
-	attributes, err := s.repo.ListProductAttributeOptions(ctx)
+	attributes, err := s.repo.ListProductAttributeOptions(ctx, storeID)
 	if err != nil {
 		return SellerProductDetail{}, err
 	}
@@ -405,7 +405,13 @@ func (s Service) CreateVariantForSubject(ctx context.Context, subject, storeID, 
 		return Variant{}, ErrNotFound
 	}
 
-	return s.repo.CreateVariant(ctx, productID, code, status)
+	if status == "" {
+		status = "active"
+	}
+	if status != "active" {
+		return Variant{}, fmt.Errorf("%w: variants are always active", ErrInvalidInput)
+	}
+	return s.repo.CreateVariant(ctx, productID, code, "active")
 }
 
 func (s Service) CreateVariantWithAttributesAndSKU(
@@ -435,8 +441,8 @@ func (s Service) CreateVariantWithAttributesAndSKU(
 	if variantStatus == "" {
 		variantStatus = "active"
 	}
-	if variantStatus != "active" && variantStatus != "inactive" && variantStatus != "archived" {
-		return VariantWithDetails{}, false, fmt.Errorf("%w: invalid variant status", ErrInvalidInput)
+	if variantStatus != "active" {
+		return VariantWithDetails{}, false, fmt.Errorf("%w: variants are always active", ErrInvalidInput)
 	}
 
 	return s.repo.CreateVariantWithAttributesAndSKUAtomically(
@@ -493,8 +499,8 @@ func (s Service) UpdateVariantWithAttributesForSubject(ctx context.Context, subj
 		return VariantWithDetails{}, ErrNotFound
 	}
 
-	if status != "active" && status != "inactive" && status != "archived" {
-		return VariantWithDetails{}, fmt.Errorf("%w: invalid variant status", ErrInvalidInput)
+	if status != "active" {
+		return VariantWithDetails{}, fmt.Errorf("%w: variants are always active", ErrInvalidInput)
 	}
 
 	return s.repo.UpdateVariantWithAttributesAtomically(ctx, storeID, productID, variantID, code, status, attributeValues)

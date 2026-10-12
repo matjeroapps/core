@@ -888,7 +888,7 @@ func (r Repository) ListSupplierCatalog(ctx context.Context, filter SupplierCata
 			SELECT sk.id, sk.code
 			FROM variants v
 			JOIN skus sk ON sk.variant_id = v.id AND sk.status = 'active'
-			WHERE v.product_id = p.id AND v.status = 'active'
+			WHERE v.product_id = p.id AND v.status = 'active' AND v.deleted_at IS NULL
 			ORDER BY sk.created_at ASC, sk.id ASC
 			LIMIT 1
 		) sku ON true

@@ -389,7 +389,7 @@ func (r Repository) ListVariantsByProductID(ctx context.Context, productID strin
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, product_id, code, status, created_at, updated_at
 		FROM variants
-		WHERE product_id = $1
+		WHERE product_id = $1 AND deleted_at IS NULL
 		ORDER BY created_at ASC, code ASC
 	`, productID)
 	if err != nil {
@@ -417,7 +417,7 @@ func (r Repository) GetVariantByID(ctx context.Context, variantID string) (Varia
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, product_id, code, status, created_at, updated_at
 		FROM variants
-		WHERE id = $1
+		WHERE id = $1 AND deleted_at IS NULL
 	`, variantID).Scan(&v.ID, &v.ProductID, &v.Code, &v.Status, &v.CreatedAt, &v.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -431,6 +431,9 @@ func (r Repository) GetVariantByID(ctx context.Context, variantID string) (Varia
 func (r Repository) UpdateVariant(ctx context.Context, variantID, code, status string) (Variant, error) {
 	if variantID == "" || code == "" || status == "" {
 		return Variant{}, ErrInvalidInput
+	}
+	if status != "active" {
+		return Variant{}, fmt.Errorf("%w: variants are always active", ErrInvalidInput)
 	}
 
 	var updated Variant
@@ -496,7 +499,7 @@ func (r Repository) UpdateVariantWithAttributesAtomically(ctx context.Context, s
 	if storeID == "" || productID == "" || variantID == "" || code == "" || status == "" {
 		return VariantWithDetails{}, ErrInvalidInput
 	}
-	if status != "active" && status != "inactive" && status != "archived" {
+	if status != "active" {
 		return VariantWithDetails{}, fmt.Errorf("%w: invalid variant status", ErrInvalidInput)
 	}
 
@@ -533,7 +536,7 @@ func (r Repository) UpdateVariantWithAttributesAtomically(ctx context.Context, s
 		}
 
 		if attributeValues != nil {
-			canonical, err := validateVariantAttributeMappingsTx(ctx, tx, attributeValues)
+			canonical, err := validateVariantAttributeMappingsTx(ctx, tx, storeID, attributeValues)
 			if err != nil {
 				return err
 			}
@@ -628,21 +631,11 @@ func (r Repository) DeleteVariantIfUnreferenced(ctx context.Context, storeID, pr
 		if !exists {
 			return ErrNotFound
 		}
-		referenced, err := variantHasOperationalReferencesTx(ctx, tx, variantID)
-		if err != nil {
-			return err
+		if _, err := tx.Exec(ctx, `UPDATE variants SET deleted_at = COALESCE(deleted_at, now()), updated_at = now() WHERE id = $1 AND product_id = $2`, variantID, productID); err != nil {
+			return translatePGError(err, "remove variant from catalog")
 		}
-		if referenced {
-			return ErrResourceInUse
-		}
-		if _, err := tx.Exec(ctx, `DELETE FROM skus WHERE variant_id = $1`, variantID); err != nil {
-			return translatePGError(err, "delete variant skus")
-		}
-		if _, err := tx.Exec(ctx, `DELETE FROM variant_attribute_values WHERE variant_id = $1`, variantID); err != nil {
-			return translatePGError(err, "delete variant attribute values")
-		}
-		if _, err := tx.Exec(ctx, `DELETE FROM variants WHERE id = $1 AND product_id = $2`, variantID, productID); err != nil {
-			return translatePGError(err, "delete variant")
+		if _, err := tx.Exec(ctx, `UPDATE skus SET status = 'inactive', updated_at = now() WHERE variant_id = $1 AND status = 'active'`, variantID); err != nil {
+			return translatePGError(err, "deactivate removed variant skus")
 		}
 		return bumpStorefrontRevisions(ctx, tx, revisionStoresByProduct, productID)
 	})
@@ -679,7 +672,10 @@ func (r Repository) ListSKUsByVariantID(ctx context.Context, variantID string) (
 	return result, nil
 }
 
-func (r Repository) ListProductAttributeOptions(ctx context.Context) ([]ProductAttributeOption, error) {
+func (r Repository) ListProductAttributeOptions(ctx context.Context, storeID string) ([]ProductAttributeOption, error) {
+	if storeID == "" {
+		return nil, ErrInvalidInput
+	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT a.id, a.code, COALESCE(at.name, a.code), a.status,
 		       av.id, av.code, COALESCE(avt.name, av.code), av.status
@@ -687,9 +683,9 @@ func (r Repository) ListProductAttributeOptions(ctx context.Context) ([]ProductA
 		LEFT JOIN attribute_translations at ON at.attribute_id = a.id AND at.locale = 'en'
 		JOIN attribute_values av ON av.attribute_id = a.id
 		LEFT JOIN attribute_value_translations avt ON avt.attribute_value_id = av.id AND avt.locale = 'en'
-		WHERE a.status = 'active'
+		WHERE a.status = 'active' AND (a.store_id IS NULL OR a.store_id = $1)
 		ORDER BY a.code ASC, av.code ASC
-	`)
+	`, storeID)
 	if err != nil {
 		return nil, translatePGError(err, "list product attribute options")
 	}
@@ -731,7 +727,7 @@ func (r Repository) ListSKUsByProductID(ctx context.Context, productID string) (
 		SELECT s.id, s.variant_id, s.code, s.barcode, s.status, s.created_at, s.updated_at
 		FROM skus s
 		JOIN variants v ON v.id = s.variant_id
-		WHERE v.product_id = $1
+		WHERE v.product_id = $1 AND v.deleted_at IS NULL
 		ORDER BY s.created_at ASC, s.code ASC
 	`, productID)
 	if err != nil {
@@ -2245,7 +2241,7 @@ func (r Repository) CreateVariantWithAttributesAndSKUAtomically(
 			return translatePGError(err, "resolve listing store for variant sku")
 		}
 
-		canonical, err := validateVariantAttributeMappingsTx(ctx, tx, attributeValues)
+		canonical, err := validateVariantAttributeMappingsTx(ctx, tx, storeID, attributeValues)
 		if err != nil {
 			return err
 		}
@@ -2366,12 +2362,18 @@ func (r Repository) CreateVariantWithAttributesAndSKUAtomically(
 	return result, created, err
 }
 
-func validateVariantAttributeMappingsTx(ctx context.Context, tx pgx.Tx, mappings []VariantAttributeMapping) ([]VariantAttributeMapping, error) {
+func validateVariantAttributeMappingsTx(ctx context.Context, tx pgx.Tx, storeID string, mappings []VariantAttributeMapping) ([]VariantAttributeMapping, error) {
 	seenAttributes := map[string]bool{}
 	canonical := make([]VariantAttributeMapping, 0, len(mappings))
 	for _, mapping := range mappings {
 		if mapping.AttributeID == "" || mapping.AttributeValueID == "" {
 			return nil, ErrInvalidInput
+		}
+		if _, err := uuid.Parse(mapping.AttributeID); err != nil {
+			return nil, fmt.Errorf("%w: invalid attribute identifier", ErrInvalidInput)
+		}
+		if _, err := uuid.Parse(mapping.AttributeValueID); err != nil {
+			return nil, fmt.Errorf("%w: invalid attribute value identifier", ErrInvalidInput)
 		}
 		if seenAttributes[mapping.AttributeID] {
 			return nil, fmt.Errorf("%w: duplicate variant attribute dimension", ErrInvalidInput)
@@ -2380,9 +2382,11 @@ func validateVariantAttributeMappingsTx(ctx context.Context, tx pgx.Tx, mappings
 
 		var status string
 		if err := tx.QueryRow(ctx, `
-			SELECT status FROM attribute_values
-			WHERE id = $1 AND attribute_id = $2
-		`, mapping.AttributeValueID, mapping.AttributeID).Scan(&status); err != nil {
+			SELECT av.status FROM attribute_values av
+			JOIN attributes a ON a.id = av.attribute_id
+			WHERE av.id = $1 AND av.attribute_id = $2
+			  AND a.status = 'active' AND (a.store_id IS NULL OR a.store_id = $3)
+		`, mapping.AttributeValueID, mapping.AttributeID, storeID).Scan(&status); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, ErrInvalidInput
 			}
@@ -2715,7 +2719,7 @@ func (r Repository) PublishSellerProductAtomically(ctx context.Context, storeID,
 			SELECT v.id, COUNT(sk.id)
 			FROM variants v
 			LEFT JOIN skus sk ON sk.variant_id = v.id AND sk.status = 'active'
-			WHERE v.product_id = $1 AND v.status = 'active'
+			WHERE v.product_id = $1 AND v.status = 'active' AND v.deleted_at IS NULL
 			GROUP BY v.id
 		`, productID)
 		if err != nil {
@@ -3024,7 +3028,7 @@ func (r Repository) ListActiveVariantSKUCountsByProductIDs(ctx context.Context, 
 		SELECT v.product_id, v.id, COUNT(sk.id)
 		FROM variants v
 		LEFT JOIN skus sk ON sk.variant_id = v.id AND sk.status = 'active'
-		WHERE v.product_id = ANY($1) AND v.status = 'active'
+		WHERE v.product_id = ANY($1) AND v.status = 'active' AND v.deleted_at IS NULL
 		GROUP BY v.product_id, v.id
 	`, productIDs)
 	if err != nil {
@@ -3299,7 +3303,7 @@ func (r Repository) PublishSellerListingAtomically(ctx context.Context, storeID,
 				SELECT v.id, COUNT(sk.id)
 				FROM variants v
 				LEFT JOIN skus sk ON sk.variant_id = v.id AND sk.status = 'active'
-				WHERE v.product_id = $1 AND v.status = 'active'
+				WHERE v.product_id = $1 AND v.status = 'active' AND v.deleted_at IS NULL
 				GROUP BY v.id
 			`, productID)
 			if err != nil {
