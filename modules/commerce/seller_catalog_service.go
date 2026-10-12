@@ -940,6 +940,10 @@ func (s Service) AttachProductMediaReference(ctx context.Context, subject, store
 		return ProductMediaReference{}, ErrNotFound
 	}
 
+	isVisible := true
+	if req.IsVisible != nil {
+		isVisible = *req.IsVisible
+	}
 	ref := ProductMediaReference{
 		StoreID:   storeID,
 		ProductID: productID,
@@ -947,6 +951,8 @@ func (s Service) AttachProductMediaReference(ctx context.Context, subject, store
 		AltText:   req.AltText,
 		SortOrder: req.SortOrder,
 		IsPrimary: req.IsPrimary,
+		IsVisible: isVisible,
+		Origin:    "merchant",
 	}
 
 	created, err := s.repo.AttachProductMediaReference(ctx, ref)
@@ -975,7 +981,7 @@ func (s Service) UpdateProductMediaReference(ctx context.Context, subject, store
 		return ProductMediaReference{}, ErrNotFound
 	}
 
-	ref, err := s.repo.UpdateProductMediaReference(ctx, storeID, productID, referenceID, req.AltText, req.SortOrder, req.IsPrimary)
+	ref, err := s.repo.UpdateProductMediaReference(ctx, storeID, productID, referenceID, req.AltText, req.SortOrder, req.IsPrimary, req.IsVisible)
 	if err != nil {
 		return ProductMediaReference{}, err
 	}

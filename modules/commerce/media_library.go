@@ -14,6 +14,7 @@ type StoreMediaAsset struct {
 	ByteSize         int64     `json:"byte_size"`
 	OriginalFilename string    `json:"original_filename"`
 	Status           string    `json:"status"` // ready, deleting, deleted
+	Origin           string    `json:"origin"`
 	CreatedBySubject string    `json:"created_by_subject"`
 	URL              string    `json:"url,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
@@ -29,6 +30,8 @@ type ProductMediaReference struct {
 	AltText   string           `json:"alt_text"`
 	SortOrder int              `json:"sort_order"`
 	IsPrimary bool             `json:"is_primary"`
+	IsVisible bool             `json:"is_visible"`
+	Origin    string           `json:"origin"`
 	Asset     *StoreMediaAsset `json:"asset,omitempty"`
 	URL       string           `json:"url,omitempty"`
 	CreatedAt time.Time        `json:"created_at"`
@@ -71,6 +74,7 @@ type AttachMediaReferenceRequest struct {
 	AltText   string `json:"alt_text"`
 	SortOrder int    `json:"sort_order"`
 	IsPrimary bool   `json:"is_primary"`
+	IsVisible *bool  `json:"is_visible,omitempty"`
 }
 
 // UpdateMediaReferenceRequest updates reference-specific display metadata.
@@ -78,4 +82,5 @@ type UpdateMediaReferenceRequest struct {
 	AltText   string `json:"alt_text"`
 	SortOrder int    `json:"sort_order"`
 	IsPrimary bool   `json:"is_primary"`
+	IsVisible *bool  `json:"is_visible,omitempty"`
 }

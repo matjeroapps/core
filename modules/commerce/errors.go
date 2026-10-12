@@ -33,6 +33,10 @@ var (
 	ErrInternalError              = errors.New("internal error")
 	ErrOfferAlreadyImported       = errors.New("offer_already_imported")
 	ErrUnsafeMargin               = errors.New("unsafe_margin")
+	ErrAILimitExceeded            = errors.New("ai authoring image limit exceeded")
+	ErrAIJobConflict              = errors.New("ai authoring job conflict")
+	ErrAIJobNotRetryable          = errors.New("ai authoring job not retryable")
+	ErrUnsupportedAuthoringField  = errors.New("unsupported authoring field")
 
 	// Per-item variant creation conflicts. Both wrap ErrConflict so existing
 	// coarse conflict behavior keeps working, while the conflicting code can be

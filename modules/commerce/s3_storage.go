@@ -33,6 +33,7 @@ type S3Storage struct {
 	MockHeadObject       func(ctx context.Context, storageKey string) (*s3.HeadObjectOutput, error)
 	MockGetObject        func(ctx context.Context, storageKey string) (io.ReadCloser, error)
 	MockPresignPutObject func(ctx context.Context, storageKey, contentType string) (string, error)
+	MockPutObject        func(ctx context.Context, storageKey, contentType string, body []byte) error
 	MockDeleteObject     func(ctx context.Context, storageKey string) error
 }
 
@@ -111,6 +112,34 @@ func (s *S3Storage) PresignPutObject(ctx context.Context, storageKey, contentTyp
 		return "", fmt.Errorf("presign put object: %w", err)
 	}
 	return req.URL, nil
+}
+
+// PutObject writes e.g. AI-authoring generated scene/foreground images
+// server-side. No credentials or URLs are logged; the caller owns the
+// storage key namespace.
+func (s *S3Storage) PutObject(ctx context.Context, storageKey, contentType string, body []byte) error {
+	if s.MockPutObject != nil {
+		return s.MockPutObject(ctx, storageKey, contentType, body)
+	}
+	if len(body) == 0 {
+		return fmt.Errorf("put object %s: empty body", storageKey)
+	}
+	if s.cfg.MaxBytes > 0 && int64(len(body)) > s.cfg.MaxBytes {
+		return fmt.Errorf("put object %s: body exceeds max bytes", storageKey)
+	}
+	if s.client == nil {
+		return nil
+	}
+	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(s.cfg.Bucket),
+		Key:         aws.String(storageKey),
+		ContentType: aws.String(contentType),
+		Body:        bytes.NewReader(body),
+	})
+	if err != nil {
+		return fmt.Errorf("put object %s: %w", storageKey, err)
+	}
+	return nil
 }
 
 func (s *S3Storage) HeadObject(ctx context.Context, storageKey string) (*s3.HeadObjectOutput, error) {

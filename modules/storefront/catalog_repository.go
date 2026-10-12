@@ -361,6 +361,7 @@ func (r CatalogRepository) Products(ctx context.Context, scope CatalogScope, que
 			FROM product_media_references pmr
 			JOIN store_media_assets sma ON sma.id = pmr.asset_id AND sma.status = 'ready'
 			WHERE pmr.product_id = l.product_id
+			  AND pmr.is_visible = true
 			UNION ALL
 			SELECT COALESCE(mm.uri, mm.storage_key) AS uri, mm.alt_text, mm.is_primary, mm.sort_order, mm.created_at, mm.id
 			FROM media_metadata mm
@@ -560,6 +561,7 @@ func projectPublicSections(ctx context.Context, pool *pgxpool.Pool, scope Catalo
 		FROM product_media_references pmr
 		JOIN store_media_assets sma ON sma.id = pmr.asset_id AND sma.status = 'ready'
 		WHERE pmr.product_id = $1
+		  AND pmr.is_visible = true
 		UNION ALL
 		SELECT mm.id, COALESCE(mm.uri, mm.storage_key) AS uri, COALESCE(mm.alt_text, '')
 		FROM media_metadata mm
@@ -671,6 +673,7 @@ func (r CatalogRepository) productImages(ctx context.Context, productID string) 
 		FROM product_media_references pmr
 		JOIN store_media_assets sma ON sma.id = pmr.asset_id AND sma.status = 'ready'
 		WHERE pmr.product_id = $1
+		  AND pmr.is_visible = true
 		UNION ALL
 		SELECT COALESCE(mm.uri, mm.storage_key) AS uri, mm.alt_text, mm.is_primary, mm.sort_order, mm.created_at, mm.id
 		FROM media_metadata mm

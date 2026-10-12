@@ -777,6 +777,48 @@ func internalRoutes() []openapi.RouteSpec {
 			Responses:  readResponses("Payout collection", CollectionResponse[PayoutResponse]{}),
 		},
 
+		// --- Seller AI authoring operations ---
+		{
+			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/ai-authoring/limits", OperationID: "internalGetAIAuthoringLimits",
+			Summary: "Get AI authoring image limits", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{pathParam("storeID", "Store identifier")},
+			Responses:  readResponses("AI authoring limits", commerce.AuthoringLimits{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/ai-authoring/jobs", OperationID: "internalCreateAIAuthoringJob",
+			Summary: "Create an AI authoring job", Tags: []string{"Seller Catalog"},
+			Parameters:  []openapi.ParameterSpec{pathParam("storeID", "Store identifier")},
+			RequestBody: createAIJobRequest{},
+			Responses:   createResponses("AI authoring job", commerce.AuthoringJob{}),
+		},
+		{
+			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/ai-authoring/jobs/{jobID}", OperationID: "internalGetAIAuthoringJob",
+			Summary: "Get an AI authoring job", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{pathParam("storeID", "Store identifier"), pathParam("jobID", "AI authoring job identifier")},
+			Responses:  readResponses("AI authoring job", commerce.AuthoringJob{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/ai-authoring/jobs/{jobID}/retry", OperationID: "internalRetryAIAuthoringJob",
+			Summary: "Retry failed AI authoring work", Tags: []string{"Seller Catalog"},
+			Parameters:  []openapi.ParameterSpec{pathParam("storeID", "Store identifier"), pathParam("jobID", "AI authoring job identifier")},
+			RequestBody: retryAIJobRequest{},
+			Responses:   writeResponses("AI authoring job", commerce.AuthoringJob{}),
+		},
+		{
+			Method: http.MethodPatch, Path: "/internal/v1/stores/{storeID}/ai-authoring/jobs/{jobID}/fields/{fieldID}", OperationID: "internalUpdateAIAuthoringField",
+			Summary: "Accept or reject an AI authoring field", Tags: []string{"Seller Catalog"},
+			Parameters:  []openapi.ParameterSpec{pathParam("storeID", "Store identifier"), pathParam("jobID", "AI authoring job identifier"), pathParam("fieldID", "AI authoring field identifier")},
+			RequestBody: updateAIFieldRequest{},
+			Responses:   writeResponses("AI authoring field", commerce.AuthoringFieldProposal{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/ai-authoring/jobs/{jobID}/images/{candidateID}/accept", OperationID: "internalAcceptAIAuthoringImage",
+			Summary: "Accept an AI authoring image candidate", Tags: []string{"Seller Catalog"},
+			Parameters:  []openapi.ParameterSpec{pathParam("storeID", "Store identifier"), pathParam("jobID", "AI authoring job identifier"), pathParam("candidateID", "AI authoring image candidate identifier")},
+			RequestBody: acceptAIImageRequest{},
+			Responses:   writeResponses("AI authoring image candidate", commerce.AuthoringImageCandidate{}),
+		},
+
 		// --- P5.8 Seller catalog operations ---
 		{
 			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/products", OperationID: "internalListStoreProducts",

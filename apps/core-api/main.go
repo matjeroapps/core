@@ -87,6 +87,13 @@ func run(ctx context.Context) error {
 	service.PlatformDomain = cfg.PlatformDomain
 	service.ReservedSubdomains = cfg.ReservedSubdomains
 	service.StoreEntitlement = commerce.NewStoreEntitlementPolicy(cfg.StoreDefaultMaxActiveStores)
+	service.AuthoringLimitResolver = commerce.NewConfigImageLimitResolver(cfg.AIAuthoringMaxImages)
+	service.AuthoringMaxRetries = cfg.AIAuthoringMaxRetries
+	service.AuthoringProviders = commerce.NewAuthoringProviderRegistry(commerce.AuthoringProviderConfig{
+		TextProvider: cfg.AITextProvider, TextModel: cfg.AITextModel, TextAPIBaseURL: cfg.AITextAPIBaseURL, TextAPIKey: cfg.AITextAPIKey,
+		ImageProvider: cfg.AIImageProvider, ImageModel: cfg.AIImageModel, ImageAPIBaseURL: cfg.AIImageAPIBaseURL, ImageAPIKey: cfg.AIImageAPIKey,
+		RequestTimeout: cfg.AIRequestTimeout,
+	})
 
 	var s3Storage *commerce.S3Storage
 	if cfg.MediaS3Bucket != "" {

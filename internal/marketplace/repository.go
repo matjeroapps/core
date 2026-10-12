@@ -86,6 +86,7 @@ WITH eligible AS (
 			AND sma.status = 'ready'
 		WHERE pmr.product_id = p.id
 			AND pmr.store_id = sl.store_id
+			AND pmr.is_visible = true
 		ORDER BY pmr.is_primary DESC, pmr.sort_order ASC, pmr.id ASC
 		LIMIT 1
 	) media ON true

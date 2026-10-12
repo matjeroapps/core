@@ -30,13 +30,19 @@ type Service struct {
 
 	// StoreEntitlement limits the number of simultaneously active stores per seller.
 	StoreEntitlement StoreEntitlementPolicy
+
+	AuthoringLimitResolver ImageGenerationLimitResolver
+	AuthoringProviders     AuthoringProviderRegistry
+	AuthoringMaxRetries    int
 }
 
 func NewService(repo Repository) Service {
 	return Service{
-		repo:             repo,
-		TXTResolver:      DefaultTXTResolver{},
-		StoreEntitlement: NewStoreEntitlementPolicy(1),
+		repo:                   repo,
+		TXTResolver:            DefaultTXTResolver{},
+		StoreEntitlement:       NewStoreEntitlementPolicy(1),
+		AuthoringLimitResolver: NewConfigImageLimitResolver(7),
+		AuthoringMaxRetries:    3,
 	}
 }
 

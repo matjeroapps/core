@@ -147,6 +147,23 @@ func ApplyMigrations(t testing.TB, db *database.Pool, paths ...string) {
 				ALTER TABLE supplier_offers
 					ADD COLUMN IF NOT EXISTS minimum_order_quantity BIGINT NOT NULL DEFAULT 1;
 			END IF;
+			IF to_regclass('product_media_references') IS NOT NULL THEN
+				ALTER TABLE product_media_references
+					ADD COLUMN IF NOT EXISTS is_visible BOOLEAN NOT NULL DEFAULT true,
+					ADD COLUMN IF NOT EXISTS origin TEXT NOT NULL DEFAULT 'merchant';
+			END IF;
+			IF to_regclass('store_media_assets') IS NOT NULL THEN
+				ALTER TABLE store_media_assets
+					ADD COLUMN IF NOT EXISTS origin TEXT NOT NULL DEFAULT 'merchant';
+			END IF;
+			IF to_regclass('product_translations') IS NOT NULL THEN
+				ALTER TABLE product_translations
+					ADD COLUMN IF NOT EXISTS meta_keywords TEXT NOT NULL DEFAULT '';
+			END IF;
+			IF to_regclass('skus') IS NOT NULL THEN
+				ALTER TABLE skus
+					ADD COLUMN IF NOT EXISTS store_id UUID;
+			END IF;
 		END $$;
 	`); err != nil {
 		t.Fatalf("apply forward-compatible test schema: %v", err)

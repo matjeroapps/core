@@ -58,6 +58,9 @@ const (
 	CodeChecksumMismatch          = "checksum_mismatch"
 	CodeMediaInUse                = "media_in_use"
 	CodeUnsafeMargin              = "unsafe_margin"
+	CodeAILimitExceeded           = "ai_limit_exceeded"
+	CodeAIJobConflict             = "ai_job_conflict"
+	CodeAIJobNotRetryable         = "ai_job_not_retryable"
 	CodeInternalError             = "internal_error"
 )
 
@@ -66,7 +69,7 @@ func statusFor(code string) int {
 	switch code {
 	case CodeNotFound, CodeStorefrontUnavailable:
 		return http.StatusNotFound
-	case CodeInvalidArgument, CodeValidationError, CodeSchemaMismatch, CodeUnsafeContent:
+	case CodeInvalidArgument, CodeValidationError, CodeSchemaMismatch, CodeUnsafeContent, CodeAILimitExceeded:
 		return http.StatusBadRequest
 	case CodeUnprocessableEntity, CodePublishNotReady, CodeChecksumMismatch, CodeUnsafeMargin:
 		return http.StatusUnprocessableEntity
@@ -74,7 +77,7 @@ func statusFor(code string) int {
 		return http.StatusUnauthorized
 	case CodeForbidden:
 		return http.StatusForbidden
-	case CodeConflict, CodeMarketMismatch, CodeInsufficientInventory, CodeCheckoutExpired, CodeIdempotencyConflict, CodeInvalidOrderTransition, CodeInvalidShipmentTransition, CodeInvalidPaymentTransition, CodePriceChanged, CodeListingUnavailable, CodeStoreEntitlementExceeded, CodeOfferUnavailable, CodeResourceInUse, CodeUploadInProgress, CodeMediaInUse:
+	case CodeConflict, CodeMarketMismatch, CodeInsufficientInventory, CodeCheckoutExpired, CodeIdempotencyConflict, CodeInvalidOrderTransition, CodeInvalidShipmentTransition, CodeInvalidPaymentTransition, CodePriceChanged, CodeListingUnavailable, CodeStoreEntitlementExceeded, CodeOfferUnavailable, CodeResourceInUse, CodeUploadInProgress, CodeMediaInUse, CodeAIJobConflict, CodeAIJobNotRetryable:
 		return http.StatusConflict
 	case CodeUnavailable, CodePreviewUnavailable, CodeCheckoutPaused:
 		return http.StatusServiceUnavailable
@@ -160,6 +163,12 @@ func messageFor(code string) string {
 		return "media in use"
 	case CodeUnsafeMargin:
 		return "unsafe margin: retail price cannot be lower than wholesale cost"
+	case CodeAILimitExceeded:
+		return "image generation limit exceeded"
+	case CodeAIJobConflict:
+		return "authoring job is currently processing"
+	case CodeAIJobNotRetryable:
+		return "authoring job is not retryable"
 	case CodeSchemaMismatch:
 
 		return "configuration does not match the theme schema"
@@ -228,6 +237,12 @@ func codeFor(err error) string {
 		return CodeStorefrontUnavailable
 	case errors.Is(err, storefront.ErrInvalidQuery):
 		return CodeValidationError
+	case errors.Is(err, commerce.ErrAILimitExceeded):
+		return CodeAILimitExceeded
+	case errors.Is(err, commerce.ErrAIJobConflict):
+		return CodeAIJobConflict
+	case errors.Is(err, commerce.ErrAIJobNotRetryable):
+		return CodeAIJobNotRetryable
 	case errors.Is(err, commerce.ErrInvalidInput),
 		errors.Is(err, themes.ErrInvalidInput),
 		errors.Is(err, shipping.ErrInvalidInput),
