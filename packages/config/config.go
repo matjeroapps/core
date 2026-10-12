@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -51,6 +52,19 @@ type Config struct {
 	MediaPublicBaseURL     string
 	MediaUploadMaxBytes    int64
 	MediaPresignTTL        time.Duration
+
+	AIAuthoringMaxImages          int
+	AIAuthoringCandidateRetention time.Duration
+	AIAuthoringMaxRetries         int
+	AITextProvider                string
+	AITextModel                   string
+	AITextAPIBaseURL              string
+	AITextAPIKey                  string
+	AIImageProvider               string
+	AIImageModel                  string
+	AIImageAPIBaseURL             string
+	AIImageAPIKey                 string
+	AIRequestTimeout              time.Duration
 
 	// Internal service credentials for the Core internal API (ADR-017). Each
 	// actor service presents its own bearer token; a caller with no configured
@@ -150,6 +164,13 @@ func Load(serviceName string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	authoringMaxImages := tolerantIntEnv("AI_AUTHORING_MAX_IMAGES", 7)
+	if authoringMaxImages > 7 {
+		authoringMaxImages = 7
+	}
+	authoringCandidateRetention := tolerantDurationEnv("AI_AUTHORING_CANDIDATE_RETENTION", 168*time.Hour)
+	authoringMaxRetries := tolerantIntEnv("AI_AUTHORING_MAX_RETRIES", 3)
+	aiRequestTimeout := tolerantDurationEnv("AI_REQUEST_TIMEOUT", 30*time.Second)
 
 	cfg := Config{
 		ServiceName:                 serviceName,
@@ -179,6 +200,19 @@ func Load(serviceName string) (Config, error) {
 		MediaPublicBaseURL:          stringEnv("MEDIA_PUBLIC_BASE_URL", ""),
 		MediaUploadMaxBytes:         mediaUploadMaxBytes,
 		MediaPresignTTL:             mediaPresignTTL,
+
+		AIAuthoringMaxImages:          authoringMaxImages,
+		AIAuthoringCandidateRetention: authoringCandidateRetention,
+		AIAuthoringMaxRetries:         authoringMaxRetries,
+		AITextProvider:                stringEnv("AI_TEXT_PROVIDER", ""),
+		AITextModel:                   stringEnv("AI_TEXT_MODEL", ""),
+		AITextAPIBaseURL:              stringEnv("AI_TEXT_API_BASE_URL", ""),
+		AITextAPIKey:                  stringEnv("AI_TEXT_API_KEY", ""),
+		AIImageProvider:               stringEnv("AI_IMAGE_PROVIDER", ""),
+		AIImageModel:                  stringEnv("AI_IMAGE_MODEL", ""),
+		AIImageAPIBaseURL:             stringEnv("AI_IMAGE_API_BASE_URL", ""),
+		AIImageAPIKey:                 stringEnv("AI_IMAGE_API_KEY", ""),
+		AIRequestTimeout:              aiRequestTimeout,
 
 		InternalPlatformToken: stringEnv("CORE_INTERNAL_PLATFORM_TOKEN", ""),
 		InternalSellerToken:   stringEnv("CORE_INTERNAL_SELLER_TOKEN", ""),
@@ -332,6 +366,32 @@ func boolEnv(key string, fallback bool) bool {
 
 	parsed, err := strconv.ParseBool(value)
 	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func tolerantIntEnv(key string, fallback int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		log.Printf("configuration warning: %s is invalid; using safe default", key)
+		return fallback
+	}
+	return parsed
+}
+
+func tolerantDurationEnv(key string, fallback time.Duration) time.Duration {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil || parsed <= 0 {
+		log.Printf("configuration warning: %s is invalid; using safe default", key)
 		return fallback
 	}
 	return parsed

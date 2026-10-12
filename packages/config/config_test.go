@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -358,5 +359,95 @@ func TestDevelopmentConfigWithoutS3(t *testing.T) {
 	}
 	if cfg.MediaS3Bucket != "" {
 		t.Errorf("expected empty default MediaS3Bucket in dev, got %q", cfg.MediaS3Bucket)
+	}
+}
+
+// The AI vendor settings are per-branch, server-only, and have no defaults:
+// a missing provider or model must not invent one at load time; numeric and
+// duration settings degrade to their safe defaults with a warning instead of
+// failing boot.
+func TestLoadAuthoringSettingsDefaultsAndTolerance(t *testing.T) {
+	clearEnv := []string{
+		"AI_AUTHORING_MAX_IMAGES", "AI_AUTHORING_CANDIDATE_RETENTION", "AI_AUTHORING_MAX_RETRIES", "AI_REQUEST_TIMEOUT",
+		"AI_TEXT_PROVIDER", "AI_TEXT_MODEL", "AI_TEXT_API_BASE_URL", "AI_TEXT_API_KEY",
+		"AI_IMAGE_PROVIDER", "AI_IMAGE_MODEL", "AI_IMAGE_API_BASE_URL", "AI_IMAGE_API_KEY",
+	}
+	previous := make(map[string]string, len(clearEnv))
+	for _, key := range clearEnv {
+		previous[key] = os.Getenv(key)
+		_ = os.Unsetenv(key)
+	}
+	defer func() {
+		for key, value := range previous {
+			_ = os.Setenv(key, value)
+		}
+	}()
+
+	cfg, err := config.Load("test-service")
+	if err != nil {
+		t.Fatalf("missing AI settings must not fail boot: %v", err)
+	}
+	if cfg.AIAuthoringMaxImages != 7 || cfg.AIAuthoringCandidateRetention != 168*time.Hour || cfg.AIAuthoringMaxRetries != 3 || cfg.AIRequestTimeout != 30*time.Second {
+		t.Fatalf("authoring defaults = %d/%s/%d/%s", cfg.AIAuthoringMaxImages, cfg.AIAuthoringCandidateRetention, cfg.AIAuthoringMaxRetries, cfg.AIRequestTimeout)
+	}
+	// No provider or model default exists: the fields stay empty and choosing
+	// an adapter is an explicit operator decision only.
+	if cfg.AITextProvider != "" || cfg.AITextModel != "" || cfg.AITextAPIBaseURL != "" || cfg.AITextAPIKey != "" {
+		t.Fatalf("text defaults = %q/%q/%q/%q, want all empty", cfg.AITextProvider, cfg.AITextModel, cfg.AITextAPIBaseURL, cfg.AITextAPIKey)
+	}
+	if cfg.AIImageProvider != "" || cfg.AIImageModel != "" || cfg.AIImageAPIBaseURL != "" || cfg.AIImageAPIKey != "" {
+		t.Fatalf("image defaults = %q/%q/%q/%q, want all empty", cfg.AIImageProvider, cfg.AIImageModel, cfg.AIImageAPIBaseURL, cfg.AIImageAPIKey)
+	}
+
+	// Custom values propagate; per-branch model/provider/data are independent.
+	t.Setenv("AI_AUTHORING_MAX_IMAGES", "2")
+	t.Setenv("AI_AUTHORING_CANDIDATE_RETENTION", "24h")
+	t.Setenv("AI_AUTHORING_MAX_RETRIES", "5")
+	t.Setenv("AI_REQUEST_TIMEOUT", "90s")
+	t.Setenv("AI_TEXT_PROVIDER", "openai")
+	t.Setenv("AI_TEXT_MODEL", "gpt-4o-mini")
+	t.Setenv("AI_IMAGE_PROVIDER", "openai")
+	t.Setenv("AI_IMAGE_MODEL", "gpt-image-1")
+	cfg, err = config.Load("test-service")
+	if err != nil {
+		t.Fatalf("custom AI settings load: %v", err)
+	}
+	if cfg.AIAuthoringMaxImages != 2 || cfg.AIAuthoringCandidateRetention != 24*time.Hour || cfg.AIAuthoringMaxRetries != 5 || cfg.AIRequestTimeout != 90*time.Second {
+		t.Fatalf("custom authoring values = %d/%s/%d/%s", cfg.AIAuthoringMaxImages, cfg.AIAuthoringCandidateRetention, cfg.AIAuthoringMaxRetries, cfg.AIRequestTimeout)
+	}
+	if cfg.AITextModel != "gpt-4o-mini" || cfg.AIImageModel != "gpt-image-1" {
+		t.Fatalf("per-branch models = %q/%q", cfg.AITextModel, cfg.AIImageModel)
+	}
+
+	// Invalid numeric values degrade to the safe default with a logged
+	// warning instead of failing boot; and the hard ceiling of 7 still holds
+	// for any larger configured value.
+	for _, invalid := range []string{"abc", "0", "-3"} {
+		t.Setenv("AI_AUTHORING_MAX_IMAGES", invalid)
+		cfg, err = config.Load("test-service")
+		if err != nil {
+			t.Fatalf("invalid %q must not fail boot: %v", invalid, err)
+		}
+		if cfg.AIAuthoringMaxImages != 7 {
+			t.Fatalf("invalid %q limit = %d, want the safe default 7", invalid, cfg.AIAuthoringMaxImages)
+		}
+	}
+	t.Setenv("AI_AUTHORING_MAX_IMAGES", "10")
+	cfg, err = config.Load("test-service")
+	if err != nil {
+		t.Fatalf("config load for ceiling case: %v", err)
+	}
+	if cfg.AIAuthoringMaxImages != 7 {
+		t.Fatalf("AI_AUTHORING_MAX_IMAGES=10 yielded %d, want the ceiling 7", cfg.AIAuthoringMaxImages)
+	}
+	// Invalid durations degrade to their defaults too.
+	t.Setenv("AI_AUTHORING_MAX_IMAGES", "2")
+	t.Setenv("AI_AUTHORING_CANDIDATE_RETENTION", "abc")
+	cfg, err = config.Load("test-service")
+	if err != nil {
+		t.Fatalf("invalid retention must not fail boot: %v", err)
+	}
+	if cfg.AIAuthoringCandidateRetention != 168*time.Hour {
+		t.Fatalf("invalid retention resolved to %s, want 168h", cfg.AIAuthoringCandidateRetention)
 	}
 }

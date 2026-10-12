@@ -62,6 +62,8 @@ func TestStoreResolverIntegration(t *testing.T) {
 		"000016_catalog_invariants",
 		"000025_seller_catalog_phase_b",
 		"000026_seller_catalog_phase_c",
+		"000044_store_scoped_categories",
+		"000046_ai_product_authoring",
 	} {
 		applySQLFileStorefront(t, db, filepath.Join("..", "..", "migrations", m+".up.sql"))
 	}

@@ -381,6 +381,13 @@ func NewRouter(deps Dependencies) chi.Router {
 			r.Get("/stores/{storeID}/listings", server.handleListStoreListings)
 			r.Post("/stores/{storeID}/listings", server.handleImportSellerListing)
 
+			r.Get("/stores/{storeID}/ai-authoring/limits", server.handleAILimits)
+			r.Post("/stores/{storeID}/ai-authoring/jobs", server.handleCreateAIJob)
+			r.Get("/stores/{storeID}/ai-authoring/jobs/{jobID}", server.handleGetAIJob)
+			r.Post("/stores/{storeID}/ai-authoring/jobs/{jobID}/retry", server.handleRetryAIJob)
+			r.Patch("/stores/{storeID}/ai-authoring/jobs/{jobID}/fields/{fieldID}", server.handleUpdateAIJobField)
+			r.Post("/stores/{storeID}/ai-authoring/jobs/{jobID}/images/{candidateID}/accept", server.handleAcceptAIJobImage)
+
 			// Seller Catalog & Order Authoring (P5.8)
 			r.Get("/stores/{storeID}/products", server.handleListStoreProducts)
 			r.Post("/stores/{storeID}/products", server.handleCreateStoreProduct)

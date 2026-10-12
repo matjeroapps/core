@@ -162,14 +162,14 @@ func TestMigration000045UpAndDown(t *testing.T) {
 	testdb.ApplyMigrations(t, db, paths...)
 	applySQLFileForVariantMgmt(t, db.Pool, filepath.Join("..", "..", "migrations", "000045_product_variant_management.up.sql"))
 	var hasStoreID bool
-	if err := db.Pool.QueryRow(context.Background(), `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'skus' AND column_name = 'store_id')`).Scan(&hasStoreID); err != nil {
+	if err := db.Pool.QueryRow(context.Background(), `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'skus' AND column_name = 'store_id')`).Scan(&hasStoreID); err != nil {
 		t.Fatalf("check store_id column: %v", err)
 	}
 	if !hasStoreID {
 		t.Fatal("expected skus.store_id after migration up")
 	}
 	applySQLFileForVariantMgmt(t, db.Pool, filepath.Join("..", "..", "migrations", "000045_product_variant_management.down.sql"))
-	if err := db.Pool.QueryRow(context.Background(), `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'skus' AND column_name = 'store_id')`).Scan(&hasStoreID); err != nil {
+	if err := db.Pool.QueryRow(context.Background(), `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'skus' AND column_name = 'store_id')`).Scan(&hasStoreID); err != nil {
 		t.Fatalf("check store_id column after down: %v", err)
 	}
 	if hasStoreID {
@@ -621,7 +621,7 @@ func TestMigration000045DownGuardsCrossStoreDuplicateSKU(t *testing.T) {
 	// The guard fires before any destructive statement: the store-scoped state
 	// is still intact and the legacy constraint is not half-restored.
 	var hasStoreID bool
-	if err := env.db.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'skus' AND column_name = 'store_id')`).Scan(&hasStoreID); err != nil {
+	if err := env.db.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'skus' AND column_name = 'store_id')`).Scan(&hasStoreID); err != nil {
 		t.Fatalf("check store_id column after failed rollback: %v", err)
 	}
 	if !hasStoreID {
@@ -641,7 +641,7 @@ func TestMigration000045DownGuardsCrossStoreDuplicateSKU(t *testing.T) {
 		t.Fatalf("delete duplicate sku: %v", err)
 	}
 	applySQLFileForVariantMgmt(t, env.db.Pool, downPath)
-	if err := env.db.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'skus' AND column_name = 'store_id')`).Scan(&hasStoreID); err != nil {
+	if err := env.db.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'skus' AND column_name = 'store_id')`).Scan(&hasStoreID); err != nil {
 		t.Fatalf("check store_id column after rollback: %v", err)
 	}
 	if hasStoreID {

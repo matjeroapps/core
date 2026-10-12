@@ -1238,10 +1238,10 @@ func (r Repository) AttachProductMediaReference(ctx context.Context, ref Product
 
 		var existing ProductMediaReference
 		err = tx.QueryRow(ctx, `
-			SELECT id, store_id, product_id, asset_id, alt_text, sort_order, is_primary, created_at, updated_at
+			SELECT id, store_id, product_id, asset_id, alt_text, sort_order, is_primary, is_visible, origin, created_at, updated_at
 			FROM product_media_references
 			WHERE store_id = $1 AND product_id = $2 AND asset_id = $3
-		`, ref.StoreID, ref.ProductID, ref.AssetID).Scan(&existing.ID, &existing.StoreID, &existing.ProductID, &existing.AssetID, &existing.AltText, &existing.SortOrder, &existing.IsPrimary, &existing.CreatedAt, &existing.UpdatedAt)
+		`, ref.StoreID, ref.ProductID, ref.AssetID).Scan(&existing.ID, &existing.StoreID, &existing.ProductID, &existing.AssetID, &existing.AltText, &existing.SortOrder, &existing.IsPrimary, &existing.IsVisible, &existing.Origin, &existing.CreatedAt, &existing.UpdatedAt)
 		if err == nil {
 			created = existing
 			return nil
@@ -1264,10 +1264,10 @@ func (r Repository) AttachProductMediaReference(ctx context.Context, ref Product
 			id = ref.ID
 		}
 		err = tx.QueryRow(ctx, `
-			INSERT INTO product_media_references (id, store_id, product_id, asset_id, alt_text, sort_order, is_primary)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			INSERT INTO product_media_references (id, store_id, product_id, asset_id, alt_text, sort_order, is_primary, is_visible, origin)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE(NULLIF($9, ''), 'merchant'))
 			RETURNING created_at, updated_at
-		`, id, ref.StoreID, ref.ProductID, ref.AssetID, ref.AltText, ref.SortOrder, ref.IsPrimary).Scan(&ref.CreatedAt, &ref.UpdatedAt)
+		`, id, ref.StoreID, ref.ProductID, ref.AssetID, ref.AltText, ref.SortOrder, ref.IsPrimary, ref.IsVisible, ref.Origin).Scan(&ref.CreatedAt, &ref.UpdatedAt)
 		if err != nil {
 			return translatePGError(err, "insert product_media_reference")
 		}
@@ -1283,7 +1283,7 @@ func (r Repository) AttachProductMediaReference(ctx context.Context, ref Product
 	return created, nil
 }
 
-func (r Repository) UpdateProductMediaReference(ctx context.Context, storeID, productID, refID string, altText string, sortOrder int, isPrimary bool) (ProductMediaReference, error) {
+func (r Repository) UpdateProductMediaReference(ctx context.Context, storeID, productID, refID string, altText string, sortOrder int, isPrimary bool, isVisible *bool) (ProductMediaReference, error) {
 	if storeID == "" || productID == "" || refID == "" {
 		return ProductMediaReference{}, ErrInvalidInput
 	}
@@ -1309,10 +1309,10 @@ func (r Repository) UpdateProductMediaReference(ctx context.Context, storeID, pr
 
 		err = tx.QueryRow(ctx, `
 			UPDATE product_media_references
-			SET alt_text = $1, sort_order = $2, is_primary = $3, updated_at = now()
-			WHERE id = $4 AND store_id = $5 AND product_id = $6
-			RETURNING id, store_id, product_id, asset_id, alt_text, sort_order, is_primary, created_at, updated_at
-		`, altText, sortOrder, isPrimary, refID, storeID, productID).Scan(&updated.ID, &updated.StoreID, &updated.ProductID, &updated.AssetID, &updated.AltText, &updated.SortOrder, &updated.IsPrimary, &updated.CreatedAt, &updated.UpdatedAt)
+			SET alt_text = $1, sort_order = $2, is_primary = $3, is_visible = COALESCE($4, is_visible), updated_at = now()
+			WHERE id = $5 AND store_id = $6 AND product_id = $7
+			RETURNING id, store_id, product_id, asset_id, alt_text, sort_order, is_primary, is_visible, origin, created_at, updated_at
+		`, altText, sortOrder, isPrimary, isVisible, refID, storeID, productID).Scan(&updated.ID, &updated.StoreID, &updated.ProductID, &updated.AssetID, &updated.AltText, &updated.SortOrder, &updated.IsPrimary, &updated.IsVisible, &updated.Origin, &updated.CreatedAt, &updated.UpdatedAt)
 		if err != nil {
 			return translatePGError(err, "update product_media_reference")
 		}
@@ -1373,8 +1373,8 @@ func (r Repository) ListProductMediaReferences(ctx context.Context, storeID, pro
 	}
 
 	rows, err := r.pool.Query(ctx, `
-		SELECT pmr.id, pmr.store_id, pmr.product_id, pmr.asset_id, pmr.alt_text, pmr.sort_order, pmr.is_primary, pmr.created_at, pmr.updated_at,
-		       sma.id, sma.store_id, sma.checksum_sha256, sma.storage_key, sma.content_type, sma.byte_size, sma.original_filename, sma.status, sma.created_by_subject, sma.created_at, sma.updated_at
+		SELECT pmr.id, pmr.store_id, pmr.product_id, pmr.asset_id, pmr.alt_text, pmr.sort_order, pmr.is_primary, pmr.is_visible, pmr.origin, pmr.created_at, pmr.updated_at,
+		       sma.id, sma.store_id, sma.checksum_sha256, sma.storage_key, sma.content_type, sma.byte_size, sma.original_filename, sma.status, sma.origin, sma.created_by_subject, sma.created_at, sma.updated_at
 		FROM product_media_references pmr
 		JOIN store_media_assets sma ON sma.id = pmr.asset_id AND sma.status = 'ready'
 		WHERE pmr.store_id = $1 AND pmr.product_id = $2
@@ -1390,8 +1390,8 @@ func (r Repository) ListProductMediaReferences(ctx context.Context, storeID, pro
 		var ref ProductMediaReference
 		var a StoreMediaAsset
 		if err := rows.Scan(
-			&ref.ID, &ref.StoreID, &ref.ProductID, &ref.AssetID, &ref.AltText, &ref.SortOrder, &ref.IsPrimary, &ref.CreatedAt, &ref.UpdatedAt,
-			&a.ID, &a.StoreID, &a.ChecksumSHA256, &a.StorageKey, &a.ContentType, &a.ByteSize, &a.OriginalFilename, &a.Status, &a.CreatedBySubject, &a.CreatedAt, &a.UpdatedAt,
+			&ref.ID, &ref.StoreID, &ref.ProductID, &ref.AssetID, &ref.AltText, &ref.SortOrder, &ref.IsPrimary, &ref.IsVisible, &ref.Origin, &ref.CreatedAt, &ref.UpdatedAt,
+			&a.ID, &a.StoreID, &a.ChecksumSHA256, &a.StorageKey, &a.ContentType, &a.ByteSize, &a.OriginalFilename, &a.Status, &a.Origin, &a.CreatedBySubject, &a.CreatedAt, &a.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan product_media_reference: %w", err)
 		}
@@ -1536,7 +1536,7 @@ func (r Repository) UpdateMediaMetadata(ctx context.Context, m MediaMetadata) (M
 		return MediaMetadata{}, err
 	}
 
-	ref, err := r.UpdateProductMediaReference(ctx, storeID, m.ProductID, m.ID, m.AltText, m.SortOrder, m.IsPrimary)
+	ref, err := r.UpdateProductMediaReference(ctx, storeID, m.ProductID, m.ID, m.AltText, m.SortOrder, m.IsPrimary, nil)
 	if err != nil {
 		return MediaMetadata{}, err
 	}
