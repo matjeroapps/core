@@ -10,6 +10,7 @@ import (
 	"image/draw"
 	"image/png"
 	"io"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
@@ -20,15 +21,9 @@ import (
 	_ "image/jpeg"
 )
 
-// openAIImageComposer implements the image branch against OpenAI's real
-// image endpoints:
-//
-//   - transparent source images use their own alpha locally. For opaque source
-//     images, OpenAI's transparent PNG edit is used only for its approximate
-//     alpha mask; foreground RGB always comes from the merchant's original.
-//   - scene generation posts the documented /images/generations JSON body
-//     and decodes data[0].b64_json or downloads data[0].url for real; the
-//     scene response is never the request foreground echoed back.
+// openAIImageComposer sends the complete merchant image as a visual reference
+// and receives a complete landscape product photograph. Core does not paste a
+// cropped foreground over a separately generated background.
 type openAIImageComposer struct {
 	baseURL string
 	apiKey  string
@@ -65,10 +60,14 @@ func foregroundWithProviderAlpha(source []byte, maskImage image.Image) (Foregrou
 		return Foreground{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
 	}
 	src, _, err := image.Decode(bytes.NewReader(source))
-	if err != nil || src.Bounds().Size() != maskImage.Bounds().Size() {
+	if err != nil {
 		return Foreground{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
 	}
 	bounds := src.Bounds()
+	maskImage, err = resizeProviderImage(maskImage, bounds.Dx(), bounds.Dy(), true)
+	if err != nil {
+		return Foreground{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+	}
 	maskBounds := maskImage.Bounds()
 	foreground := image.NewNRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
 	mask := image.NewAlpha(foreground.Bounds())
@@ -99,6 +98,56 @@ func foregroundWithProviderAlpha(source []byte, maskImage image.Image) (Foregrou
 		return Foreground{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
 	}
 	return Foreground{ContentType: "image/png", Bytes: foregroundBytes.Bytes(), MaskBytes: maskBytes.Bytes()}, nil
+}
+
+// resizeProviderImage normalizes a provider image to requested dimensions.
+// For masks, aspect ratio must remain close so resizing cannot shift/crop the
+// provider's estimated product silhouette.
+func resizeProviderImage(src image.Image, width, height int, preserveAspect bool) (*image.NRGBA, error) {
+	if src == nil || width <= 0 || height <= 0 || src.Bounds().Dx() <= 0 || src.Bounds().Dy() <= 0 {
+		return nil, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+	}
+	sw, sh := src.Bounds().Dx(), src.Bounds().Dy()
+	if preserveAspect {
+		sourceAspect := float64(sw) / float64(sh)
+		targetAspect := float64(width) / float64(height)
+		if math.Abs(sourceAspect-targetAspect)/targetAspect > 0.03 {
+			return nil, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+		}
+	}
+	dst := image.NewNRGBA(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		sy := (float64(y)+0.5)*float64(sh)/float64(height) - 0.5
+		y0 := int(math.Floor(sy))
+		fy := sy - float64(y0)
+		if y0 < 0 {
+			y0, fy = 0, 0
+		}
+		y1 := min(y0+1, sh-1)
+		for x := 0; x < width; x++ {
+			sx := (float64(x)+0.5)*float64(sw)/float64(width) - 0.5
+			x0 := int(math.Floor(sx))
+			fx := sx - float64(x0)
+			if x0 < 0 {
+				x0, fx = 0, 0
+			}
+			x1 := min(x0+1, sw-1)
+			c00 := color.NRGBAModel.Convert(src.At(src.Bounds().Min.X+x0, src.Bounds().Min.Y+y0)).(color.NRGBA)
+			c10 := color.NRGBAModel.Convert(src.At(src.Bounds().Min.X+x1, src.Bounds().Min.Y+y0)).(color.NRGBA)
+			c01 := color.NRGBAModel.Convert(src.At(src.Bounds().Min.X+x0, src.Bounds().Min.Y+y1)).(color.NRGBA)
+			c11 := color.NRGBAModel.Convert(src.At(src.Bounds().Min.X+x1, src.Bounds().Min.Y+y1)).(color.NRGBA)
+			mix := func(a, b, c, d uint8) uint8 {
+				top := float64(a)*(1-fx) + float64(b)*fx
+				bottom := float64(c)*(1-fx) + float64(d)*fx
+				return uint8(math.Round(top*(1-fy) + bottom*fy))
+			}
+			dst.SetNRGBA(x, y, color.NRGBA{
+				R: mix(c00.R, c10.R, c01.R, c11.R), G: mix(c00.G, c10.G, c01.G, c11.G),
+				B: mix(c00.B, c10.B, c01.B, c11.B), A: mix(c00.A, c10.A, c01.A, c11.A),
+			})
+		}
+	}
+	return dst, nil
 }
 
 // foregroundFromSourceAlpha decodes the source bytes and, when they contain
@@ -239,38 +288,105 @@ func (p *openAIImageComposer) postImagesEditsOnce(ctx context.Context, req Isola
 	return layer, nil
 }
 
-// ComposeScene posts the documented JSON body for POST
-// {baseURL}/images/generations and decodes data[0].b64_json or downloads
-// data[0].url; the returned bytes are always the fetched scene.
-func (p *openAIImageComposer) ComposeScene(ctx context.Context, req SceneRequest) (ComposedImage, error) {
-	if len(req.Foreground.Bytes) == 0 || len(req.Foreground.MaskBytes) == 0 {
-		return ComposedImage{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+// GenerateProductImage asks the image model to recreate the referenced product in a
+// realistic landscape scene. The complete original is retained separately for
+// merchant comparison; the output is not a background layer.
+func (p *openAIImageComposer) GenerateProductImage(ctx context.Context, req ProductImageRequest) (GeneratedProductImage, error) {
+	sourceBytes := req.SourceBytes
+	if len(sourceBytes) == 0 {
+		return GeneratedProductImage{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
 	}
-	payload := map[string]any{
-		"model":  p.model,
-		"prompt": "Generate the surrounding scene surface only: an empty studio background for scene key " + req.SceneKey + ". Leave an unrendered central product area; do not include or redraw any product.",
-		"n":      1,
+	contentType := strings.TrimSpace(req.ContentType)
+	if contentType == "" {
+		contentType = http.DetectContentType(sourceBytes)
 	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return ComposedImage{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+	var data []byte
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		data, lastErr = p.postProductImageEdit(ctx, sourceBytes, contentType, productImagePrompt(req.SceneKey, req.Variation))
+		if lastErr == nil || failureCode(lastErr) != ProviderFailureUnavailable {
+			break
+		}
 	}
-	data, err := p.doImageJSON(ctx, p.baseURL+"/images/generations", body)
-	if err != nil {
-		return ComposedImage{}, err
-	}
-	if len(data) == 0 {
-		return ComposedImage{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+	if lastErr != nil {
+		return GeneratedProductImage{}, lastErr
 	}
 	sceneImg, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		return ComposedImage{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+	if err != nil || sceneImg.Bounds().Dx() <= sceneImg.Bounds().Dy() {
+		return GeneratedProductImage{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
 	}
 	var out bytes.Buffer
 	if err := png.Encode(&out, sceneImg); err != nil {
-		return ComposedImage{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+		return GeneratedProductImage{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
 	}
-	return ComposedImage{ContentType: "image/png", Bytes: out.Bytes()}, nil
+	return GeneratedProductImage{ContentType: "image/png", Bytes: out.Bytes()}, nil
+}
+
+var sceneDirections = []string{
+	"A bright, airy home interior with a pale limestone display surface, a large softly lit window, light neutral walls, and subtle sage-green accents.",
+	"A warm, tactile interior with a rich walnut display surface, muted terracotta plaster walls, softly blurred shelving, and golden pendant lighting.",
+	"A premium contemporary showroom with a deep charcoal stone display surface, dark teal architectural background, restrained copper accents, and dramatic directional lighting.",
+	"A crisp Scandinavian retail setting with a white oak display surface, pale blue-gray walls, clean geometric shelving, and cool diffused daylight.",
+	"A calm botanical conservatory with a natural rattan display surface, softly blurred foliage, textured warm-white walls, and filtered daylight.",
+	"A modern concrete loft with a smooth slate display surface, textured gray architectural walls, strong side light, and long soft shadows.",
+	"A refined boutique setting with a light blush display surface, a sculptural sand-colored wall niche, subtle brass details, and soft studio lighting.",
+}
+
+func productImagePrompt(sceneKey string, variation int) string {
+	index := variation - 1
+	if index < 0 {
+		index = 0
+	}
+	direction := sceneDirections[index%len(sceneDirections)]
+	return "Use the uploaded product photo as the visual reference. Identify the actual product and create a new, complete, photorealistic commercial product photograph showing that product naturally placed in a realistic environment suitable for: " + sceneKey + ". " + direction + " Compose a wide landscape image (3:2, 1536x1024) with the entire product visible, comfortably framed with clear space around it, natural perspective, believable contact shadows, and lighting that integrates the product into the scene. Preserve the recognizable product design, silhouette, proportions, primary colors, materials, and visible brand identity as closely as possible. Do not crop the product, turn it into a cutout, paste the source photo over a new background, or merely replace the background. The source is a reference, not a pixel layer; recreate the product as needed for a coherent realistic photograph. Do not add text, labels, accessories, or product features that are not supported by the reference."
+}
+
+func (p *openAIImageComposer) postProductImageEdit(ctx context.Context, source []byte, contentType, prompt string) ([]byte, error) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	fields := [][2]string{
+		{"model", p.model},
+		{"prompt", prompt},
+		{"size", "1536x1024"},
+		{"output_format", "png"},
+	}
+	for _, field := range fields {
+		if err := writer.WriteField(field[0], field[1]); err != nil {
+			return nil, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+		}
+	}
+	extension := ".png"
+	switch contentType {
+	case "image/jpeg":
+		extension = ".jpg"
+	case "image/webp":
+		extension = ".webp"
+	}
+	partHeader := textproto.MIMEHeader{}
+	partHeader.Set("Content-Disposition", `form-data; name="image"; filename="product`+extension+`"`)
+	partHeader.Set("Content-Type", contentType)
+	part, err := writer.CreatePart(partHeader)
+	if err != nil {
+		return nil, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+	}
+	if _, err := part.Write(source); err != nil {
+		return nil, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+	}
+	if err := writer.Close(); err != nil {
+		return nil, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/images/edits", &body)
+	if err != nil {
+		return nil, ProviderFailureError{Code: ProviderFailureUnavailable}
+	}
+	request.Header.Set("Authorization", "Bearer "+p.apiKey)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	response, err := p.client.Do(request)
+	if err != nil {
+		return nil, ProviderFailureError{Code: ProviderFailureUnavailable}
+	}
+	defer func() { _ = response.Body.Close() }()
+	return p.decodeImageResponse(response)
 }
 
 // doImageJSON performs one JSON POST against an OpenAI images endpoint with

@@ -26,24 +26,24 @@ import (
 //
 // An unverifiable composite returns ProviderFailureInvalidOutput; no partial
 // result is written for the candidate.
-func provingComposite(foreground Foreground, scene ComposedImage) (ComposedImage, error) {
+func provingComposite(foreground Foreground, scene GeneratedProductImage) (GeneratedProductImage, error) {
 	fg, _, err := image.Decode(bytes.NewReader(foreground.Bytes))
 	if err != nil {
-		return ComposedImage{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+		return GeneratedProductImage{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
 	}
 	mask, _, err := image.Decode(bytes.NewReader(foreground.MaskBytes))
 	if err != nil {
-		return ComposedImage{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+		return GeneratedProductImage{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
 	}
 	sceneImg, _, err := image.Decode(bytes.NewReader(scene.Bytes))
 	if err != nil {
-		return ComposedImage{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+		return GeneratedProductImage{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
 	}
 
 	fgBounds := fg.Bounds()
 	maskBounds := mask.Bounds()
 	if fgBounds.Size() != maskBounds.Size() || maskBounds.Size() != sceneImg.Bounds().Size() {
-		return ComposedImage{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+		return GeneratedProductImage{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
 	}
 
 	fgRGBA := image.NewRGBA(fgBounds)
@@ -64,7 +64,7 @@ func provingComposite(foreground Foreground, scene ComposedImage) (ComposedImage
 				if fgRGBA.RGBAAt(x-offX, y-offY).A != 0 {
 					// Product pixels bleed outside the mask: the foreground
 					// cannot be trusted to preserve the source image.
-					return ComposedImage{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+					return GeneratedProductImage{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
 				}
 			} else if a == 0xff {
 				hasProduct = true
@@ -74,7 +74,7 @@ func provingComposite(foreground Foreground, scene ComposedImage) (ComposedImage
 	if !hasProduct || !hasBackground {
 		// A fully opaque (or fully transparent) mask proves nothing about the
 		// composite: refuse instead of silently succeeding.
-		return ComposedImage{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+		return GeneratedProductImage{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
 	}
 
 	// Normalize the scene onto a fresh RGBA canvas and keep the generated
@@ -96,7 +96,7 @@ func provingComposite(foreground Foreground, scene ComposedImage) (ComposedImage
 
 	var out bytes.Buffer
 	if err := png.Encode(&out, sceneRGBA); err != nil {
-		return ComposedImage{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+		return GeneratedProductImage{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
 	}
-	return ComposedImage{ContentType: "image/png", Bytes: out.Bytes()}, nil
+	return GeneratedProductImage{ContentType: "image/png", Bytes: out.Bytes()}, nil
 }

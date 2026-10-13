@@ -28,7 +28,7 @@ func (p *openAITextProvider) GenerateProductText(ctx context.Context, req TextRe
 	payload := map[string]any{
 		"model": p.model,
 		"messages": []map[string]string{
-			{"role": "system", "content": "Return JSON with product field proposals only for field_key name, description, keywords, category, attribute and locale ar or en. Do not include price, inventory, sku, origin country, or specifications."},
+			{"role": "system", "content": "Return a JSON object with a fields array containing product name and description only. For each field, provide both Arabic (locale ar) and English (locale en). Each item must contain field_key, locale, and value. Use only field_key name or description. Do not include keywords, categories, attributes, price, inventory, sku, origin country, or specifications."},
 			{"role": "user", "content": req.Brief},
 		},
 	}
@@ -82,18 +82,36 @@ func (p *openAITextProvider) doGenerate(ctx context.Context, body []byte) (TextR
 }
 
 func parseTextProviderContent(content string) (TextResult, error) {
-	var payload struct {
-		Fields []TextFieldResult `json:"fields"`
-	}
-	if err := json.Unmarshal([]byte(content), &payload); err != nil {
+	var raw json.RawMessage
+	if err := json.Unmarshal([]byte(content), &raw); err != nil {
 		return TextResult{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
 	}
-	for _, field := range payload.Fields {
+	var fields []TextFieldResult
+	switch {
+	case len(raw) > 0 && raw[0] == '[':
+		// Some compatible chat models return the proposal array directly even
+		// when prompted for a JSON object. Accept that equivalent envelope.
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			return TextResult{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+		}
+	default:
+		var payload struct {
+			Fields []TextFieldResult `json:"fields"`
+		}
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			return TextResult{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+		}
+		fields = payload.Fields
+	}
+	if len(fields) == 0 {
+		return TextResult{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+	}
+	for _, field := range fields {
 		if !IsValidFieldKey(field.FieldKey) || !IsValidLocale(field.Locale) {
 			return TextResult{}, fmt.Errorf("%w", ProviderFailureError{Code: AuthoringUnsupportedField})
 		}
 	}
-	return TextResult{Fields: payload.Fields}, nil
+	return TextResult{Fields: fields}, nil
 }
 
 func failureCode(err error) string {

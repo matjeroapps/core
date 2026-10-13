@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"log/slog"
 	"os/signal"
@@ -51,6 +52,9 @@ func run(ctx context.Context) error {
 		ImageProvider: cfg.AIImageProvider, ImageModel: cfg.AIImageModel, ImageAPIBaseURL: cfg.AIImageAPIBaseURL, ImageAPIKey: cfg.AIImageAPIKey,
 		RequestTimeout: cfg.AIRequestTimeout,
 	})
+	if err := configureMediaStorage(&service, cfg, logger); err != nil {
+		return err
+	}
 
 	expiryWorker := NewExpiryWorker(service, logger, 100, 5*time.Second)
 	go expiryWorker.Run(ctx)
@@ -62,5 +66,28 @@ func run(ctx context.Context) error {
 	logger.Info("scheduler ready", slog.String("service", cfg.ServiceName))
 	<-ctx.Done()
 	logger.Info("scheduler shutting down")
+	return nil
+}
+
+func configureMediaStorage(service *commerce.Service, cfg config.Config, logger *slog.Logger) error {
+	if cfg.MediaS3Bucket == "" {
+		if cfg.Environment == "production" {
+			return fmt.Errorf("MEDIA_S3_BUCKET is required in production")
+		}
+		return nil
+	}
+	service.S3Storage = commerce.NewS3Storage(commerce.S3Config{
+		Endpoint:        cfg.MediaS3Endpoint,
+		PresignEndpoint: cfg.MediaS3PresignEndpoint,
+		Region:          cfg.MediaS3Region,
+		Bucket:          cfg.MediaS3Bucket,
+		AccessKeyID:     cfg.MediaS3AccessKeyID,
+		SecretAccessKey: cfg.MediaS3SecretAccessKey,
+		ForcePathStyle:  cfg.MediaS3ForcePathStyle,
+		PublicBaseURL:   cfg.MediaPublicBaseURL,
+		MaxBytes:        cfg.MediaUploadMaxBytes,
+		URLTTL:          cfg.MediaPresignTTL,
+	})
+	logger.Info("media S3 storage configured", "bucket", cfg.MediaS3Bucket)
 	return nil
 }

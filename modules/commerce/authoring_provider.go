@@ -8,7 +8,7 @@ type TextGenerator interface {
 
 type ImageComposer interface {
 	IsolateForeground(ctx context.Context, req IsolateRequest) (Foreground, error)
-	ComposeScene(ctx context.Context, req SceneRequest) (ComposedImage, error)
+	GenerateProductImage(ctx context.Context, req ProductImageRequest) (GeneratedProductImage, error)
 }
 
 type TextRequest struct {
@@ -17,11 +17,11 @@ type TextRequest struct {
 }
 
 type TextFieldResult struct {
-	FieldKey      FieldKey
-	Locale        Locale
-	Value         string
-	AttributeCode string
-	CategoryID    *string
+	FieldKey      FieldKey `json:"field_key"`
+	Locale        Locale   `json:"locale"`
+	Value         string   `json:"value"`
+	AttributeCode string   `json:"attribute_code,omitempty"`
+	CategoryID    *string  `json:"category_id,omitempty"`
 }
 
 type TextResult struct {
@@ -32,9 +32,8 @@ type IsolateRequest struct {
 	SourceAssetID string
 	StorageKey    string
 	ContentType   string
-	// SourceBytes carries the source asset content read in Core so the
-	// adapter can derive proven foreground/mask layers from the source's
-	// own alpha channel without fabricating them from a provider response.
+	// SourceBytes carries source content for optional foreground isolation.
+	// Product image generation uses ProductImageRequest.
 	SourceBytes []byte
 }
 
@@ -44,13 +43,15 @@ type Foreground struct {
 	MaskBytes   []byte
 }
 
-type SceneRequest struct {
+type ProductImageRequest struct {
 	SourceAssetID string
+	ContentType   string
+	SourceBytes   []byte
 	SceneKey      string
-	Foreground    Foreground
+	Variation     int
 }
 
-type ComposedImage struct {
+type GeneratedProductImage struct {
 	ContentType string
 	Bytes       []byte
 }
