@@ -30,6 +30,8 @@ func setupP51Database(t *testing.T) (*database.Pool, Repository, context.Context
 		"000009_supplier_retail_capability",
 		"000010_customer_cart_domain",
 		"000011_checkout_sessions",
+		"000047_store_product_properties_variant_removal",
+		"000047_store_product_properties_variant_removal",
 	}
 	applyMigrationBatch(t, db, migrationNames...)
 	return db, NewRepository(db.Pool), context.Background()

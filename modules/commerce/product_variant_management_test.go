@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -285,12 +286,12 @@ func TestUpdateUnreferencedVariantReplacesCombinationAtomically(t *testing.T) {
 		t.Fatalf("CreateAttributeValue blue: %v", err)
 	}
 
-	res, err := env.service.UpdateVariantWithAttributesForSubject(ctx, env.subject, env.storeID, env.product, created.ID, "blue-small", "inactive", []VariantAttributeMapping{{AttributeID: env.colorID, AttributeValueID: blue.ID}, {AttributeID: env.sizeID, AttributeValueID: env.smallID}})
+	res, err := env.service.UpdateVariantWithAttributesForSubject(ctx, env.subject, env.storeID, env.product, created.ID, "blue-small", "active", []VariantAttributeMapping{{AttributeID: env.colorID, AttributeValueID: blue.ID}, {AttributeID: env.sizeID, AttributeValueID: env.smallID}})
 	if err != nil {
 		t.Fatalf("update unreferenced variant: %v", err)
 	}
-	if res.Code != "blue-small" || res.Status != "inactive" {
-		t.Fatalf("updated variant = %q/%q, want blue-small/inactive", res.Code, res.Status)
+	if res.Code != "blue-small" || res.Status != "active" {
+		t.Fatalf("updated variant = %q/%q, want blue-small/active", res.Code, res.Status)
 	}
 	values := variantJunctionValues(t, env, created.ID)
 	if values[env.colorID] != blue.ID || values[env.sizeID] != env.smallID || len(values) != 2 {
@@ -365,16 +366,16 @@ func TestUpdateReferencedVariantCombinationConflictIsActionable(t *testing.T) {
 	}
 
 	// Referenced variants may still edit code/status without a new signature.
-	res, err := env.service.UpdateVariantWithAttributesForSubject(ctx, env.subject, env.storeID, env.product, created.ID, "red-small-live", "inactive", nil)
+	res, err := env.service.UpdateVariantWithAttributesForSubject(ctx, env.subject, env.storeID, env.product, created.ID, "red-small-live", "active", nil)
 	if err != nil {
 		t.Fatalf("referenced code/status edit: %v", err)
 	}
-	if res.Code != "red-small-live" || res.Status != "inactive" {
+	if res.Code != "red-small-live" || res.Status != "active" {
 		t.Fatalf("referenced code/status edit result = %q/%q", res.Code, res.Status)
 	}
 }
 
-func TestDeleteReferencedVariantIsProtectedAndUnreferencedDeleteWorks(t *testing.T) {
+func TestDeleteVariantPreservesReferencedHistoryAndHidesCatalogEntry(t *testing.T) {
 	env := newProductVariantMgmtEnv(t)
 	ctx := context.Background()
 	created, _, err := env.service.CreateVariantWithAttributesAndSKU(ctx, env.subject, env.storeID, env.product, "red-small", "active", "SKU-RED-S", "", []VariantAttributeMapping{{AttributeID: env.colorID, AttributeValueID: env.redID}, {AttributeID: env.sizeID, AttributeValueID: env.smallID}}, nil, nil, nil, nil, nil)
@@ -387,11 +388,11 @@ func TestDeleteReferencedVariantIsProtectedAndUnreferencedDeleteWorks(t *testing
 	}
 	seedVariantInventoryReference(t, env, skuID)
 
-	if err := env.service.DeleteVariantForSubject(ctx, env.subject, env.storeID, env.product, created.ID); !errors.Is(err, ErrResourceInUse) {
-		t.Fatalf("delete referenced variant err = %v, want ErrResourceInUse", err)
+	if err := env.service.DeleteVariantForSubject(ctx, env.subject, env.storeID, env.product, created.ID); err != nil {
+		t.Fatalf("remove referenced variant from catalog: %v", err)
 	}
-	var variantCount, skuCount, junctionCount, snapshotCount int
-	if err := env.db.Pool.QueryRow(ctx, `SELECT count(*) FROM variants WHERE id = $1`, created.ID).Scan(&variantCount); err != nil {
+	var variantCount, visibleCount, skuCount, junctionCount, snapshotCount int
+	if err := env.db.Pool.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE deleted_at IS NULL) FROM variants WHERE id = $1`, created.ID).Scan(&variantCount, &visibleCount); err != nil {
 		t.Fatalf("query variant count: %v", err)
 	}
 	if err := env.db.Pool.QueryRow(ctx, `SELECT count(*) FROM skus WHERE variant_id = $1`, created.ID).Scan(&skuCount); err != nil {
@@ -403,11 +404,15 @@ func TestDeleteReferencedVariantIsProtectedAndUnreferencedDeleteWorks(t *testing
 	if err := env.db.Pool.QueryRow(ctx, `SELECT count(*) FROM inventory_snapshots WHERE sku_id = $1`, skuID).Scan(&snapshotCount); err != nil {
 		t.Fatalf("query snapshot count: %v", err)
 	}
-	if variantCount != 1 || skuCount != 1 || junctionCount != 2 || snapshotCount != 1 {
-		t.Fatalf("referenced delete left partial removal: variant=%d sku=%d junction=%d snapshot=%d", variantCount, skuCount, junctionCount, snapshotCount)
+	var skuStatus string
+	if err := env.db.Pool.QueryRow(ctx, `SELECT status FROM skus WHERE variant_id = $1`, created.ID).Scan(&skuStatus); err != nil {
+		t.Fatalf("query retained sku status: %v", err)
+	}
+	if variantCount != 1 || visibleCount != 0 || skuCount != 1 || skuStatus != "inactive" || junctionCount != 2 || snapshotCount != 1 {
+		t.Fatalf("removal did not preserve hidden history: variant=%d visible=%d sku=%d sku_status=%s junction=%d snapshot=%d", variantCount, visibleCount, skuCount, skuStatus, junctionCount, snapshotCount)
 	}
 
-	// The unreferenced sibling variant deletes fully and atomically.
+	// An unreferenced sibling is also hidden without erasing the row.
 	spares, _, err := env.service.CreateVariantWithAttributesAndSKU(ctx, env.subject, env.storeID, env.product, "blue-small", "active", "SKU-BLUE-S", "", []VariantAttributeMapping{{AttributeID: env.sizeID, AttributeValueID: env.smallID}}, nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("create spare variant: %v", err)
@@ -415,15 +420,15 @@ func TestDeleteReferencedVariantIsProtectedAndUnreferencedDeleteWorks(t *testing
 	if err := env.service.DeleteVariantForSubject(ctx, env.subject, env.storeID, env.product, spares.ID); err != nil {
 		t.Fatalf("delete unreferenced variant: %v", err)
 	}
-	if err := env.db.Pool.QueryRow(ctx, `SELECT count(*) FROM variants WHERE id = $1`, spares.ID).Scan(&variantCount); err != nil {
+	if err := env.db.Pool.QueryRow(ctx, `SELECT count(*) FROM variants WHERE id = $1 AND deleted_at IS NULL`, spares.ID).Scan(&variantCount); err != nil {
 		t.Fatalf("query spare variant count: %v", err)
 	}
 	if variantCount != 0 {
-		t.Fatalf("unreferenced delete left variant behind, found %d", variantCount)
+		t.Fatalf("removed variant remains visible in catalog, found %d", variantCount)
 	}
 }
 
-func TestArchiveVariantIsIdempotentAndPreservesHistoricalRows(t *testing.T) {
+func TestRemoveVariantPreservesHistoricalRows(t *testing.T) {
 	env := newProductVariantMgmtEnv(t)
 	ctx := context.Background()
 	created, _, err := env.service.CreateVariantWithAttributesAndSKU(ctx, env.subject, env.storeID, env.product, "red-small", "active", "SKU-RED-S", "", []VariantAttributeMapping{{AttributeID: env.colorID, AttributeValueID: env.redID}, {AttributeID: env.sizeID, AttributeValueID: env.smallID}}, nil, nil, nil, nil, nil)
@@ -436,36 +441,35 @@ func TestArchiveVariantIsIdempotentAndPreservesHistoricalRows(t *testing.T) {
 	}
 	seedVariantInventoryReference(t, env, skuID)
 
-	for attempt := 1; attempt <= 2; attempt++ {
-		if _, err := env.service.ArchiveVariantForSubject(ctx, env.subject, env.storeID, env.product, created.ID); err != nil {
-			t.Fatalf("archive attempt %d: %v", attempt, err)
-		}
-		var code, status, skuStatus string
-		var skuCount, junctionCount, snapshotCount int
-		if err := env.db.Pool.QueryRow(ctx, `SELECT code, status FROM variants WHERE id = $1`, created.ID).Scan(&code, &status); err != nil {
-			t.Fatalf("query variant after archive %d: %v", attempt, err)
-		}
-		if code != "red-small" || status != "archived" {
-			t.Fatalf("variant after archive %d = %q/%q, want red-small/archived", attempt, code, status)
-		}
-		if err := env.db.Pool.QueryRow(ctx, `SELECT status FROM skus WHERE id = $1`, skuID).Scan(&skuStatus); err != nil {
-			t.Fatalf("query sku after archive %d: %v", attempt, err)
-		}
-		if skuStatus != "inactive" {
-			t.Fatalf("active sku after archive %d status = %q, want inactive", attempt, skuStatus)
-		}
-		if err := env.db.Pool.QueryRow(ctx, `SELECT count(*) FROM skus WHERE variant_id = $1`, created.ID).Scan(&skuCount); err != nil {
-			t.Fatalf("count skus after archive %d: %v", attempt, err)
-		}
-		if err := env.db.Pool.QueryRow(ctx, `SELECT count(*) FROM variant_attribute_values WHERE variant_id = $1`, created.ID).Scan(&junctionCount); err != nil {
-			t.Fatalf("count junction rows after archive %d: %v", attempt, err)
-		}
-		if err := env.db.Pool.QueryRow(ctx, `SELECT count(*) FROM inventory_snapshots WHERE sku_id = $1`, skuID).Scan(&snapshotCount); err != nil {
-			t.Fatalf("count snapshots after archive %d: %v", attempt, err)
-		}
-		if skuCount != 1 || junctionCount != 2 || snapshotCount != 1 {
-			t.Fatalf("archive dropped historical rows: sku=%d junction=%d snapshot=%d", skuCount, junctionCount, snapshotCount)
-		}
+	if err := env.service.DeleteVariantForSubject(ctx, env.subject, env.storeID, env.product, created.ID); err != nil {
+		t.Fatalf("remove variant: %v", err)
+	}
+	var code, status, skuStatus string
+	var deletedAt *time.Time
+	var skuCount, junctionCount, snapshotCount int
+	if err := env.db.Pool.QueryRow(ctx, `SELECT code, status, deleted_at FROM variants WHERE id = $1`, created.ID).Scan(&code, &status, &deletedAt); err != nil {
+		t.Fatalf("query variant after removal: %v", err)
+	}
+	if code != "red-small" || status != "active" || deletedAt == nil {
+		t.Fatalf("variant after removal = %q/%q deleted_at=%v", code, status, deletedAt)
+	}
+	if err := env.db.Pool.QueryRow(ctx, `SELECT status FROM skus WHERE id = $1`, skuID).Scan(&skuStatus); err != nil {
+		t.Fatalf("query sku after removal: %v", err)
+	}
+	if skuStatus != "inactive" {
+		t.Fatalf("active sku after removal status = %q, want inactive", skuStatus)
+	}
+	if err := env.db.Pool.QueryRow(ctx, `SELECT count(*) FROM skus WHERE variant_id = $1`, created.ID).Scan(&skuCount); err != nil {
+		t.Fatalf("count skus after removal: %v", err)
+	}
+	if err := env.db.Pool.QueryRow(ctx, `SELECT count(*) FROM variant_attribute_values WHERE variant_id = $1`, created.ID).Scan(&junctionCount); err != nil {
+		t.Fatalf("count junction rows after removal: %v", err)
+	}
+	if err := env.db.Pool.QueryRow(ctx, `SELECT count(*) FROM inventory_snapshots WHERE sku_id = $1`, skuID).Scan(&snapshotCount); err != nil {
+		t.Fatalf("count snapshots after removal: %v", err)
+	}
+	if skuCount != 1 || junctionCount != 2 || snapshotCount != 1 {
+		t.Fatalf("removal dropped historical rows: sku=%d junction=%d snapshot=%d", skuCount, junctionCount, snapshotCount)
 	}
 }
 
@@ -571,7 +575,7 @@ func TestProductVariantRejectsInactiveOrStaleAttributeValue(t *testing.T) {
 	if _, err := env.db.Pool.Exec(ctx, `UPDATE attribute_values SET status = 'inactive' WHERE id = $1`, env.redID); err != nil {
 		t.Fatalf("deactivate attribute value: %v", err)
 	}
-	_, err = env.service.UpdateVariantWithAttributesForSubject(ctx, env.subject, env.storeID, env.product, created.ID, "red-small-updated", "inactive", []VariantAttributeMapping{{AttributeID: env.colorID, AttributeValueID: env.redID}})
+	_, err = env.service.UpdateVariantWithAttributesForSubject(ctx, env.subject, env.storeID, env.product, created.ID, "red-small-updated", "active", []VariantAttributeMapping{{AttributeID: env.colorID, AttributeValueID: env.redID}})
 	if !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("stale value update err = %v, want ErrInvalidInput", err)
 	}

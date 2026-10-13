@@ -36,6 +36,7 @@ func TestRepositoryCommerceFoundations(t *testing.T) {
 		"000015_media_upload_intent",
 		"000025_seller_catalog_phase_b",
 		"000026_seller_catalog_phase_c",
+		"000047_store_product_properties_variant_removal",
 	)
 
 	repo := NewRepository(db.Pool)

@@ -95,6 +95,8 @@ func setupIsolationContractEnv(t *testing.T) isolationTestEnv {
 		"000025_seller_catalog_phase_b",
 		"000026_seller_catalog_phase_c",
 		"000044_store_scoped_categories",
+		"000047_store_product_properties_variant_removal",
+		"000047_store_product_properties_variant_removal",
 	}
 	migrationPaths := make([]string, 0, len(migrationNames))
 	for _, name := range migrationNames {
