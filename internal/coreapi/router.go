@@ -395,6 +395,8 @@ func NewRouter(deps Dependencies) chi.Router {
 			r.Put("/stores/{storeID}/products/{productID}", server.handleUpdateStoreProduct)
 			r.Post("/stores/{storeID}/products/{productID}/status", server.handleTransitionStoreProductStatus)
 			r.Post("/stores/{storeID}/products/{productID}/archive", server.handleArchiveStoreProduct)
+			r.Delete("/stores/{storeID}/products/{productID}", server.handleRemoveStoreProduct)
+			r.Post("/stores/{storeID}/products/bulk-removal", server.handleBulkRemoveStoreProducts)
 			r.Post("/stores/{storeID}/products/{productID}/variants", server.handleCreateProductVariant)
 			r.Put("/stores/{storeID}/products/{productID}/variants/{variantID}", server.handleUpdateProductVariant)
 			r.Delete("/stores/{storeID}/products/{productID}/variants/{variantID}", server.handleDeleteProductVariant)

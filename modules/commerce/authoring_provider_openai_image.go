@@ -23,13 +23,9 @@ import (
 // openAIImageComposer implements the image branch against OpenAI's real
 // image endpoints:
 //
-//   - foreground/mask isolation is never fabricated from a raw provider
-//     response. OpenAI's /images/edits returns a single edited image and no
-//     separately-named foreground/mask pair, so when the Core input (the
-//     source asset) carries its own alpha channel the adapter derives the
-//     product mask from that alpha locally; when it does not, no provider
-//     call can produce a provable isolation and the adapter fails
-//     classified (provider_capability_unsupported) instead of pretending.
+//   - transparent source images use their own alpha locally. For opaque source
+//     images, OpenAI's transparent PNG edit is used only for its approximate
+//     alpha mask; foreground RGB always comes from the merchant's original.
 //   - scene generation posts the documented /images/generations JSON body
 //     and decodes data[0].b64_json or downloads data[0].url for real; the
 //     scene response is never the request foreground echoed back.
@@ -47,22 +43,62 @@ func NewOpenAIImageComposer(baseURL, apiKey, model string, timeout time.Duration
 	return &openAIImageComposer{baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey, model: model, client: &http.Client{Timeout: timeout}}
 }
 
-const isolateForegroundPrompt = "Isolate the product foreground only: keep the product pixels unchanged and make every pixel outside the product fully transparent. Do not redraw the product."
+const isolateForegroundPrompt = "Create a transparent PNG cutout of the product in this image. Preserve the product silhouette and include the complete product, excluding the background. This output is used only as an approximate alpha mask; do not add shadows or other objects."
 
 func (p *openAIImageComposer) IsolateForeground(ctx context.Context, req IsolateRequest) (Foreground, error) {
 	// Preferred path: isolation is derivable in Core from the source itself.
 	if fg, ok := foregroundFromSourceAlpha(req.SourceBytes); ok {
 		return fg, nil
 	}
-	// Fallback path: ask the images-edits endpoint for an isolated product
-	// layer. Even when that call succeeds, the response is a single image
-	// without a separately-declared mask, so without source alpha no
-	// provable isolation exists: fail classified instead of treating the
-	// raw response image as its own mask.
-	if _, err := p.postImagesEdits(ctx, req); err != nil {
+	// The provider result supplies only a best-effort alpha mask. Its colors
+	// are discarded so the generated edit can never recolor or replace the
+	// merchant's product pixels.
+	maskImage, err := p.postImagesEdits(ctx, req)
+	if err != nil {
 		return Foreground{}, err
 	}
-	return Foreground{}, ProviderFailureError{Code: ProviderFailureCapabilityUnsupported}
+	return foregroundWithProviderAlpha(req.SourceBytes, maskImage)
+}
+
+func foregroundWithProviderAlpha(source []byte, maskImage image.Image) (Foreground, error) {
+	if len(source) == 0 || maskImage == nil {
+		return Foreground{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+	}
+	src, _, err := image.Decode(bytes.NewReader(source))
+	if err != nil || src.Bounds().Size() != maskImage.Bounds().Size() {
+		return Foreground{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+	}
+	bounds := src.Bounds()
+	maskBounds := maskImage.Bounds()
+	foreground := image.NewNRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
+	mask := image.NewAlpha(foreground.Bounds())
+	hasForeground, hasBackground := false, false
+	for y := 0; y < bounds.Dy(); y++ {
+		for x := 0; x < bounds.Dx(); x++ {
+			_, _, _, alpha16 := maskImage.At(maskBounds.Min.X+x, maskBounds.Min.Y+y).RGBA()
+			alpha := uint8(alpha16 >> 8)
+			if alpha == 0 {
+				hasBackground = true
+			} else {
+				hasForeground = true
+			}
+			original := color.NRGBAModel.Convert(src.At(bounds.Min.X+x, bounds.Min.Y+y)).(color.NRGBA)
+			original.A = alpha
+			foreground.SetNRGBA(x, y, original)
+			mask.SetAlpha(x, y, color.Alpha{A: alpha})
+		}
+	}
+	if !hasForeground || !hasBackground {
+		return Foreground{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+	}
+	var foregroundBytes, maskBytes bytes.Buffer
+	if err := png.Encode(&foregroundBytes, foreground); err != nil {
+		return Foreground{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+	}
+	if err := png.Encode(&maskBytes, mask); err != nil {
+		return Foreground{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+	}
+	return Foreground{ContentType: "image/png", Bytes: foregroundBytes.Bytes(), MaskBytes: maskBytes.Bytes()}, nil
 }
 
 // foregroundFromSourceAlpha decodes the source bytes and, when they contain
@@ -102,10 +138,7 @@ func foregroundFromSourceAlpha(source []byte) (Foreground, bool) {
 	for y := 0; y < bounds.Dy(); y++ {
 		for x := 0; x < bounds.Dx(); x++ {
 			_, _, _, a := src.At(bounds.Min.X+x, bounds.Min.Y+y).RGBA()
-			alpha := uint8(0)
-			if a >= 0x8000 {
-				alpha = 0xff
-			}
+			alpha := uint8(a >> 8)
 			mask.SetAlpha(x, y, color.Alpha{A: alpha})
 		}
 	}
@@ -119,10 +152,8 @@ func foregroundFromSourceAlpha(source []byte) (Foreground, bool) {
 	return Foreground{ContentType: "image/png", Bytes: fgBuf.Bytes(), MaskBytes: maskBuf.Bytes()}, true
 }
 
-// postImagesEdits sends the real multipart form documented for
-// POST {baseURL}/images/edits and validates a single-image response. The
-// parsed layer is deliberately discarded: an edit response is never reused
-// as a mask or as a proven foreground.
+// postImagesEdits requests a transparent PNG and returns its decoded alpha
+// source. The returned RGB is never used as product content.
 func (p *openAIImageComposer) postImagesEdits(ctx context.Context, req IsolateRequest) (image.Image, error) {
 	if len(req.SourceBytes) == 0 {
 		return nil, ProviderFailureError{Code: ProviderFailureInvalidOutput}
@@ -150,9 +181,26 @@ func (p *openAIImageComposer) postImagesEditsOnce(ctx context.Context, req Isola
 	if err := writer.WriteField("prompt", isolateForegroundPrompt); err != nil {
 		return nil, ProviderFailureError{Code: ProviderFailureInvalidOutput}
 	}
+	if err := writer.WriteField("background", "transparent"); err != nil {
+		return nil, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+	}
+	if err := writer.WriteField("output_format", "png"); err != nil {
+		return nil, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+	}
+	contentType := strings.TrimSpace(req.ContentType)
+	if contentType == "" {
+		contentType = http.DetectContentType(req.SourceBytes)
+	}
+	extension := ".png"
+	switch contentType {
+	case "image/jpeg":
+		extension = ".jpg"
+	case "image/webp":
+		extension = ".webp"
+	}
 	partHeader := textproto.MIMEHeader{}
-	partHeader.Set("Content-Disposition", `form-data; name="image"; filename="source.png"`)
-	partHeader.Set("Content-Type", "image/png")
+	partHeader.Set("Content-Disposition", `form-data; name="image"; filename="source`+extension+`"`)
+	partHeader.Set("Content-Type", contentType)
 	part, err := writer.CreatePart(partHeader)
 	if err != nil {
 		return nil, ProviderFailureError{Code: ProviderFailureInvalidOutput}
@@ -181,8 +229,11 @@ func (p *openAIImageComposer) postImagesEditsOnce(ctx context.Context, req Isola
 	if len(data) == 0 {
 		return nil, ProviderFailureError{Code: ProviderFailureInvalidOutput}
 	}
-	layer, _, err := image.Decode(bytes.NewReader(data))
+	layer, format, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
+		return nil, ProviderFailureError{Code: ProviderFailureInvalidOutput}
+	}
+	if format != "png" {
 		return nil, ProviderFailureError{Code: ProviderFailureInvalidOutput}
 	}
 	return layer, nil

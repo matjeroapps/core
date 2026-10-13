@@ -21,7 +21,11 @@ func testAlphaForegroundPNG() []byte {
 	for y := 0; y < 4; y++ {
 		for x := 0; x < 4; x++ {
 			if y >= 2 {
-				img.Set(x, y, color.RGBA{R: 200, G: 40, B: 40, A: 255})
+				alpha := uint8(255)
+				if x == 0 && y == 2 {
+					alpha = 128
+				}
+				img.SetNRGBA(x, y, color.NRGBA{R: 200, G: 40, B: 40, A: alpha})
 			}
 		}
 	}
@@ -96,12 +100,27 @@ func TestAdapterIsolateForegroundFromSourceAlpha(t *testing.T) {
 	if maskNorm.AlphaAt(0, 3).A != 0xff || maskNorm.AlphaAt(0, 0).A != 0 {
 		t.Fatalf("mask must mark the product region only, got product=%d background=%d", maskNorm.AlphaAt(0, 3).A, maskNorm.AlphaAt(0, 0).A)
 	}
+	if got := maskNorm.AlphaAt(0, 2).A; got != 128 {
+		t.Fatalf("source soft edge alpha = %d, want 128", got)
+	}
+	if _, _, _, got := fgImg.At(0, 2).RGBA(); got != 128*257 {
+		t.Fatalf("source soft edge foreground alpha = %d, want %d", got, 128*257)
+	}
 }
 
-// TestAdapterIsolateForegroundRefusesUnprovable proves that a single
-// images-edits response image is never treated as a mask: without source
-// alpha the adapter fails classified.
-func TestAdapterIsolateForegroundRefusesUnprovable(t *testing.T) {
+// TestAdapterIsolateForegroundUsesOnlyProviderAlpha proves that opaque source
+// colors remain authoritative while OpenAI supplies only an approximate mask.
+func TestAdapterIsolateForegroundUsesOnlyProviderAlpha(t *testing.T) {
+	mask := image.NewNRGBA(image.Rect(0, 0, 4, 4))
+	for y := 2; y < 4; y++ {
+		for x := 0; x < 4; x++ {
+			mask.SetNRGBA(x, y, color.NRGBA{R: 255, B: 255, A: 255})
+		}
+	}
+	var maskBytes bytes.Buffer
+	if err := png.Encode(&maskBytes, mask); err != nil {
+		t.Fatal(err)
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/images/edits" {
 			t.Fatalf("edits path = %s", r.URL.Path)
@@ -115,21 +134,75 @@ func TestAdapterIsolateForegroundRefusesUnprovable(t *testing.T) {
 		if r.PostFormValue("model") != "gpt-image-1" {
 			t.Fatalf("model field = %q", r.PostFormValue("model"))
 		}
+		if r.PostFormValue("background") != "transparent" || r.PostFormValue("output_format") != "png" {
+			t.Fatalf("transparent PNG request fields missing")
+		}
 		file, header, err := r.FormFile("image")
 		if err != nil || header == nil {
 			t.Fatalf("image form file missing: %v", err)
 		}
+		if header.Filename != "source.jpg" || header.Header.Get("Content-Type") != "image/jpeg" {
+			t.Fatalf("source file metadata = %q / %q", header.Filename, header.Header.Get("Content-Type"))
+		}
 		defer file.Close()
-		writeImageB64Response(t, w, testSceneResponsePNG())
+		writeImageB64Response(t, w, maskBytes.Bytes())
 	}))
 	defer server.Close()
 	adapter := NewOpenAIImageComposer(server.URL, "secret-token", "gpt-image-1", 0)
-	_, err := adapter.IsolateForeground(context.Background(), IsolateRequest{StorageKey: "k", ContentType: "image/jpeg", SourceBytes: testOpaqueForegroundJPG()})
-	if err == nil {
-		t.Fatalf("unprovable isolation must fail")
+	fg, err := adapter.IsolateForeground(context.Background(), IsolateRequest{StorageKey: "k", ContentType: "image/jpeg", SourceBytes: testOpaqueForegroundJPG()})
+	if err != nil {
+		t.Fatalf("opaque source isolation: %v", err)
 	}
-	if got := failureCode(err); got != ProviderFailureCapabilityUnsupported {
-		t.Fatalf("unprovable isolation code = %q, want provider_capability_unsupported", got)
+	fgImage, _, err := image.Decode(bytes.NewReader(fg.Bytes))
+	if err != nil {
+		t.Fatalf("decode original-color foreground: %v", err)
+	}
+	if _, _, _, alpha := fgImage.At(0, 0).RGBA(); alpha != 0 {
+		t.Fatalf("provider transparent region alpha = %d, want 0", alpha)
+	}
+	r, g, b, alpha := fgImage.At(0, 3).RGBA()
+	if !(g > r && g > b && alpha == 0xffff) {
+		t.Fatalf("foreground color = %#04x/%#04x/%#04x alpha %#04x, want original green JPEG color", r, g, b, alpha)
+	}
+}
+
+func TestAdapterIsolateForegroundRejectsInvalidProviderMasks(t *testing.T) {
+	makeMask := func(t *testing.T, bounds image.Rectangle, alpha uint8) []byte {
+		t.Helper()
+		img := image.NewNRGBA(bounds)
+		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+			for x := bounds.Min.X; x < bounds.Max.X; x++ {
+				img.SetNRGBA(x, y, color.NRGBA{R: 255, A: alpha})
+			}
+		}
+		var buf bytes.Buffer
+		if err := png.Encode(&buf, img); err != nil {
+			t.Fatal(err)
+		}
+		return buf.Bytes()
+	}
+	cases := []struct {
+		name string
+		mask []byte
+	}{
+		{name: "different dimensions", mask: makeMask(t, image.Rect(0, 0, 3, 4), 255)},
+		{name: "fully opaque", mask: makeMask(t, image.Rect(0, 0, 4, 4), 255)},
+		{name: "fully transparent", mask: makeMask(t, image.Rect(0, 0, 4, 4), 0)},
+		{name: "undecodable image", mask: []byte("not an image")},
+		{name: "non PNG response", mask: testOpaqueForegroundJPG()},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				writeImageB64Response(t, w, tc.mask)
+			}))
+			defer server.Close()
+			adapter := NewOpenAIImageComposer(server.URL, "secret-token", "gpt-image-1", 0)
+			_, err := adapter.IsolateForeground(context.Background(), IsolateRequest{ContentType: "image/jpeg", SourceBytes: testOpaqueForegroundJPG()})
+			if got := failureCode(err); got != ProviderFailureInvalidOutput {
+				t.Fatalf("failure code = %q, want %q (err=%v)", got, ProviderFailureInvalidOutput, err)
+			}
+		})
 	}
 }
 
@@ -247,6 +320,10 @@ func TestProvingCompositeIntegration(t *testing.T) {
 			}
 		}
 	}
+	// A soft mask edge must preserve the source's straight RGB values while
+	// applying the mask alpha once in the output.
+	fgRGBA.SetNRGBA(0, 2, color.NRGBA{R: 200, G: 40, B: 20, A: 255})
+	mask.SetAlpha(0, 2, color.Alpha{A: 128})
 	composed, err := provingComposite(
 		Foreground{ContentType: "image/png", Bytes: encodeTestPNG(t, fgRGBA), MaskBytes: encodeTestPNG(t, mask)},
 		ComposedImage{ContentType: "image/png", Bytes: encodeTestPNG(t, scene)},
@@ -259,11 +336,15 @@ func TestProvingCompositeIntegration(t *testing.T) {
 		t.Fatalf("decode composite: %v", err)
 	}
 	// Background pixels must carry the scene color; product pixels the source color.
-	if r, g, _, a := result.At(0, 0).RGBA(); !(r == 0 && g == 0 && a == 0xffff) {
+	if r, g, b, a := result.At(0, 0).RGBA(); !(r == 0 && g == 0 && b == 0xffff && a == 0xffff) {
 		t.Fatalf("composite background = %+v, want scene blue kept", result.At(0, 0))
 	}
 	if r, g, b, _ := result.At(0, 3).RGBA(); !(r == 0xffff && g == 0 && b == 0) {
 		t.Fatalf("composite product = %+v, want source red kept", result.At(0, 3))
+	}
+	softEdge := color.NRGBAModel.Convert(result.At(0, 2)).(color.NRGBA)
+	if softEdge != (color.NRGBA{R: 200, G: 40, B: 20, A: 128}) {
+		t.Fatalf("composite soft edge = %+v, want source RGB with mask alpha", softEdge)
 	}
 
 	// A different scene size: compositing cannot be proven.
@@ -296,6 +377,22 @@ func TestProvingCompositeIntegration(t *testing.T) {
 		t.Fatalf("opaque mask must be refused")
 	} else if got := failureCode(err); got != ProviderFailureInvalidOutput {
 		t.Fatalf("opaque mask code = %q", got)
+	}
+	transparent := image.NewAlpha(image.Rect(0, 0, 4, 4))
+	if _, err := provingComposite(
+		Foreground{ContentType: "image/png", Bytes: encodeTestPNG(t, fgRGBA), MaskBytes: encodeTestPNG(t, transparent)},
+		ComposedImage{ContentType: "image/png", Bytes: encodeTestPNG(t, scene)},
+	); failureCode(err) != ProviderFailureInvalidOutput {
+		t.Fatalf("transparent mask code = %q, want %q", failureCode(err), ProviderFailureInvalidOutput)
+	}
+	leakingForeground := image.NewNRGBA(image.Rect(0, 0, 4, 4))
+	draw.Draw(leakingForeground, leakingForeground.Bounds(), fgRGBA, image.Point{}, draw.Src)
+	leakingForeground.SetNRGBA(0, 0, color.NRGBA{R: 255, A: 255})
+	if _, err := provingComposite(
+		Foreground{ContentType: "image/png", Bytes: encodeTestPNG(t, leakingForeground), MaskBytes: encodeTestPNG(t, mask)},
+		ComposedImage{ContentType: "image/png", Bytes: encodeTestPNG(t, scene)},
+	); failureCode(err) != ProviderFailureInvalidOutput {
+		t.Fatalf("foreground leak code = %q, want %q", failureCode(err), ProviderFailureInvalidOutput)
 	}
 }
 

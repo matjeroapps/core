@@ -79,7 +79,7 @@ func provingComposite(foreground Foreground, scene ComposedImage) (ComposedImage
 
 	// Normalize the scene onto a fresh RGBA canvas and keep the generated
 	// scene pixels untouched outside the mask region.
-	sceneRGBA := image.NewRGBA(image.Rect(0, 0, sceneImg.Bounds().Dx(), sceneImg.Bounds().Dy()))
+	sceneRGBA := image.NewNRGBA(image.Rect(0, 0, sceneImg.Bounds().Dx(), sceneImg.Bounds().Dy()))
 	draw.Draw(sceneRGBA, sceneRGBA.Bounds(), sceneImg, sceneImg.Bounds().Min, draw.Src)
 	for y := maskBounds.Min.Y; y < maskBounds.Max.Y; y++ {
 		for x := maskBounds.Min.X; x < maskBounds.Max.X; x++ {
@@ -87,10 +87,10 @@ func provingComposite(foreground Foreground, scene ComposedImage) (ComposedImage
 			if a == 0 {
 				continue
 			}
-			src := color.RGBAModel.Convert(fg.At(x-offX, y-offY)).(color.RGBA)
-			// Premultiplied storage: scale by mask alpha to blend edge pixels.
-			src.R, src.G, src.B, src.A = mul8(src.R, a), mul8(src.G, a), mul8(src.B, a), mul8(src.A, a)
-			sceneRGBA.Set(x, y, src)
+			src := color.NRGBAModel.Convert(fg.At(x-offX, y-offY)).(color.NRGBA)
+			// Keep straight RGB in the NRGBA canvas so PNG encoding does not
+			// round product colors when applying a partially transparent mask.
+			sceneRGBA.SetNRGBA(x, y, color.NRGBA{R: src.R, G: src.G, B: src.B, A: a})
 		}
 	}
 
@@ -99,11 +99,4 @@ func provingComposite(foreground Foreground, scene ComposedImage) (ComposedImage
 		return ComposedImage{}, ProviderFailureError{Code: ProviderFailureInvalidOutput}
 	}
 	return ComposedImage{ContentType: "image/png", Bytes: out.Bytes()}, nil
-}
-
-func mul8(v, a uint8) uint8 {
-	if a == 0xff {
-		return v
-	}
-	return uint8((uint32(v) * uint32(a)) / 0xff)
 }

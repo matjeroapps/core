@@ -1066,6 +1066,44 @@ func (s *server) handleArchiveStoreProduct(w http.ResponseWriter, r *http.Reques
 	httpx.WriteJSON(w, http.StatusOK, StatusResponse{Status: "archived"})
 }
 
+func (s *server) handleRemoveStoreProduct(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	productID := chi.URLParam(r, "productID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+
+	result, err := s.deps.Commerce.RemoveSellerProductsForSubject(r.Context(), subject, storeID, []string{productID})
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result)
+}
+
+func (s *server) handleBulkRemoveStoreProducts(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	subject := serviceauth.SubjectFrom(r)
+	if subject == "" {
+		writeError(w, CodeUnauthorized)
+		return
+	}
+
+	var req commerce.StoreProductsRemovalRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, CodeInvalidArgument)
+		return
+	}
+	result, err := s.deps.Commerce.RemoveSellerProductsForSubject(r.Context(), subject, storeID, req.ProductIDs)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result)
+}
+
 func (s *server) handleImportSupplierOffer(w http.ResponseWriter, r *http.Request) {
 	storeID := chi.URLParam(r, "storeID")
 	offerID := chi.URLParam(r, "offerID")
