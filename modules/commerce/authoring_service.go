@@ -233,12 +233,9 @@ func (s Service) runImageBranch(ctx context.Context, job AuthoringJob) (BranchSt
 	if err != nil {
 		return BranchStatusFailed, ProviderFailureUnavailable
 	}
-	// Never regenerate candidates that already produced a durable result.
-	done := map[string]bool{}
 	alive := 0
-	for _, c := range existing {
-		if c.Status != ItemStatusFailed {
-			done[c.SourceAssetID] = true
+	for _, candidate := range existing {
+		if candidate.Status != ItemStatusFailed {
 			alive++
 		}
 	}
@@ -249,23 +246,35 @@ func (s Service) runImageBranch(ctx context.Context, job AuthoringJob) (BranchSt
 	if err != nil {
 		return BranchStatusFailed, ProviderFailureUnavailable
 	}
-	lastCode := ""
-	produced := alive
+	assetByID := make(map[string]authoringSourceAssetRow, len(sourceAssets))
+	sourceIDs := make([]string, 0, len(sourceAssets))
 	for _, asset := range sourceAssets {
-		if produced >= job.RequestedImageCount {
-			break
-		}
-		if done[asset.AssetID] {
-			continue
-		}
-		code := s.produceAuthoringCandidate(ctx, job, asset)
+		assetByID[asset.AssetID] = asset
+		sourceIDs = append(sourceIDs, asset.AssetID)
+	}
+	plannedSources := planAuthoringImageSources(job.RequestedImageCount, sourceIDs, existing)
+	if len(plannedSources) == 0 {
+		return BranchStatusFailed, ProviderFailureInvalidOutput
+	}
+	lastCode := ""
+	for i, sourceID := range plannedSources {
+		asset := assetByID[sourceID]
+		code := s.produceAuthoringCandidate(ctx, job, asset, len(existing)+i+1)
 		if code != "" {
 			lastCode = code
-			continue
 		}
-		produced++
 	}
-	if produced >= job.RequestedImageCount {
+	refreshed, err := s.repo.listAuthoringJobCandidates(ctx, job.StoreID, job.ID)
+	if err != nil {
+		return BranchStatusFailed, ProviderFailureUnavailable
+	}
+	alive = 0
+	for _, candidate := range refreshed {
+		if candidate.Status != ItemStatusFailed {
+			alive++
+		}
+	}
+	if alive >= job.RequestedImageCount {
 		return BranchStatusSucceeded, ""
 	}
 	if lastCode == "" {
@@ -274,11 +283,45 @@ func (s Service) runImageBranch(ctx context.Context, job AuthoringJob) (BranchSt
 	return BranchStatusFailed, lastCode
 }
 
-// produceAuthoringCandidate runs one source asset through the three-step
-// path (isolate foreground → generate scene → Core compositing) and writes
-// the candidate row immediately; failures land on the candidate alone and
-// never abort the branch.
-func (s Service) produceAuthoringCandidate(ctx context.Context, job AuthoringJob, asset authoringSourceAssetRow) string {
+// planAuthoringImageSources allocates one source for each missing image slot.
+// It spreads new candidates across sources where possible, while allowing a
+// single uploaded source to produce the full requested number of variants.
+func planAuthoringImageSources(requested int, sourceIDs []string, existing []AuthoringImageCandidate) []string {
+	if requested <= 0 || len(sourceIDs) == 0 {
+		return nil
+	}
+	counts := make(map[string]int, len(sourceIDs))
+	alive := 0
+	for _, candidate := range existing {
+		if candidate.Status == ItemStatusFailed {
+			continue
+		}
+		alive++
+		counts[candidate.SourceAssetID]++
+	}
+	remaining := requested - alive
+	if remaining <= 0 {
+		return nil
+	}
+	planned := make([]string, 0, remaining)
+	for range remaining {
+		selected := sourceIDs[0]
+		for _, sourceID := range sourceIDs[1:] {
+			if counts[sourceID] < counts[selected] {
+				selected = sourceID
+			}
+		}
+		planned = append(planned, selected)
+		counts[selected]++
+	}
+	return planned
+}
+
+// produceAuthoringCandidate gives the complete source image to the configured
+// image model as a visual reference, then stores its full landscape product
+// photograph and a copy of the original for merchant comparison. Failures land
+// on the candidate alone and never abort the branch.
+func (s Service) produceAuthoringCandidate(ctx context.Context, job AuthoringJob, asset authoringSourceAssetRow, variation int) string {
 	failCandidate := func(c AuthoringImageCandidate, code string) string {
 		c.Status = ItemStatusFailed
 		c.FailureCode = code
@@ -290,6 +333,10 @@ func (s Service) produceAuthoringCandidate(ctx context.Context, job AuthoringJob
 	base := AuthoringImageCandidate{ID: uuid.NewString(), JobID: job.ID, StoreID: job.StoreID, SourceAssetID: asset.AssetID, SceneKey: s.sceneKey(job.Brief), ContentType: asset.ContentType}
 	if base.ContentType == "" {
 		base.ContentType = "image/png"
+	}
+	sourceContentType := asset.ContentType
+	if sourceContentType == "" {
+		sourceContentType = base.ContentType
 	}
 
 	var sourceBytes []byte
@@ -308,15 +355,7 @@ func (s Service) produceAuthoringCandidate(ctx context.Context, job AuthoringJob
 		// fails classified instead of silently succeeding.
 		return failCandidate(base, ProviderFailureUnavailable)
 	}
-	foreground, err := s.AuthoringProviders.ImageComposer.IsolateForeground(ctx, IsolateRequest{SourceAssetID: asset.AssetID, StorageKey: asset.StorageKey, ContentType: asset.ContentType, SourceBytes: sourceBytes})
-	if err != nil {
-		return failCandidate(base, failureCode(err))
-	}
-	scene, err := s.AuthoringProviders.ImageComposer.ComposeScene(ctx, SceneRequest{SourceAssetID: asset.AssetID, SceneKey: base.SceneKey, Foreground: foreground})
-	if err != nil {
-		return failCandidate(base, failureCode(err))
-	}
-	composed, err := provingComposite(foreground, scene)
+	scene, err := s.AuthoringProviders.ImageComposer.GenerateProductImage(ctx, ProductImageRequest{SourceAssetID: asset.AssetID, ContentType: sourceContentType, SourceBytes: sourceBytes, SceneKey: base.SceneKey, Variation: variation})
 	if err != nil {
 		return failCandidate(base, failureCode(err))
 	}
@@ -325,14 +364,14 @@ func (s Service) produceAuthoringCandidate(ctx context.Context, job AuthoringJob
 	}
 	id := uuid.NewString()
 	base.ID = id
-	base.ContentType = composed.ContentType
-	base.ByteSize = int64(len(composed.Bytes))
+	base.ContentType = scene.ContentType
+	base.ByteSize = int64(len(scene.Bytes))
 	base.StorageKey = storageKeyAuthoringCandidate(job.StoreID, job.ID, id, "scene.png")
-	base.ForegroundStorageKey = storageKeyAuthoringCandidate(job.StoreID, job.ID, id, "foreground.png")
-	if err := s.S3Storage.PutObject(ctx, base.StorageKey, composed.ContentType, composed.Bytes); err != nil {
+	base.ForegroundStorageKey = storageKeyAuthoringCandidate(job.StoreID, job.ID, id, "source."+imageFileExtension(sourceContentType))
+	if err := s.S3Storage.PutObject(ctx, base.StorageKey, scene.ContentType, scene.Bytes); err != nil {
 		return failCandidate(base, ProviderFailureUnavailable)
 	}
-	if err := s.S3Storage.PutObject(ctx, base.ForegroundStorageKey, composed.ContentType, foreground.Bytes); err != nil {
+	if err := s.S3Storage.PutObject(ctx, base.ForegroundStorageKey, sourceContentType, sourceBytes); err != nil {
 		return failCandidate(base, ProviderFailureUnavailable)
 	}
 	base.Status = ItemStatusProposed
@@ -343,8 +382,19 @@ func (s Service) produceAuthoringCandidate(ctx context.Context, job AuthoringJob
 	return ""
 }
 
+func imageFileExtension(contentType string) string {
+	switch contentType {
+	case "image/jpeg":
+		return "jpg"
+	case "image/webp":
+		return "webp"
+	default:
+		return "png"
+	}
+}
+
 // maxAuthoringSourceBytes caps how much of a source asset is read into memory
-// for compositing.
+// for provider image requests.
 func (s Service) maxAuthoringSourceBytes(actual int64) int64 {
 	limit := actual
 	if limit <= 0 || limit > 32*1024*1024 {

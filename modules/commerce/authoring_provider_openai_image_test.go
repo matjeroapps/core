@@ -64,6 +64,20 @@ func testSceneResponsePNG() []byte {
 	return buf.Bytes()
 }
 
+func testLandscapeSceneResponsePNG() []byte {
+	img := image.NewNRGBA(image.Rect(0, 0, 6, 4))
+	for y := 0; y < 4; y++ {
+		for x := 0; x < 6; x++ {
+			img.Set(x, y, color.RGBA{R: 30, G: 60, B: 90, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		panic(err)
+	}
+	return buf.Bytes()
+}
+
 // TestAdapterIsolateForegroundFromSourceAlpha proves the adapter derives the
 // mask from the source's own alpha and never needs a fabricated provider mask.
 func TestAdapterIsolateForegroundFromSourceAlpha(t *testing.T) {
@@ -166,6 +180,50 @@ func TestAdapterIsolateForegroundUsesOnlyProviderAlpha(t *testing.T) {
 	}
 }
 
+func TestAdapterIsolateForegroundResizesProviderMaskAndPreservesSourcePixels(t *testing.T) {
+	mask := image.NewNRGBA(image.Rect(0, 0, 8, 8))
+	for y := 4; y < 8; y++ {
+		for x := 0; x < 8; x++ {
+			mask.SetNRGBA(x, y, color.NRGBA{R: 255, B: 255, A: 255})
+		}
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeImageB64Response(t, w, encodeTestPNG(t, mask))
+	}))
+	defer server.Close()
+	adapter := NewOpenAIImageComposer(server.URL, "secret-token", "gpt-image-1", 0)
+	fg, err := adapter.IsolateForeground(context.Background(), IsolateRequest{ContentType: "image/jpeg", SourceBytes: testOpaqueForegroundJPG()})
+	if err != nil {
+		t.Fatalf("isolate foreground with larger same-aspect mask: %v", err)
+	}
+	fgImage, _, err := image.Decode(bytes.NewReader(fg.Bytes))
+	if err != nil {
+		t.Fatalf("decode resized foreground: %v", err)
+	}
+	maskImage, _, err := image.Decode(bytes.NewReader(fg.MaskBytes))
+	if err != nil {
+		t.Fatalf("decode resized mask: %v", err)
+	}
+	if fgImage.Bounds().Size() != image.Pt(4, 4) || maskImage.Bounds().Size() != image.Pt(4, 4) {
+		t.Fatalf("foreground/mask sizes = %v/%v, want 4x4", fgImage.Bounds().Size(), maskImage.Bounds().Size())
+	}
+	if alpha := color.NRGBAModel.Convert(fgImage.At(1, 0)).(color.NRGBA).A; alpha != 0 {
+		t.Fatalf("background alpha = %d, want 0", alpha)
+	}
+	if alpha := color.NRGBAModel.Convert(fgImage.At(1, 3)).(color.NRGBA).A; alpha == 0 {
+		t.Fatal("product alpha must remain visible after resizing")
+	}
+	got := color.NRGBAModel.Convert(fgImage.At(1, 3)).(color.NRGBA)
+	source, _, err := image.Decode(bytes.NewReader(testOpaqueForegroundJPG()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := color.NRGBAModel.Convert(source.At(1, 3)).(color.NRGBA)
+	if got.R != want.R || got.G != want.G || got.B != want.B {
+		t.Fatalf("resized foreground RGB = %v, want original source RGB %v", got, want)
+	}
+}
+
 func TestAdapterIsolateForegroundRejectsInvalidProviderMasks(t *testing.T) {
 	makeMask := func(t *testing.T, bounds image.Rectangle, alpha uint8) []byte {
 		t.Helper()
@@ -185,7 +243,7 @@ func TestAdapterIsolateForegroundRejectsInvalidProviderMasks(t *testing.T) {
 		name string
 		mask []byte
 	}{
-		{name: "different dimensions", mask: makeMask(t, image.Rect(0, 0, 3, 4), 255)},
+		{name: "different aspect ratio", mask: makeMask(t, image.Rect(0, 0, 3, 4), 255)},
 		{name: "fully opaque", mask: makeMask(t, image.Rect(0, 0, 4, 4), 255)},
 		{name: "fully transparent", mask: makeMask(t, image.Rect(0, 0, 4, 4), 0)},
 		{name: "undecodable image", mask: []byte("not an image")},
@@ -206,50 +264,87 @@ func TestAdapterIsolateForegroundRejectsInvalidProviderMasks(t *testing.T) {
 	}
 }
 
-// TestAdapterComposeSceneRequestsAndParses proves the real request body,
-// the bearer header, and the b64/url parsing: the returned bytes are the
-// fetched scene, never the foreground echo.
-func TestAdapterComposeSceneRequestsAndParses(t *testing.T) {
-	scenePNG := testSceneResponsePNG()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/images/generations":
-			if auth := r.Header.Get("Authorization"); auth != "Bearer secret-token" {
-				t.Fatalf("authorization header = %q", auth)
-			}
-			if ct := r.Header.Get("Content-Type"); ct != "application/json" {
-				t.Fatalf("content type = %q", ct)
-			}
-			if !strings.Contains(readRequestBodyString(t, r), `"model":"gpt-image-1"`) {
-				t.Fatalf("request body missing model")
-			}
-			writeImageB64Response(t, w, scenePNG)
-		case "/scene-file":
-			if _, err := w.Write(scenePNG); err != nil {
-				t.Fatalf("write file: %v", err)
-			}
-		default:
-			t.Fatalf("unexpected path %s", r.URL.Path)
+func TestAdapterGenerateProductImageKeepsLandscapeCanvas(t *testing.T) {
+	largeScene := image.NewNRGBA(image.Rect(0, 0, 8, 4))
+	for y := 0; y < 4; y++ {
+		for x := 0; x < 8; x++ {
+			largeScene.SetNRGBA(x, y, color.NRGBA{R: 30, G: 60, B: 90, A: 255})
 		}
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeImageB64Response(t, w, encodeTestPNG(t, largeScene))
 	}))
 	defer server.Close()
 	adapter := NewOpenAIImageComposer(server.URL, "secret-token", "gpt-image-1", 0)
-	fg := validAlphaForegroundForCompose(t)
-
-	scene, err := adapter.ComposeScene(context.Background(), SceneRequest{SceneKey: "coffee-stand", Foreground: fg})
+	scene, err := adapter.GenerateProductImage(context.Background(), ProductImageRequest{ContentType: "image/png", SourceBytes: testAlphaForegroundPNG(), SceneKey: "studio"})
 	if err != nil {
-		t.Fatalf("ComposeScene b64: %v", err)
+		t.Fatalf("GenerateProductImage: %v", err)
+	}
+	decoded, _, err := image.Decode(bytes.NewReader(scene.Bytes))
+	if err != nil {
+		t.Fatalf("decode resized scene: %v", err)
+	}
+	if got := decoded.Bounds().Size(); got != image.Pt(8, 4) {
+		t.Fatalf("scene dimensions = %v, want generated 8x4 landscape canvas", got)
+	}
+}
+
+// TestAdapterGenerateProductImageRequestsAndParses proves the source image is sent as
+// a visual reference and the edited output is requested in landscape format.
+func TestAdapterGenerateProductImageRequestsAndParses(t *testing.T) {
+	scenePNG := testLandscapeSceneResponsePNG()
+	source := testOpaqueForegroundJPG()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/scene-file" {
+			if _, err := w.Write(scenePNG); err != nil {
+				t.Fatalf("write file: %v", err)
+			}
+			return
+		}
+		if r.URL.Path != "/images/edits" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		if auth := r.Header.Get("Authorization"); auth != "Bearer secret-token" {
+			t.Fatalf("authorization header = %q", auth)
+		}
+		if err := r.ParseMultipartForm(2 << 20); err != nil {
+			t.Fatalf("parse multipart form: %v", err)
+		}
+		if r.FormValue("model") != "gpt-image-1" || r.FormValue("size") != "1536x1024" || r.FormValue("output_format") != "png" {
+			t.Fatalf("unexpected edit parameters: model=%q size=%q format=%q", r.FormValue("model"), r.FormValue("size"), r.FormValue("output_format"))
+		}
+		prompt := r.FormValue("prompt")
+		if !strings.Contains(prompt, "visual reference") || !strings.Contains(prompt, "entire product visible") || !strings.Contains(prompt, "Do not crop the product") {
+			t.Fatalf("request prompt should create an uncropped, complete scene: %s", prompt)
+		}
+		imageFile, _, err := r.FormFile("image")
+		if err != nil {
+			t.Fatalf("missing source image: %v", err)
+		}
+		defer imageFile.Close()
+		gotSource, err := io.ReadAll(imageFile)
+		if err != nil || !bytes.Equal(gotSource, source) {
+			t.Fatalf("image reference does not match complete source bytes: %v", err)
+		}
+		writeImageB64Response(t, w, scenePNG)
+	}))
+	defer server.Close()
+	adapter := NewOpenAIImageComposer(server.URL, "secret-token", "gpt-image-1", 0)
+	scene, err := adapter.GenerateProductImage(context.Background(), ProductImageRequest{SourceAssetID: "asset", ContentType: "image/jpeg", SourceBytes: source, SceneKey: "coffee-stand", Variation: 2})
+	if err != nil {
+		t.Fatalf("GenerateProductImage b64: %v", err)
 	}
 	if scene.ContentType != "image/png" || len(scene.Bytes) == 0 {
 		t.Fatalf("scene = %s/%d bytes", scene.ContentType, len(scene.Bytes))
 	}
-	if string(scene.Bytes) == string(fg.Bytes) {
-		t.Fatalf("scene must not echo the foreground")
+	decoded, _, err := image.Decode(bytes.NewReader(scene.Bytes))
+	if err != nil || decoded.Bounds().Dx() <= decoded.Bounds().Dy() {
+		t.Fatalf("generated image should be landscape: %v", err)
 	}
 
 	// URL variant.
 	urlServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/images/generations" {
+		if r.URL.Path == "/images/edits" {
 			writeImageURLResponse(t, w, server.URL+"/scene-file")
 			return
 		}
@@ -262,17 +357,38 @@ func TestAdapterComposeSceneRequestsAndParses(t *testing.T) {
 	}))
 	defer urlServer.Close()
 	urlAdapter := NewOpenAIImageComposer(urlServer.URL, "secret-token", "gpt-image-1", 0)
-	scene, err = urlAdapter.ComposeScene(context.Background(), SceneRequest{SceneKey: "coffee-stand", Foreground: fg})
+	scene, err = urlAdapter.GenerateProductImage(context.Background(), ProductImageRequest{ContentType: "image/jpeg", SourceBytes: source, SceneKey: "coffee-stand"})
 	if err != nil {
-		t.Fatalf("ComposeScene url: %v", err)
+		t.Fatalf("GenerateProductImage url: %v", err)
 	}
-	if len(scene.Bytes) != len(scenePNG) {
-		t.Fatalf("url scene bytes = %d, want %d", len(scene.Bytes), len(scenePNG))
+	decoded, _, err = image.Decode(bytes.NewReader(scene.Bytes))
+	if err != nil || decoded.Bounds().Dx() <= decoded.Bounds().Dy() {
+		t.Fatalf("url image should remain landscape: %v", err)
 	}
 }
 
-func TestAdapterComposeSceneProviderErrors(t *testing.T) {
-	fg := validAlphaForegroundForCompose(t)
+func TestSceneGenerationPromptUsesVisiblyDistinctFullScenes(t *testing.T) {
+	first := productImagePrompt("coffee-stand", 1)
+	second := productImagePrompt("coffee-stand", 2)
+	third := productImagePrompt("coffee-stand", 3)
+
+	for _, prompt := range []string{first, second, third} {
+		if !strings.Contains(prompt, "entire product visible") || !strings.Contains(prompt, "wide landscape image") {
+			t.Fatalf("scene prompt should create a full landscape product photograph: %s", prompt)
+		}
+		if strings.Contains(prompt, "product cutout will be composited") {
+			t.Fatalf("scene prompt must not describe cutout compositing: %s", prompt)
+		}
+	}
+	if !strings.Contains(first, "pale limestone display surface") || !strings.Contains(second, "walnut display surface") || !strings.Contains(third, "dark teal architectural background") {
+		t.Fatalf("variations should select visibly different scene environments: %q / %q / %q", first, second, third)
+	}
+	if first == second || second == third || first == third {
+		t.Fatal("scene variations must produce different prompts")
+	}
+}
+
+func TestAdapterGenerateProductImageProviderErrors(t *testing.T) {
 	cases := []struct {
 		status int
 		body   string
@@ -293,7 +409,7 @@ func TestAdapterComposeSceneProviderErrors(t *testing.T) {
 			}
 		}))
 		adapter := NewOpenAIImageComposer(server.URL, "secret-token", "gpt-image-1", 0)
-		_, err := adapter.ComposeScene(context.Background(), SceneRequest{SceneKey: "k", Foreground: fg})
+		_, err := adapter.GenerateProductImage(context.Background(), ProductImageRequest{ContentType: "image/png", SourceBytes: testAlphaForegroundPNG(), SceneKey: "k"})
 		server.Close()
 		if err == nil {
 			t.Fatalf("status %d body %s must fail", tc.status, tc.body)
@@ -326,7 +442,7 @@ func TestProvingCompositeIntegration(t *testing.T) {
 	mask.SetAlpha(0, 2, color.Alpha{A: 128})
 	composed, err := provingComposite(
 		Foreground{ContentType: "image/png", Bytes: encodeTestPNG(t, fgRGBA), MaskBytes: encodeTestPNG(t, mask)},
-		ComposedImage{ContentType: "image/png", Bytes: encodeTestPNG(t, scene)},
+		GeneratedProductImage{ContentType: "image/png", Bytes: encodeTestPNG(t, scene)},
 	)
 	if err != nil {
 		t.Fatalf("valid composite: %v", err)
@@ -356,7 +472,7 @@ func TestProvingCompositeIntegration(t *testing.T) {
 	}
 	if _, err := provingComposite(
 		Foreground{ContentType: "image/png", Bytes: encodeTestPNG(t, fgRGBA), MaskBytes: encodeTestPNG(t, mask)},
-		ComposedImage{ContentType: "image/png", Bytes: encodeTestPNG(t, wrongScene)},
+		GeneratedProductImage{ContentType: "image/png", Bytes: encodeTestPNG(t, wrongScene)},
 	); err == nil {
 		t.Fatalf("size mismatch must be refused")
 	} else if got := failureCode(err); got != ProviderFailureInvalidOutput {
@@ -372,7 +488,7 @@ func TestProvingCompositeIntegration(t *testing.T) {
 	}
 	if _, err := provingComposite(
 		Foreground{ContentType: "image/png", Bytes: encodeTestPNG(t, fgRGBA), MaskBytes: encodeTestPNG(t, opaque)},
-		ComposedImage{ContentType: "image/png", Bytes: encodeTestPNG(t, scene)},
+		GeneratedProductImage{ContentType: "image/png", Bytes: encodeTestPNG(t, scene)},
 	); err == nil {
 		t.Fatalf("opaque mask must be refused")
 	} else if got := failureCode(err); got != ProviderFailureInvalidOutput {
@@ -381,7 +497,7 @@ func TestProvingCompositeIntegration(t *testing.T) {
 	transparent := image.NewAlpha(image.Rect(0, 0, 4, 4))
 	if _, err := provingComposite(
 		Foreground{ContentType: "image/png", Bytes: encodeTestPNG(t, fgRGBA), MaskBytes: encodeTestPNG(t, transparent)},
-		ComposedImage{ContentType: "image/png", Bytes: encodeTestPNG(t, scene)},
+		GeneratedProductImage{ContentType: "image/png", Bytes: encodeTestPNG(t, scene)},
 	); failureCode(err) != ProviderFailureInvalidOutput {
 		t.Fatalf("transparent mask code = %q, want %q", failureCode(err), ProviderFailureInvalidOutput)
 	}
@@ -390,7 +506,7 @@ func TestProvingCompositeIntegration(t *testing.T) {
 	leakingForeground.SetNRGBA(0, 0, color.NRGBA{R: 255, A: 255})
 	if _, err := provingComposite(
 		Foreground{ContentType: "image/png", Bytes: encodeTestPNG(t, leakingForeground), MaskBytes: encodeTestPNG(t, mask)},
-		ComposedImage{ContentType: "image/png", Bytes: encodeTestPNG(t, scene)},
+		GeneratedProductImage{ContentType: "image/png", Bytes: encodeTestPNG(t, scene)},
 	); failureCode(err) != ProviderFailureInvalidOutput {
 		t.Fatalf("foreground leak code = %q, want %q", failureCode(err), ProviderFailureInvalidOutput)
 	}
@@ -407,7 +523,7 @@ func TestAdapterAuthorizationNotLogged(t *testing.T) {
 	}))
 	defer server.Close()
 	adapter := NewOpenAIImageComposer(server.URL, "secret-token", "mdl", 0)
-	composed, err := adapter.ComposeScene(context.Background(), SceneRequest{SceneKey: "k", Foreground: validAlphaForegroundForCompose(t)})
+	composed, err := adapter.GenerateProductImage(context.Background(), ProductImageRequest{ContentType: "image/jpeg", SourceBytes: testOpaqueForegroundJPG(), SceneKey: "k"})
 	server.Close()
 	if err == nil {
 		t.Fatalf("refused response must fail")

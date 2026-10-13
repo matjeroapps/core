@@ -93,8 +93,8 @@ func (c validComposerStub) IsolateForeground(ctx context.Context, req IsolateReq
 	return Foreground{ContentType: "image/png", Bytes: c.fg, MaskBytes: c.mask}, nil
 }
 
-func (c validComposerStub) ComposeScene(ctx context.Context, req SceneRequest) (ComposedImage, error) {
-	return ComposedImage{ContentType: "image/png", Bytes: c.scene}, nil
+func (c validComposerStub) GenerateProductImage(ctx context.Context, req ProductImageRequest) (GeneratedProductImage, error) {
+	return GeneratedProductImage{ContentType: "image/png", Bytes: c.scene}, nil
 }
 
 type opaqueComposerStub struct{ fg, mask, scene []byte }
@@ -103,8 +103,8 @@ func (c opaqueComposerStub) IsolateForeground(ctx context.Context, req IsolateRe
 	return Foreground{ContentType: "image/png", Bytes: c.fg, MaskBytes: c.mask}, nil
 }
 
-func (c opaqueComposerStub) ComposeScene(ctx context.Context, req SceneRequest) (ComposedImage, error) {
-	return ComposedImage{ContentType: "image/png", Bytes: c.scene}, nil
+func (c opaqueComposerStub) GenerateProductImage(ctx context.Context, req ProductImageRequest) (GeneratedProductImage, error) {
+	return GeneratedProductImage{ContentType: "image/png", Bytes: c.scene}, nil
 }
 
 func insertReadyAuthoringAsset(t *testing.T, db *database.Pool, storeID, suffix string) (string, string) {
@@ -239,12 +239,9 @@ func TestAuthoringImageBranchAndAcceptFlow(t *testing.T) {
 	}
 }
 
-// TestAuthoringCompositingUploadFailsClosed asserts that an unverifiable
-// composite is classified provider_invalid_output on the candidate alone; the
-// text branch stays succeeded and the job lands partial, then a retry of the
-// image part alone writes a fresh proposed candidate without regenerating the
-// successful text side.
-func TestAuthoringCompositingUploadFailsClosed(t *testing.T) {
+// TestAuthoringGeneratedImageIsReviewable asserts the full generated image is
+// offered as a review candidate without requiring an alpha-mask composite.
+func TestAuthoringGeneratedImageIsReviewable(t *testing.T) {
 	db, service, _, suffix, subject, storeID := newAuthoringTestEnv(t)
 	ctx := context.Background()
 
@@ -267,44 +264,14 @@ func TestAuthoringCompositingUploadFailsClosed(t *testing.T) {
 	if fresh.TextStatus != BranchStatusSucceeded {
 		t.Fatalf("text status = %s, want succeeded", fresh.TextStatus)
 	}
-	if fresh.ImageStatus != BranchStatusFailed {
-		t.Fatalf("image status = %s, want failed", fresh.ImageStatus)
+	if fresh.ImageStatus != BranchStatusSucceeded {
+		t.Fatalf("image status = %s, want succeeded", fresh.ImageStatus)
 	}
-	if fresh.Status != JobStatusPartial {
-		t.Fatalf("job status = %s, want partial", fresh.Status)
+	if fresh.Status != JobStatusSucceeded {
+		t.Fatalf("job status = %s, want succeeded", fresh.Status)
 	}
-	if len(fresh.ImageCandidates) != 1 || fresh.ImageCandidates[0].Status != ItemStatusFailed || fresh.ImageCandidates[0].FailureCode != ProviderFailureInvalidOutput {
-		t.Fatalf("candidate = %+v, want failed with provider_invalid_output", fresh.ImageCandidates)
-	}
-
-	// Only a still-failed state is retryable; the retry must not regenerate a
-	// succeeded branch result.
-	if _, err := service.RetryAuthoringJobForSubject(ctx, subject, storeID, job.ID, AuthoringRetryRequest{Parts: []string{"image"}}); err != nil {
-		t.Fatalf("RetryAuthoringJobForSubject: %v", err)
-	}
-	fresh, _ = service.GetAuthoringJobForSubject(ctx, subject, storeID, job.ID)
-	if fresh.Status != JobStatusPending {
-		t.Fatalf("retry should requeue the job, got %s", fresh.Status)
-	}
-	before := len(fresh.Fields)
-	if before == 0 || fresh.Fields[0].Status != ItemStatusProposed {
-		t.Fatalf("retry must not disturb the accepted text results: %+v", fresh.Fields)
-	}
-
-	// A no-provider retry run still keeps the failed candidate row: the
-	// retention worker owns deletion, never the branch itself.
-	if err := service.ProcessAuthoringJob(ctx, fresh); err != nil {
-		t.Fatalf("ProcessAuthoringJob without provider: %v", err)
-	}
-	final, _ := service.GetAuthoringJobForSubject(ctx, subject, storeID, job.ID)
-	kept := 0
-	for _, c := range final.ImageCandidates {
-		if c.FailureCode == ProviderFailureInvalidOutput {
-			kept++
-		}
-	}
-	if kept == 0 {
-		t.Fatalf("failed candidate rows must survive failed runs")
+	if len(fresh.ImageCandidates) != 1 || fresh.ImageCandidates[0].Status != ItemStatusProposed {
+		t.Fatalf("candidate = %+v, want a proposed full-image result", fresh.ImageCandidates)
 	}
 }
 
