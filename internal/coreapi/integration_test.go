@@ -91,6 +91,8 @@ func setupIntegration(t *testing.T) integrationEnv {
 		"000021_create_balance_projection_schema",
 		"000025_seller_catalog_phase_b",
 		"000026_seller_catalog_phase_c",
+		"000047_store_product_properties_variant_removal",
+		"000047_store_product_properties_variant_removal",
 	}
 	migrationPaths := make([]string, 0, len(migrationNames))
 	for _, name := range migrationNames {
@@ -813,6 +815,8 @@ func TestIntegrationThemePreviewFailsClosedWithoutSecret(t *testing.T) {
 		"000020_create_ledger_schema",
 		"000021_create_balance_projection_schema",
 		"000026_seller_catalog_phase_c",
+		"000047_store_product_properties_variant_removal",
+		"000047_store_product_properties_variant_removal",
 	}
 	migrationPaths := make([]string, 0, len(migrationNames))
 	for _, name := range migrationNames {

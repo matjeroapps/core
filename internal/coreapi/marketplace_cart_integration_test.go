@@ -71,6 +71,8 @@ func setupMarketplaceCartFixture(t *testing.T) marketplaceCartFixture {
 		"000021_create_balance_projection_schema",
 		"000026_seller_catalog_phase_c",
 		"000032_marketplace_attribution",
+		"000047_store_product_properties_variant_removal",
+		"000047_store_product_properties_variant_removal",
 	}
 
 	migrationPaths := make([]string, 0, len(migrationNames))

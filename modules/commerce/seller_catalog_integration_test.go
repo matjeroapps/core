@@ -42,6 +42,7 @@ func setupSellerCatalogTestDB(t *testing.T) (*database.Pool, Service, Repository
 		"000025_seller_catalog_phase_b.up.sql",
 		"000026_seller_catalog_phase_c.up.sql",
 		"000044_store_scoped_categories.up.sql",
+		"000047_store_product_properties_variant_removal.up.sql",
 	}
 
 	migrationNames := make([]string, 0, len(migrations))

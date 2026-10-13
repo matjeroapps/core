@@ -1173,6 +1173,22 @@ func internalRoutes() []openapi.RouteSpec {
 			Responses: writeResponses("Archived product", StatusResponse{}),
 		},
 		{
+			Method: http.MethodDelete, Path: "/internal/v1/stores/{storeID}/products/{productID}", OperationID: "internalRemoveStoreProduct",
+			Summary: "Remove a product from one store while preserving protected history", Tags: []string{"Seller Catalog"},
+			Parameters: []openapi.ParameterSpec{
+				pathParam("storeID", "Store identifier"),
+				pathParam("productID", "Product identifier"),
+			},
+			Responses: writeResponses("Store-scoped product removal result", commerce.StoreProductRemovalResponse{}),
+		},
+		{
+			Method: http.MethodPost, Path: "/internal/v1/stores/{storeID}/products/bulk-removal", OperationID: "internalBulkRemoveStoreProducts",
+			Summary: "Remove up to 100 products from one store independently", Tags: []string{"Seller Catalog"},
+			Parameters:  []openapi.ParameterSpec{pathParam("storeID", "Store identifier")},
+			RequestBody: commerce.StoreProductsRemovalRequest{},
+			Responses:   writeResponses("Per-product store-scoped removal results", commerce.StoreProductRemovalResponse{}),
+		},
+		{
 			Method: http.MethodGet, Path: "/internal/v1/stores/{storeID}/supplier-offers", OperationID: "internalListStoreSupplierOffers",
 			Summary: "Browse eligible supplier offers for store", Tags: []string{"Seller Catalog"},
 			Parameters: append([]openapi.ParameterSpec{

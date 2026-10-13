@@ -1,14 +1,15 @@
 package coreapi
 
 // Feature 034 variant lifecycle HTTP tests: exercise the real internal Seller
-// variant routes end to end (update with attribute values, reference-protected
-// delete, idempotent archive) against the shared P5.8 contract env.
+// variant routes end to end (update with attribute values and history-preserving
+// catalog removal) against the shared P5.8 contract env.
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -175,7 +176,7 @@ func TestUpdateVariantWithAttributesHTTP(t *testing.T) {
 	}
 }
 
-func TestDeleteAndArchiveVariantHTTP(t *testing.T) {
+func TestDeleteVariantPreservesHistoryHTTP(t *testing.T) {
 	env := newVariantLifecycleEnv(t)
 	ctx := context.Background()
 
@@ -190,38 +191,32 @@ func TestDeleteAndArchiveVariantHTTP(t *testing.T) {
 	seedVariantHTTPReference(t, env, skuID)
 
 	path := variantPath(env.storeID, env.productID, created.ID)
-	if rec := env.do(t, "DELETE", path, nil); rec.Code != 409 {
-		t.Fatalf("referenced variant delete status = %d, body %s", rec.Code, rec.Body.String())
+	if rec := env.do(t, "DELETE", path, nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("referenced variant removal status = %d, body %s", rec.Code, rec.Body.String())
+	}
+	var deletedAt *time.Time
+	if err := env.db.Pool.QueryRow(ctx, `SELECT deleted_at FROM variants WHERE id = $1`, created.ID).Scan(&deletedAt); err != nil {
+		t.Fatalf("query removed variant history: %v", err)
+	}
+	if deletedAt == nil {
+		t.Fatal("removed variant must be hidden with deleted_at while retaining its row")
+	}
+	var skuStatus string
+	if err := env.db.Pool.QueryRow(ctx, `SELECT status FROM skus WHERE id = $1`, skuID).Scan(&skuStatus); err != nil {
+		t.Fatalf("query retained sku status: %v", err)
+	}
+	if skuStatus != "inactive" {
+		t.Fatalf("removed variant sku status = %q, want inactive", skuStatus)
 	}
 	var count int
-	if err := env.db.Pool.QueryRow(ctx, `SELECT count(*) FROM variants WHERE id = $1`, created.ID).Scan(&count); err != nil {
-		t.Fatalf("query variant after blocked delete: %v", err)
-	}
-	if count != 1 {
-		t.Fatalf("blocked delete removed variant rows: %d", count)
-	}
-
-	for attempt := 1; attempt <= 2; attempt++ {
-		rec := env.do(t, "POST", path+"/archive", nil)
-		if rec.Code != 200 {
-			t.Fatalf("archive attempt %d status = %d, body %s", attempt, rec.Code, rec.Body.String())
-		}
-	}
-	var variantStatus, skuStatus string
-	if err := env.db.Pool.QueryRow(ctx, `SELECT status FROM variants WHERE id = $1`, created.ID).Scan(&variantStatus); err != nil {
-		t.Fatalf("query variant after archive: %v", err)
-	}
-	if err := env.db.Pool.QueryRow(ctx, `SELECT status FROM skus WHERE id = $1`, skuID).Scan(&skuStatus); err != nil {
-		t.Fatalf("query sku after archive: %v", err)
-	}
-	if variantStatus != "archived" || skuStatus != "inactive" {
-		t.Fatalf("archive result variant=%q sku=%q", variantStatus, skuStatus)
-	}
 	if err := env.db.Pool.QueryRow(ctx, `SELECT count(*) FROM skus WHERE variant_id = $1`, created.ID).Scan(&count); err != nil {
-		t.Fatalf("count historical skus: %v", err)
+		t.Fatalf("count retained skus: %v", err)
 	}
 	if count != 1 {
-		t.Fatalf("archive dropped historical sku rows: %d", count)
+		t.Fatalf("removal dropped historical sku rows: %d", count)
+	}
+	if rec := env.do(t, "POST", path+"/archive", nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("obsolete archive route status = %d, want 404", rec.Code)
 	}
 }
 
@@ -312,7 +307,6 @@ func TestVariantRouteAuthorizationHTTP(t *testing.T) {
 		{"create", "POST", createPath, VariantCreateRequest{Code: "red-small", Status: "active"}},
 		{"update", "PUT", variantPath(env.storeID, env.productID, uuid.NewString()), VariantCreateRequest{Code: "red-small", Status: "active"}},
 		{"delete", "DELETE", variantPath(env.storeID, env.productID, uuid.NewString()), nil},
-		{"archive", "POST", variantPath(env.storeID, env.productID, uuid.NewString()) + "/archive", nil},
 		{"create-sku", "POST", variantPath(env.storeID, env.productID, uuid.NewString()) + "/skus", SKUCreateRequest{Code: "SKU-X", Status: "active"}},
 	} {
 		rec := env.variantDoAs(t, staffSubject, tc.method, tc.path, tc.body)
@@ -395,11 +389,6 @@ func TestVariantRoutePathIsolationHTTP(t *testing.T) {
 			t.Fatalf("%s wrong store envelope code = %q, want not_found", method, code)
 		}
 	}
-	rec = env.do(t, "POST", variantPath(otherStore.ID, env.productID, created.ID)+"/archive", nil)
-	if rec.Code != 404 {
-		t.Fatalf("archive wrong store path status = %d, body %s", rec.Code, rec.Body.String())
-	}
-
 	// Every refused path change must leave the variant untouched.
 	var code, status string
 	if err := env.db.Pool.QueryRow(ctx, `SELECT code, status FROM variants WHERE id = $1`, created.ID).Scan(&code, &status); err != nil {
@@ -478,39 +467,31 @@ func TestDeleteOrderReferencedVariantHTTP(t *testing.T) {
 	seedVariantHTTPReference(t, env, skuID)
 	seedVariantOrderReference(t, env, skuID)
 
-	// A live order_item referencing the variant blocks the permanent delete
-	// with the same resource_in_use contract as inventory references.
+	// A live order_item keeps its snapshot references while catalog removal hides
+	// the variant and deactivates its sellable SKU.
 	rec := env.do(t, "DELETE", variantPath(env.storeID, env.productID, created.ID), nil)
-	if rec.Code != 409 {
+	if rec.Code != http.StatusNoContent {
 		t.Fatalf("order-referenced delete status = %d, body %s", rec.Code, rec.Body.String())
 	}
-	if code, _ := decodeErrorEnvelope(t, rec); code != "resource_in_use" {
-		t.Fatalf("order-referenced delete envelope code = %q, want resource_in_use", code)
-	}
-	var variantCount, skuCount, itemCount int
-	if err := env.db.Pool.QueryRow(ctx, `SELECT count(*) FROM variants WHERE id = $1`, created.ID).Scan(&variantCount); err != nil {
-		t.Fatalf("count variants after blocked delete: %v", err)
+	var variantCount, visibleCount, skuCount, itemCount int
+	if err := env.db.Pool.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE deleted_at IS NULL) FROM variants WHERE id = $1`, created.ID).Scan(&variantCount, &visibleCount); err != nil {
+		t.Fatalf("count variants after removal: %v", err)
 	}
 	if err := env.db.Pool.QueryRow(ctx, `SELECT count(*) FROM skus WHERE variant_id = $1`, created.ID).Scan(&skuCount); err != nil {
-		t.Fatalf("count skus after blocked delete: %v", err)
+		t.Fatalf("count retained skus after removal: %v", err)
 	}
 	if err := env.db.Pool.QueryRow(ctx, `SELECT count(*) FROM order_items WHERE variant_id = $1`, created.ID).Scan(&itemCount); err != nil {
-		t.Fatalf("count order items after blocked delete: %v", err)
+		t.Fatalf("count retained order items after removal: %v", err)
 	}
-	if variantCount != 1 || skuCount != 1 || itemCount != 1 {
-		t.Fatalf("blocked delete must preserve variant, sku, and order history: variant=%d sku=%d order_items=%d", variantCount, skuCount, itemCount)
+	var skuStatus string
+	if err := env.db.Pool.QueryRow(ctx, `SELECT status FROM skus WHERE variant_id = $1`, created.ID).Scan(&skuStatus); err != nil {
+		t.Fatalf("query retained sku status: %v", err)
 	}
-
-	// Referenced archive stays available while the delete stays forbidden.
-	if rec := env.do(t, "POST", variantPath(env.storeID, env.productID, created.ID)+"/archive", nil); rec.Code != 200 {
-		t.Fatalf("order-referenced archive status = %d, body %s", rec.Code, rec.Body.String())
+	if variantCount != 1 || visibleCount != 0 || skuCount != 1 || skuStatus != "inactive" || itemCount != 1 {
+		t.Fatalf("removal must hide the variant and preserve its history: variant=%d visible=%d sku=%d sku_status=%s order_items=%d", variantCount, visibleCount, skuCount, skuStatus, itemCount)
 	}
-	var variantStatus string
-	if err := env.db.Pool.QueryRow(ctx, `SELECT status FROM variants WHERE id = $1`, created.ID).Scan(&variantStatus); err != nil {
-		t.Fatalf("query variant status after archive: %v", err)
-	}
-	if variantStatus != "archived" {
-		t.Fatalf("order-referenced archive status = %q, want archived", variantStatus)
+	if rec := env.do(t, "POST", variantPath(env.storeID, env.productID, created.ID)+"/archive", nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("obsolete archive route status = %d, want 404", rec.Code)
 	}
 }
 

@@ -39,6 +39,8 @@ func setupP53Database(t *testing.T) (*database.Pool, Repository, context.Context
 		"000012_order_aggregate_schema",
 		"000013_outbox_publish_claims",
 		"000032_marketplace_attribution",
+		"000047_store_product_properties_variant_removal",
+		"000047_store_product_properties_variant_removal",
 	}
 	applyMigrationBatch(t, db, migrationNames...)
 	return db, NewRepository(db.Pool), context.Background()
