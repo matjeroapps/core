@@ -1507,7 +1507,7 @@ func (s Service) PublishListingForSubject(ctx context.Context, subject, storeID,
 		return SellerListing{}, err
 	}
 	if !detail.PublishReadiness.IsReady {
-		return SellerListing{}, fmt.Errorf("%w: publish readiness failed: %s", ErrPublishNotReady, strings.Join(detail.PublishReadiness.Reasons, "; "))
+		return SellerListing{}, fmt.Errorf("%w: %s", ErrPublishNotReady, strings.Join(detail.PublishReadiness.Reasons, "; "))
 	}
 
 	if publishRaceHook != nil {

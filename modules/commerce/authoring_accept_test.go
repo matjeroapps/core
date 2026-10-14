@@ -87,13 +87,19 @@ func sceneTestPNG(t *testing.T) []byte {
 	return encodeTestPNG(t, img)
 }
 
-type validComposerStub struct{ fg, mask, scene []byte }
+type validComposerStub struct {
+	fg, mask, scene []byte
+	requests        *[]ProductImageRequest
+}
 
 func (c validComposerStub) IsolateForeground(ctx context.Context, req IsolateRequest) (Foreground, error) {
 	return Foreground{ContentType: "image/png", Bytes: c.fg, MaskBytes: c.mask}, nil
 }
 
 func (c validComposerStub) GenerateProductImage(ctx context.Context, req ProductImageRequest) (GeneratedProductImage, error) {
+	if c.requests != nil {
+		*c.requests = append(*c.requests, req)
+	}
 	return GeneratedProductImage{ContentType: "image/png", Bytes: c.scene}, nil
 }
 
@@ -149,9 +155,13 @@ func TestAuthoringImageBranchAndAcceptFlow(t *testing.T) {
 	ctx := context.Background()
 
 	assetID, _ := insertReadyAuthoringAsset(t, db, storeID, suffix)
-	composer := validComposerStub{fg: productTestAccentPNG(t), mask: productTestMaskPNG(t), scene: sceneTestPNG(t)}
+	var imageRequests []ProductImageRequest
+	composer := validComposerStub{fg: productTestAccentPNG(t), mask: productTestMaskPNG(t), scene: sceneTestPNG(t), requests: &imageRequests}
 	service.AuthoringProviders = AuthoringProviderRegistry{
-		TextGenerator: stubTextGenerator{fields: []TextFieldResult{{FieldKey: FieldKeyName, Locale: LocaleAR, Value: "اسم قهوة"}}},
+		TextGenerator: stubTextGenerator{fields: []TextFieldResult{
+			{FieldKey: FieldKeyName, Locale: LocaleAR, Value: "اسم قهوة"},
+			{FieldKey: FieldKeyDescription, Locale: LocaleAR, Value: "خلاط 1200 واط مع مطحنة توابل"},
+		}},
 		ImageComposer: composer,
 	}
 
@@ -161,6 +171,9 @@ func TestAuthoringImageBranchAndAcceptFlow(t *testing.T) {
 	}
 	if err := service.ProcessAuthoringJob(ctx, job); err != nil {
 		t.Fatalf("ProcessAuthoringJob: %v", err)
+	}
+	if len(imageRequests) != 1 || !strings.Contains(imageRequests[0].Description, "خلاط 1200 واط مع مطحنة توابل") {
+		t.Fatalf("image request description = %#v; want generated description", imageRequests)
 	}
 	fresh, err := service.GetAuthoringJobForSubject(ctx, subject, storeID, job.ID)
 	if err != nil {

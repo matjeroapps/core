@@ -1255,7 +1255,7 @@ func (s *server) handlePublishStoreListing(w http.ResponseWriter, r *http.Reques
 
 	listing, err := s.deps.Commerce.PublishListingForSubject(r.Context(), subject, storeID, listingID)
 	if err != nil {
-		writeDomainError(w, err)
+		writePublishNotReadyError(w, err)
 		return
 	}
 

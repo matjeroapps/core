@@ -157,8 +157,9 @@ func (s Service) ClaimPendingAuthoringJobs(ctx context.Context, batch int) ([]Au
 }
 
 func (s Service) ProcessAuthoringJob(ctx context.Context, job AuthoringJob) error {
-	textStatus, textCode := s.runTextBranch(ctx, job)
-	imageStatus, imageCode := s.runImageBranch(ctx, job)
+	textStatus, textCode, generatedDescription := s.runTextBranch(ctx, job)
+	imageDescription := resolveProductImageDescription(job.Brief, generatedDescription)
+	imageStatus, imageCode := s.runImageBranch(ctx, job, imageDescription)
 	status := DeriveAuthoringJobStatus(textStatus, imageStatus)
 	errorCode := ""
 	if status == JobStatusFailed {
@@ -170,17 +171,17 @@ func (s Service) ProcessAuthoringJob(ctx context.Context, job AuthoringJob) erro
 	return s.repo.UpdateAuthoringJobStatuses(ctx, job.ID, status, textStatus, imageStatus, errorCode, "")
 }
 
-func (s Service) runTextBranch(ctx context.Context, job AuthoringJob) (BranchStatus, string) {
+func (s Service) runTextBranch(ctx context.Context, job AuthoringJob) (BranchStatus, string, string) {
 	if s.AuthoringProviders.TextFailure != "" || s.AuthoringProviders.TextGenerator == nil {
 		code := s.AuthoringProviders.TextFailure
 		if code == "" {
 			code = ProviderFailureNotConfigured
 		}
-		return BranchStatusFailed, code
+		return BranchStatusFailed, code, ""
 	}
 	res, err := s.AuthoringProviders.TextGenerator.GenerateProductText(ctx, TextRequest{Brief: job.Brief})
 	if err != nil {
-		return BranchStatusFailed, failureCode(err)
+		return BranchStatusFailed, failureCode(err), ""
 	}
 	for _, field := range res.Fields {
 		if !IsValidFieldKey(field.FieldKey) {
@@ -204,7 +205,26 @@ func (s Service) runTextBranch(ctx context.Context, job AuthoringJob) (BranchSta
 		}
 		_ = s.repo.InsertAuthoringFieldProposal(ctx, job.ID, job.StoreID, field, ItemStatusProposed, "")
 	}
-	return BranchStatusSucceeded, ""
+	return BranchStatusSucceeded, "", productDescriptionFromFields(res.Fields)
+}
+
+func productDescriptionFromFields(fields []TextFieldResult) string {
+	var descriptions []string
+	for _, field := range fields {
+		value := strings.TrimSpace(field.Value)
+		if field.FieldKey != FieldKeyDescription || !IsValidLocale(field.Locale) || value == "" {
+			continue
+		}
+		descriptions = append(descriptions, string(field.Locale)+": "+value)
+	}
+	return strings.Join(descriptions, "\n")
+}
+
+func resolveProductImageDescription(brief, generatedDescription string) string {
+	if description := strings.TrimSpace(generatedDescription); description != "" {
+		return description
+	}
+	return strings.TrimSpace(brief)
 }
 
 // categoryBelongsToStore reports whether the suggested category is scoped to
@@ -221,7 +241,7 @@ func (s Service) categoryBelongsToStore(ctx context.Context, storeID, categoryID
 	return exists, nil
 }
 
-func (s Service) runImageBranch(ctx context.Context, job AuthoringJob) (BranchStatus, string) {
+func (s Service) runImageBranch(ctx context.Context, job AuthoringJob, description string) (BranchStatus, string) {
 	if s.AuthoringProviders.ImageFailure != "" || s.AuthoringProviders.ImageComposer == nil {
 		code := s.AuthoringProviders.ImageFailure
 		if code == "" {
@@ -259,7 +279,7 @@ func (s Service) runImageBranch(ctx context.Context, job AuthoringJob) (BranchSt
 	lastCode := ""
 	for i, sourceID := range plannedSources {
 		asset := assetByID[sourceID]
-		code := s.produceAuthoringCandidate(ctx, job, asset, len(existing)+i+1)
+		code := s.produceAuthoringCandidate(ctx, job, asset, description, len(existing)+i+1)
 		if code != "" {
 			lastCode = code
 		}
@@ -321,7 +341,7 @@ func planAuthoringImageSources(requested int, sourceIDs []string, existing []Aut
 // image model as a visual reference, then stores its full landscape product
 // photograph and a copy of the original for merchant comparison. Failures land
 // on the candidate alone and never abort the branch.
-func (s Service) produceAuthoringCandidate(ctx context.Context, job AuthoringJob, asset authoringSourceAssetRow, variation int) string {
+func (s Service) produceAuthoringCandidate(ctx context.Context, job AuthoringJob, asset authoringSourceAssetRow, description string, variation int) string {
 	failCandidate := func(c AuthoringImageCandidate, code string) string {
 		c.Status = ItemStatusFailed
 		c.FailureCode = code
@@ -355,7 +375,7 @@ func (s Service) produceAuthoringCandidate(ctx context.Context, job AuthoringJob
 		// fails classified instead of silently succeeding.
 		return failCandidate(base, ProviderFailureUnavailable)
 	}
-	scene, err := s.AuthoringProviders.ImageComposer.GenerateProductImage(ctx, ProductImageRequest{SourceAssetID: asset.AssetID, ContentType: sourceContentType, SourceBytes: sourceBytes, SceneKey: base.SceneKey, Variation: variation})
+	scene, err := s.AuthoringProviders.ImageComposer.GenerateProductImage(ctx, ProductImageRequest{SourceAssetID: asset.AssetID, ContentType: sourceContentType, SourceBytes: sourceBytes, Description: description, SceneKey: base.SceneKey, Variation: variation})
 	if err != nil {
 		return failCandidate(base, failureCode(err))
 	}
