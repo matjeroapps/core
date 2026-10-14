@@ -303,7 +303,7 @@ func (p *openAIImageComposer) GenerateProductImage(ctx context.Context, req Prod
 	var data []byte
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
-		data, lastErr = p.postProductImageEdit(ctx, sourceBytes, contentType, productImagePrompt(req.SceneKey, req.Variation))
+		data, lastErr = p.postProductImageEdit(ctx, sourceBytes, contentType, productImagePrompt(req.SceneKey, req.Description, req.Variation))
 		if lastErr == nil || failureCode(lastErr) != ProviderFailureUnavailable {
 			break
 		}
@@ -332,13 +332,19 @@ var sceneDirections = []string{
 	"A refined boutique setting with a light blush display surface, a sculptural sand-colored wall niche, subtle brass details, and soft studio lighting.",
 }
 
-func productImagePrompt(sceneKey string, variation int) string {
+func productImagePrompt(sceneKey, description string, variation int) string {
 	index := variation - 1
 	if index < 0 {
 		index = 0
 	}
 	direction := sceneDirections[index%len(sceneDirections)]
-	return "Use the uploaded product photo as the visual reference. Identify the actual product and create a new, complete, photorealistic commercial product photograph showing that product naturally placed in a realistic environment suitable for: " + sceneKey + ". " + direction + " Compose a wide landscape image (3:2, 1536x1024) with the entire product visible, comfortably framed with clear space around it, natural perspective, believable contact shadows, and lighting that integrates the product into the scene. Preserve the recognizable product design, silhouette, proportions, primary colors, materials, and visible brand identity as closely as possible. Do not crop the product, turn it into a cutout, paste the source photo over a new background, or merely replace the background. The source is a reference, not a pixel layer; recreate the product as needed for a coherent realistic photograph. Do not add text, labels, accessories, or product features that are not supported by the reference."
+	description = strings.TrimSpace(description)
+	if description == "" {
+		description = "No written product description was provided. Rely only on the uploaded reference photo for product identity and included components."
+	} else {
+		description = "Merchant product description (use this to understand product purpose and explicitly included components): " + description
+	}
+	return "Use the uploaded product photo as the visual reference and the merchant description as product context. Identify the actual product and create a new, complete, photorealistic hero product photograph showing it naturally in a realistic environment suitable for: " + sceneKey + ". " + description + " " + direction + " Compose a wide landscape image (3:2, 1536x1024) with the entire main product visible, comfortably framed with clear space around it, natural perspective, believable contact shadows, and lighting that integrates it into the scene. Preserve the recognizable product design, silhouette, proportions, primary colors, materials, and visible brand identity from the reference as closely as possible. You may show accessories or included components only when they are explicitly named in the merchant description or clearly visible in the reference; do not invent extra components, specifications, controls, or branding. Arrange any described included accessories naturally around the main product without obscuring it. Do not crop the product, turn it into a cutout, paste the source photo over a new background, or merely replace the background. The source is a reference, not a pixel layer; recreate the complete product in a coherent realistic commercial photograph. Do not add text, labels, badges, or promotional graphics."
 }
 
 func (p *openAIImageComposer) postProductImageEdit(ctx context.Context, source []byte, contentType, prompt string) ([]byte, error) {

@@ -47,6 +47,7 @@ type ProductImageRequest struct {
 	SourceAssetID string
 	ContentType   string
 	SourceBytes   []byte
+	Description   string
 	SceneKey      string
 	Variation     int
 }

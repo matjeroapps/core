@@ -3,6 +3,7 @@ package coreapi
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"core/internal/balance"
 	"core/internal/finance"
@@ -94,6 +95,26 @@ type ErrorResponse = httpx.ErrorResponse
 // writeError emits an internal error envelope for a code.
 func writeError(w http.ResponseWriter, code string) {
 	httpx.WriteError(w, statusFor(code), code, messageFor(code))
+}
+
+// writePublishNotReadyError preserves actionable readiness reasons that Core
+// has already evaluated. They describe merchant-owned catalog state, not
+// infrastructure details, so Seller can guide the merchant to the fix.
+func writePublishNotReadyError(w http.ResponseWriter, err error) {
+	if err == nil {
+		return
+	}
+	if !errors.Is(err, commerce.ErrPublishNotReady) {
+		writeDomainError(w, err)
+		return
+	}
+
+	message := messageFor(CodePublishNotReady)
+	const prefix = "publish readiness failed: "
+	if detail := strings.TrimSpace(strings.TrimPrefix(err.Error(), prefix)); detail != "" && detail != err.Error() {
+		message = detail
+	}
+	httpx.WriteError(w, statusFor(CodePublishNotReady), CodePublishNotReady, message)
 }
 
 // writeVariantConflictDetail emits the internal error envelope for per-item

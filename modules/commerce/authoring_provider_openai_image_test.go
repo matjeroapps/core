@@ -314,7 +314,7 @@ func TestAdapterGenerateProductImageRequestsAndParses(t *testing.T) {
 			t.Fatalf("unexpected edit parameters: model=%q size=%q format=%q", r.FormValue("model"), r.FormValue("size"), r.FormValue("output_format"))
 		}
 		prompt := r.FormValue("prompt")
-		if !strings.Contains(prompt, "visual reference") || !strings.Contains(prompt, "entire product visible") || !strings.Contains(prompt, "Do not crop the product") {
+		if !strings.Contains(prompt, "visual reference") || !strings.Contains(prompt, "entire main product visible") || !strings.Contains(prompt, "Do not crop the product") || !strings.Contains(prompt, "1200 W") || !strings.Contains(prompt, "spice grinder") {
 			t.Fatalf("request prompt should create an uncropped, complete scene: %s", prompt)
 		}
 		imageFile, _, err := r.FormFile("image")
@@ -330,7 +330,7 @@ func TestAdapterGenerateProductImageRequestsAndParses(t *testing.T) {
 	}))
 	defer server.Close()
 	adapter := NewOpenAIImageComposer(server.URL, "secret-token", "gpt-image-1", 0)
-	scene, err := adapter.GenerateProductImage(context.Background(), ProductImageRequest{SourceAssetID: "asset", ContentType: "image/jpeg", SourceBytes: source, SceneKey: "coffee-stand", Variation: 2})
+	scene, err := adapter.GenerateProductImage(context.Background(), ProductImageRequest{SourceAssetID: "asset", ContentType: "image/jpeg", SourceBytes: source, Description: "1200 W blender with chopper and spice grinder", SceneKey: "coffee-stand", Variation: 2})
 	if err != nil {
 		t.Fatalf("GenerateProductImage b64: %v", err)
 	}
@@ -367,14 +367,18 @@ func TestAdapterGenerateProductImageRequestsAndParses(t *testing.T) {
 	}
 }
 
-func TestSceneGenerationPromptUsesVisiblyDistinctFullScenes(t *testing.T) {
-	first := productImagePrompt("coffee-stand", 1)
-	second := productImagePrompt("coffee-stand", 2)
-	third := productImagePrompt("coffee-stand", 3)
+func TestSceneGenerationPromptUsesDescriptionAndVisiblyDistinctFullScenes(t *testing.T) {
+	description := "1200 W blender with chopper, spice grinder, and fruit juicer"
+	first := productImagePrompt("coffee-stand", description, 1)
+	second := productImagePrompt("coffee-stand", description, 2)
+	third := productImagePrompt("coffee-stand", description, 3)
 
 	for _, prompt := range []string{first, second, third} {
-		if !strings.Contains(prompt, "entire product visible") || !strings.Contains(prompt, "wide landscape image") {
+		if !strings.Contains(prompt, "entire main product visible") || !strings.Contains(prompt, "wide landscape image") {
 			t.Fatalf("scene prompt should create a full landscape product photograph: %s", prompt)
+		}
+		if !strings.Contains(prompt, description) || !strings.Contains(prompt, "only when they are explicitly named in the merchant description") {
+			t.Fatalf("scene prompt should use the description and constrain accessories to described components: %s", prompt)
 		}
 		if strings.Contains(prompt, "product cutout will be composited") {
 			t.Fatalf("scene prompt must not describe cutout compositing: %s", prompt)
@@ -385,6 +389,13 @@ func TestSceneGenerationPromptUsesVisiblyDistinctFullScenes(t *testing.T) {
 	}
 	if first == second || second == third || first == third {
 		t.Fatal("scene variations must produce different prompts")
+	}
+}
+
+func TestSceneGenerationPromptFallsBackWhenDescriptionIsEmpty(t *testing.T) {
+	prompt := productImagePrompt("studio", " \n ", 1)
+	if !strings.Contains(prompt, "No written product description was provided") {
+		t.Fatalf("empty description should have an explicit safe fallback: %s", prompt)
 	}
 }
 
