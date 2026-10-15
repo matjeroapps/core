@@ -364,3 +364,101 @@ func TestSellerProductTenantIsolationAndSecurity(t *testing.T) {
 		t.Fatalf("mismatched seller-owned listing leaked into store catalog: total=%d items=%+v", total, items)
 	}
 }
+
+func TestListStoreProductsQueryMatchesNameSlugAndSupplier(t *testing.T) {
+	_, service, repo, suffix := setupSellerCatalogTestDB(t)
+	ctx := context.Background()
+
+	seller, err := repo.CreateSeller(ctx, "seller-q-"+suffix, "Query Seller", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateSeller: %v", err)
+	}
+	subject := "user-seller-q-" + suffix
+	if _, err := repo.CreateSellerMember(ctx, seller.ID, subject, "owner", "active"); err != nil {
+		t.Fatalf("CreateSellerMember: %v", err)
+	}
+	store, err := repo.CreateStore(ctx, seller.ID, "EG", "store-q-"+suffix, "Query Store", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateStore: %v", err)
+	}
+	// Second store so product B's auto-created draft listing lands outside
+	// the queried store (unique store+product listing).
+	otherStore, err := repo.CreateStore(ctx, seller.ID, "EG", "store-q-other-"+suffix, "Query Other Store", "draft", nil)
+	if err != nil {
+		t.Fatalf("CreateStore other: %v", err)
+	}
+
+	// Seller-owned product with a distinctive translated name. Product
+	// creation atomically creates the store's draft seller-owned listing.
+	draftA := SellerProductDraft{
+		Slug:         "zzfindme-" + suffix,
+		Translations: []ProductTranslation{{Locale: "en", Name: "Zephyr Query Lamp " + suffix}},
+	}
+	detailA, err := service.CreateSellerProductForSubject(ctx, subject, store.ID, draftA)
+	if err != nil {
+		t.Fatalf("CreateSellerProductForSubject A: %v", err)
+	}
+
+	// Supplier-backed product from a distinctively named supplier.
+	supplier, err := repo.CreateSupplier(ctx, "sup-q-"+suffix, "Quillora Supplies "+suffix, "active", nil)
+	if err != nil {
+		t.Fatalf("CreateSupplier: %v", err)
+	}
+	supMarket, err := repo.CreateSupplierMarket(ctx, supplier.ID, "EG", "active", nil)
+	if err != nil {
+		t.Fatalf("CreateSupplierMarket: %v", err)
+	}
+	draftB := SellerProductDraft{
+		Slug:         "glob-" + suffix,
+		Translations: []ProductTranslation{{Locale: "en", Name: "Generic Globe " + suffix}},
+	}
+	detailB, err := service.CreateSellerProductForSubject(ctx, subject, otherStore.ID, draftB)
+	if err != nil {
+		t.Fatalf("CreateSellerProductForSubject B: %v", err)
+	}
+	supProd, err := repo.CreateSupplierProduct(ctx, supplier.ID, detailB.Product.ID, "SUP-Q-01-"+suffix, "active")
+	if err != nil {
+		t.Fatalf("CreateSupplierProduct: %v", err)
+	}
+	offer, err := repo.CreateSupplierOffer(ctx, supplier.ID, supProd.ID, supMarket.ID, "EG", "active")
+	if err != nil {
+		t.Fatalf("CreateSupplierOffer: %v", err)
+	}
+	if _, err := repo.CreateSellerListing(ctx, store.ID, detailB.Product.ID, &offer.ID, "EG", "active"); err != nil {
+		t.Fatalf("CreateSellerListing B: %v", err)
+	}
+
+	cases := []struct {
+		name      string
+		query     string
+		wantTotal int
+		wantID    string
+	}{
+		{name: "name match", query: "zephyr query lamp", wantTotal: 1, wantID: detailA.Product.ID},
+		{name: "slug match", query: "zzfindme", wantTotal: 1, wantID: detailA.Product.ID},
+		{name: "supplier name match", query: "quillora supplies", wantTotal: 1, wantID: detailB.Product.ID},
+		{name: "supplier code match", query: "sup-q-" + suffix, wantTotal: 1, wantID: detailB.Product.ID},
+		{name: "no match", query: "no-such-thing-xyz-" + suffix, wantTotal: 0},
+	}
+	for _, tc := range cases {
+		items, total, err := service.ListSellerProductViewsForSubject(ctx, subject, store.ID, "", "", tc.query, 20, 0)
+		if err != nil {
+			t.Fatalf("%s: ListSellerProductViewsForSubject: %v", tc.name, err)
+		}
+		if total != tc.wantTotal || len(items) != tc.wantTotal {
+			t.Fatalf("%s: query %q: got total=%d items=%d, want %d", tc.name, tc.query, total, len(items), tc.wantTotal)
+		}
+		if tc.wantTotal == 1 && items[0].Product.ID != tc.wantID {
+			t.Fatalf("%s: query %q: got product %s, want %s", tc.name, tc.query, items[0].Product.ID, tc.wantID)
+		}
+	}
+
+	// Empty query returns the full store catalog.
+	items, total, err := service.ListSellerProductViewsForSubject(ctx, subject, store.ID, "", "", "", 20, 0)
+	if err != nil {
+		t.Fatalf("empty query: %v", err)
+	}
+	if total != 2 || len(items) != 2 {
+		t.Fatalf("empty query: got total=%d items=%d, want 2", total, len(items))
+	}
+}

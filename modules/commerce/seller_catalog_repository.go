@@ -1747,7 +1747,9 @@ func (r Repository) ListStoreProducts(ctx context.Context, storeID, statusFilter
 
 	if queryFilter != "" {
 		argCount++
-		sb.WriteString(fmt.Sprintf(" AND (p.slug ILIKE $%d OR sp.seller_code ILIKE $%d)", argCount, argCount))
+		sb.WriteString(fmt.Sprintf(` AND (p.slug ILIKE $%d OR sp.seller_code ILIKE $%d
+		  OR EXISTS (SELECT 1 FROM product_translations pt WHERE pt.product_id = p.id AND pt.name ILIKE $%d)
+		  OR EXISTS (SELECT 1 FROM supplier_offers so JOIN suppliers s ON s.id = so.supplier_id WHERE so.id = l.supplier_offer_id AND (s.name ILIKE $%d OR s.code ILIKE $%d)))`, argCount, argCount, argCount, argCount, argCount))
 		args = append(args, "%"+queryFilter+"%")
 	}
 
